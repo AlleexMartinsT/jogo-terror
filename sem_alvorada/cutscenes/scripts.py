@@ -15,7 +15,7 @@ from . import actions as act
 from .timeline import Cue, Cutscene, Line, Shot, Track, View
 
 ROAD_FACING = 0.0                  # yaw da entidade parada na rua: olha para +Y, para a casa
-CLOCK_NAMES = ("clock", "alarm", "despert", "relogio")    # como o módulo props pode ter batizado o despertador (AlarmClock)
+CLOCK_NAMES = ("alarm", "despert", "relogio")    # nomes que o módulo props pode ter dado ao despertador (hoje: AlarmClock)
 EYE = C.PLAYER_EYE_STAND
 FLOOR_1 = layout.LEVEL_Z[1]
 GAMEPLAY_FOV = C.FOV_DEG
@@ -77,8 +77,7 @@ def window_vantage(op_id, back=1.6, eye_z=None):
     sun = sun_direction()
     cx, cy, cz = window_center(op_id)
     eye_z = layout.LEVEL_Z[op.level] + EYE if eye_z is None else eye_z
-    horizontal = math.hypot(sun[0], sun[1])
-    eye = (cx - sun[0] / horizontal * back * horizontal, cy - sun[1] * back, eye_z)
+    eye = (cx - sun[0] * back, cy - sun[1] * back, eye_z)
     crossing_z = eye_z + sun[2] * back
     top = layout.LEVEL_Z[op.level] + op.sill + op.height
     if not (layout.LEVEL_Z[op.level] + op.sill < crossing_z < top):
@@ -203,22 +202,22 @@ def build_blackout():
                    Cue(0.1, act.silence(9.0)),
                    Cue(1.6, act.loop("heartbeat", "heartbeat", 0.5))),
              fade=((0.0, 1.0), (1.0, 1.0), (2.6, 0.0))),
-        Shot(4.5, View(eye, entity_head, GAMEPLAY_FOV), View(eye, entity_head, 60.0), handheld=0.15,
+        Shot(4.5, View(eye, entity_head, GAMEPLAY_FOV), View(eye, entity_head, 46.0), handheld=0.15,
              lines=(say("blackout", 2, 0.9, 4.2),),
              cues=(Cue(0.3, act.entity_eyes(0.55)), Cue(0.45, act.entity_eyes(0.0)),
                    Cue(0.7, act.entity_eyes(1.0)), Cue(0.7, act.sound("ent_stinger", sight, 0.8)),
                    Cue(0.75, act.entity_anim("twitch")),
-                   Cue(0.75, act.cut_light(CORRIDOR_RIM, 25.0)),
+                   Cue(0.75, act.cut_light(CORRIDOR_RIM, 6.0)),
                    Cue(2.0, act.flashlight(True)), Cue(2.12, act.flashlight(False)),
                    Cue(2.5, act.flashlight(True)), Cue(2.65, act.flashlight(False))),
              shake=((0.0, 0.05), (2.0, 0.25), (4.5, 0.10))),
-        Shot(5.0, View(eye, entity_head, 60.0), View(eye, entity_head, 50.0), handheld=0.28,
+        Shot(5.0, View(eye, entity_head, 46.0), View(eye, entity_head, 34.0), handheld=0.28,
              cues=(Cue(0.2, act.entity_anim("stare")),
                    Cue(1.0, act.sound("ent_breath", sight, 0.7)),
                    Cue(2.2, act.flashlight(True)),
                    Cue(2.6, act.sound("ent_whisper", sight, 0.6))),
              shake=((0.0, 0.10), (5.0, 0.35))),
-        Shot(4.5, View(eye, entity_head, 50.0), gameplay_view(eye, face_yaw), ease="smoother", handheld=0.2,
+        Shot(4.5, View(eye, entity_head, 34.0), gameplay_view(eye, face_yaw), ease="smoother", handheld=0.2,
              lines=(say("blackout", 3, 0.4, 4.0),),
              cues=(Cue(0.0, act.flashlight(True)),
                    Cue(4.4, act.stop_loop("heartbeat")),
@@ -374,7 +373,7 @@ def build_ending():
         Shot(5.0, View(exterior_eye, (car.x, 0.8, 1.0), 62.0), View(exterior_eye, (car.x, -5.5, 1.0), 56.0),
              handheld=0.14, ease="smooth",
              lines=(say("ending", 1, 0.6, 4.6),),
-             cues=(Cue(0.0, act.entity_place(road, entity_yaw, "stare", 0.0)),)),
+             cues=(Cue(0.0, act.entity_place(road, entity_yaw, "stare", 0.0, erect=True)),)),
         Shot(5.0, in_car(road_horizon, 62.0), in_car(entity_head, 58.0), follow="Car", handheld=0.2, ease="smooth"),
         Shot(8.5, in_car(entity_head, 58.0), in_car(entity_head, 40.0), follow="Car", handheld=0.32,
              lines=(say("ending", 2, 1.4, 6.6),),

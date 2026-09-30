@@ -77,6 +77,7 @@ class FakeEntity:
         self.eye_level = 0.0
         self.look = "unset"
         self.look_rate = 200.0
+        self.head_limit = 2.42
         self.updates = 0
         self.death_amounts = []
         self.history = []
@@ -414,11 +415,12 @@ def test_death_is_a_dry_cut():
 
 
 def test_ending_moves_car_and_shows_card():
-    seen = {"card": None, "flash": 0.0, "fade_end": 0.0, "lights": 0.0}
+    seen = {"card": None, "flash": 0.0, "fade_end": 0.0, "lights": 0.0, "stood_tall": False}
 
     def watch(player, host, elapsed):
         if not player.active:
             return
+        seen["stood_tall"] = seen["stood_tall"] or host.entity.head_limit is None
         ov = player.overlay()
         seen["lights"] = max(seen["lights"], host.objects["Car_Headlight_L"].data.energy)
         seen["flash"] = max(seen["flash"], ov.flash)
@@ -435,6 +437,7 @@ def test_ending_moves_car_and_shows_card():
     assert seen["card"] == story.ENDING_CARD, seen["card"]
     assert seen["fade_end"] > 0.99
     assert host.entity.transform[:3] == layout.ENTITY_ROAD_POS
+    assert seen["stood_tall"] and host.entity.head_limit == 2.42, "na estrada ele fica ereto; ao fim volta o limite"
     print("  final: carro sai da garagem, entidade na estrada, flash e cartão")
 
 

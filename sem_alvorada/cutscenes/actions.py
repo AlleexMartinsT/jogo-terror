@@ -92,10 +92,15 @@ def activate_brain():
 # --------------------------------------------------------------------------
 # Entidade
 # --------------------------------------------------------------------------
-def entity_place(pos, yaw, anim="idle", eyes=0.0, visible=True):
-    """Coloca a entidade em `pos` olhando para `yaw` (radianos) com a animação dada."""
+def entity_place(pos, yaw, anim="idle", eyes=0.0, visible=True, erect=False):
+    """Coloca a entidade em `pos` olhando para `yaw` (radianos) com a animação dada.
+
+    `erect`: ao ar livre ela fica de pé com os 2,65 m; dentro de casa a rig a curva para caber sob o forro.
+    """
     def run(stage):
         entity = stage.entity
+        if erect:
+            stage.stand_tall(entity)
         x, y, z = stage.resolve(pos)
         entity.set_visible(visible)
         entity.set_transform(x, y, z, stage.resolve(yaw))

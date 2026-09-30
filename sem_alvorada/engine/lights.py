@@ -104,9 +104,9 @@ class LightManager:
 
     def _set_energy(self, light):
         energy = self.energy_target(light)
-        data = light.obj.data
-        if abs(data.energy - energy) > 0.002 * max(light.base_energy, 1.0):
-            data.energy = energy
+        lamp = light.obj.data
+        if abs(lamp.energy - energy) > 0.002 * max(light.base_energy, 1.0):
+            lamp.energy = energy
 
     def restore_all(self):
         """Todas as luzes visíveis e com a energia do arquivo (ao sair do jogo)."""

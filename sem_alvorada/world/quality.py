@@ -92,9 +92,6 @@ def _apply_color_management(scene, skipped):
 
 
 def _apply_fog(scene, level, skipped):
-    if scene.world is None or scene.world.node_tree is None:
-        skipped.append("neblina: cena sem World")
-        return
     sky.set_fog_density(scene, FOG_DENSITY[level])
     _apply_properties(scene.eevee, dict(volumetric_end=60.0, volumetric_start=0.1), skipped, "eevee")
 

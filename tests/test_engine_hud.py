@@ -3,7 +3,6 @@ CPU (numpy + blf em ImBuf) para conferir o visual em PNG (out/engine/hud_*.png).
 
     LIBGL_ALWAYS_SOFTWARE=1 python tests/test_engine_hud.py
 """
-import math
 import os
 import sys
 

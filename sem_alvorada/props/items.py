@@ -61,7 +61,7 @@ def build_battery_pair():
             m.cylinder(0, 0, 0, radius, length * 0.4, "battery_black", seg=10)
             m.cylinder(0, 0, length * 0.4, radius, length * 0.6, "battery_copper", seg=10)
             m.cylinder(0, 0, length, radius * 0.35, 0.005, "chrome", seg=6)
-    m.box(0, 0, -0.002, 4 * radius + 0.008, 0.03, 2 * radius + 0.004, "tape_silver")
+    m.box(0, 0, -0.002, 4 * radius + 0.006, 0.012, 2 * radius + 0.004, "tape_silver")
     return m
 
 

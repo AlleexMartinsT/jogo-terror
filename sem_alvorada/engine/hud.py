@@ -9,7 +9,6 @@ Cada função recebe um `Canvas` e o `hud_model()`; nenhuma toca a lógica do jo
 """
 import math
 
-from .. import conventions as C
 from . import texts
 from .canvas import INK, PAPER, PAPER_DIM, SHADE, WARNING, with_alpha
 

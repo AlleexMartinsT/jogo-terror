@@ -23,7 +23,13 @@ WALL_OVERLAY = ("ov_wall", (8.0, 8.0, 2.8))     # 8 m de largura por 2,8 m (um p
 FLOOR_OVERLAY = ("ov_floor", (8.0, 8.0, 8.0))
 GARAGE_DOOR_CLIP_Z = 2.85                        # acima disso o portão aberto some (entra no forro)
 
+FOG_MATERIAL = "fog_dust"
+FOG_NODE = "SA_Fog"
+FOG_COLOR = (0.55, 0.60, 0.68, 1.0)
+FOG_ANISOTROPY = 0.35
+
 EXTRA_MATERIAL_NAMES = (
+    "fog_dust",
     "wall_siding_ext", "door_garage_metal", "fixture_glow", "asphalt", "road_paint", "grass_dead",
     "sidewalk", "bark", "fence_wood", "night_silhouette", "sun_black", "sun_corona",
 )
@@ -262,6 +268,20 @@ def _fixture_glow():
     return mat
 
 
+def _fog_dust():
+    """Neblina de poeira: Volume Scatter num material só de volume (sem superfície)."""
+    mat, tree, bsdf = _new_material(FOG_MATERIAL)
+    tree.nodes.remove(bsdf)
+    fog = tree.nodes.new("ShaderNodeVolumeScatter")
+    fog.name = FOG_NODE
+    fog.inputs["Color"].default_value = FOG_COLOR
+    fog.inputs["Density"].default_value = 0.0
+    fog.inputs["Anisotropy"].default_value = FOG_ANISOTROPY
+    output = next(n for n in tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+    tree.links.new(fog.outputs["Volume"], output.inputs["Volume"])
+    return mat
+
+
 def _sun_corona():
     """Coroa do Sol Negro: emissão que nasce na borda do disco e some com a distância, sobre um
     disco de raio 1 (a escala do objeto define o tamanho; as coordenadas de objeto ignoram escala)."""
@@ -310,6 +330,7 @@ def _special(name):
         "night_silhouette": lambda: _flat("night_silhouette", (0.006, 0.007, 0.009)),
         "sun_black": lambda: _flat("sun_black", (0.0, 0.0, 0.0)),
         "sun_corona": _sun_corona,
+        "fog_dust": _fog_dust,
     }
     return builders[name]() if name in builders else None
 

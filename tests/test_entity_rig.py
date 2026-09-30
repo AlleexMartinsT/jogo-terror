@@ -98,7 +98,7 @@ def sample_bounds(rig):
         angle = math.degrees(q.angle)
         assert angle <= limit_for(name), f"{name} girou {angle:.0f} graus (limite {limit_for(name)})"
     for foot in skeleton.foot_bones():
-        assert solution.tail(foot).z > -0.03, f"{foot} afundou no chão"
+        assert skeleton.sole_height(solution, foot) > -0.02, f"{foot} afundou no chão"
     for side in ("L", "R"):
         assert solution.tail(f"Forearm.{side}").z > -0.03, "mão atravessou o chão"
     for b in skeleton.BONES:                       # membros rígidos: comprimento nunca muda
@@ -121,6 +121,8 @@ def test_all_animations(scene):
             sample_bounds(rig)
             head = rig.head_position()
             assert finite(head) and 0.4 < head[2] < 2.8, f"{anim}: cabeça em {head}"
+            top = rig.motion.last.tail("Head").z + rig.position.z
+            assert top <= rig.head_limit + 0.03 + rig.position.z, f"{anim}: a cabeça passou do forro ({top:.2f} m)"
         print(f"  {anim}: {FRAMES} quadros ok")
     rig.set_anim("run")
     for _ in range(120):
@@ -129,6 +131,25 @@ def test_all_animations(scene):
     for speed in (0.0, 0.01, 12.0, 100.0):
         rig.update(DT, speed)
         sample_bounds(rig)
+
+
+def test_stoops_indoors_and_stands_tall_outside(scene):
+    rig = EntityRig(scene)
+    rig.set_transform(0.0, 0.0, 0.0, 0.0)
+    rig.set_visible(True)
+    rig.set_anim("idle")
+    for _ in range(60):
+        rig.update(DT)
+    indoor = rig.motion.last.tail("Head").z
+    assert indoor <= motion.INDOOR_HEAD_LIMIT + 0.02, indoor
+    assert indoor < layout.CEIL_Z[0] - 0.1, "a cabeça precisa ficar sob o forro de 2,6 m"
+    rig.head_limit = None                                 # na estrada do final ele se ergue inteiro
+    for _ in range(60):
+        rig.update(DT)
+    outdoor = rig.motion.last.tail("Head").z
+    assert outdoor > 2.5, f"ereto deveria passar de 2,5 m: {outdoor:.2f}"
+    rig.head_limit = motion.INDOOR_HEAD_LIMIT
+    print(f"  curvado dentro de casa ({indoor:.2f} m) e ereto fora ({outdoor:.2f} m)")
 
 
 def test_pose_matches_blender(scene):
@@ -269,7 +290,8 @@ def test_bad_inputs(scene):
 
 def main():
     scene = fresh_entity_scene()
-    tests = [test_hierarchy_and_budget, test_proportions, test_all_animations, test_pose_matches_blender,
+    tests = [test_hierarchy_and_budget, test_proportions, test_all_animations, test_stoops_indoors_and_stands_tall_outside,
+             test_pose_matches_blender,
              test_look_at, test_eyes_visibility_transform, test_death_pose, test_update_cost, test_bad_inputs]
     for fn in tests:
         print(fn.__name__)

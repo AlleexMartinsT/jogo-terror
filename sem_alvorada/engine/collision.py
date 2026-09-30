@@ -13,9 +13,9 @@ que MAX_DROP contam como parede: é um corrimão invisível que impede cair no v
 """
 import math
 
-import bpy
+import bpy  # noqa: F401 - no bpy via pip, `mathutils` só existe depois deste import
 import numpy as np
-from mathutils import Matrix, Vector
+from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
 from .. import conventions as C
@@ -150,6 +150,16 @@ class LayoutCollision:
 
     def headroom(self, x, y, z, height):
         return True
+
+    def ray_distance(self, origin, direction, max_distance):
+        """Distância até a primeira parede na direção dada (max_distance se nada no caminho)."""
+        end = tuple(o + d * max_distance for o, d in zip(origin, direction))
+        nearest = max_distance
+        for rect, z0, z1 in self._pieces[layout.level_of_z(origin[2])]:
+            t = _segment_rect_entry(origin[0], origin[1], end[0], end[1], rect)
+            if t is not None and z0 - 0.02 <= origin[2] + (end[2] - origin[2]) * t <= z1 + 0.02:
+                nearest = min(nearest, t * max_distance)
+        return nearest
 
     def line_clear(self, a, b, through_target_solids=False):
         level_a, level_b = layout.level_of_z(a[2]), layout.level_of_z(b[2])
@@ -305,6 +315,11 @@ class SceneCollision:
             if self._tree.ray_cast(Vector((x + ox, y + oy, low)), UP, reach)[0] is not None:
                 return False
         return True
+
+    def ray_distance(self, origin, direction, max_distance):
+        """Distância até a primeira superfície na direção dada (max_distance se nada no caminho)."""
+        hit, _normal, _face, distance = self._tree.ray_cast(Vector(origin), Vector(direction), max_distance)
+        return max_distance if hit is None else distance
 
     def line_clear(self, a, b, through_target_solids=False):
         """Visada livre de a até b. Com `through_target_solids`, sólidos que ENVOLVEM b não contam:

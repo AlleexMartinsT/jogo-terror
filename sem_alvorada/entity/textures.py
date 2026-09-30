@@ -3,18 +3,17 @@
 Cada função devolve um array float32 (altura, largura, 3) em sRGB, 0..1. Nada aqui toca
 o Blender: `materials.py` cuida de virar imagem empacotada.
 
-A textura de pele é um atlas:
+A textura de pele é um atlas (u, v em 0..1; a linha 0 do array é v = 0, como em `image.pixels`):
     quadrante superior esquerdo  (u 0..0.5, v 0.5..1)  cabeça, com as órbitas escurecidas
     metade direita               (u 0.5..1)            membros, pescoço, mãos e pés
-    quadrante inferior esquerdo  (u 0..0.5, v 0..0.5)  peito, com costelas aparentes
 """
 import numpy as np
 
 SKIN_SIZE = 128
 CLOTH_SIZE = 128
 
-SKIN_BASE = np.array([0.43, 0.44, 0.42], np.float32)
-SKIN_SHADE = np.array([0.27, 0.29, 0.30], np.float32)
+SKIN_BASE = np.array([0.30, 0.31, 0.30], np.float32)
+SKIN_SHADE = np.array([0.18, 0.19, 0.21], np.float32)
 VEIN_COLOR = np.array([0.10, 0.12, 0.17], np.float32)
 CLOTH_BASE = np.array([0.105, 0.098, 0.092], np.float32)
 
@@ -72,7 +71,7 @@ def _vein_mask(size, rng, count=26):
 
 def _paint_soft_disc(image, center_uv, radius_px, color, strength):
     size_y, size_x = image.shape[:2]
-    cx, cy = center_uv[0] * size_x, (1.0 - center_uv[1]) * size_y      # v cresce para cima
+    cx, cy = center_uv[0] * size_x, center_uv[1] * size_y
     ys, xs = np.mgrid[0:size_y, 0:size_x]
     falloff = np.clip(1.0 - np.hypot(xs - cx, ys - cy) / radius_px, 0.0, 1.0)
     image[:] = image * (1 - strength * falloff[..., None]) + color * strength * falloff[..., None]
@@ -89,21 +88,10 @@ def skin_texture(rng, size=SKIN_SIZE):
     veins = _vein_mask(size, rng)
     image = image * (1 - 0.75 * veins[..., None]) + VEIN_COLOR * 0.75 * veins[..., None]
 
-    _paint_ribs(image, size)
     for socket in EYE_SOCKET_UV:
         _paint_soft_disc(image, socket, radius_px=size * 0.038, color=np.array([0.03, 0.03, 0.04]),
                          strength=0.9)
     return np.clip(image, 0.0, 1.0).astype(np.float32)
-
-
-def _paint_ribs(image, size):
-    """Costelas no quadrante inferior esquerdo: faixas escuras curvas em cima de pele mais fina."""
-    half = size // 2
-    ys, xs = np.mgrid[0:half, 0:half]
-    curve = np.sin((ys + 0.35 * np.abs(xs - half / 2)) * 0.9)
-    ribs = np.clip((curve - 0.55) * 3.0, 0.0, 1.0)
-    quadrant = image[half:, :half]           # linhas de baixo da imagem = v baixo
-    quadrant[:] = quadrant * (1 - 0.6 * ribs[..., None]) + VEIN_COLOR * 0.6 * ribs[..., None]
 
 
 def cloth_texture(rng, size=CLOTH_SIZE):

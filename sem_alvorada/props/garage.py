@@ -66,7 +66,7 @@ def make_garage_shelves(ctx, room, wall, along, *, width=2.5, depth=0.4, height=
     for tier in SHELF_TIERS:
         cursor = -width / 2 + 0.1
         if tier == 1.00:
-            cursor = -width / 2 + 0.75       # deixa o trecho onde o guia repousa (x ~ 15.2) vazio
+            cursor = -width / 2 + 0.95       # deixa o trecho onde o guia repousa (x ~ 15.2) vazio
         while cursor < width / 2 - 0.25:
             kind = rng.random()
             span = rng.uniform(0.18, 0.4)

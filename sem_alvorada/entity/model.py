@@ -180,7 +180,8 @@ def build_torso_and_coat(mb):
         _ring(0, 0, 1.88, 0.175, 0.120, _half("Spine2", "Spine3")),
         _ring(0, 0, 2.01, 0.190, 0.125, {"Spine3": 1.0}),
         _ring(0, 0, 2.12, 0.205, 0.115, _shoulder_weights),
-        _ring(0, 0, 2.20, 0.100, 0.085, {"Spine3": 1.0}),
+        _ring(0, 0, 2.19, 0.150, 0.100, _shoulder_weights),
+        _ring(0, 0, 2.25, 0.075, 0.070, {"Spine3": 1.0}),
     ]
     mb.tube(rings, 12, SLOT_CLOTH, (0.0, 0.0, 2.0, 1.0), cap_end=True, v_per_meter=CLOTH_UV_PER_METER)
 

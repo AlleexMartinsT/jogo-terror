@@ -38,6 +38,7 @@ class Stage:
         self.moved = {}                   # objeto -> deslocamento (dx, dy, dz) aplicado pelas Tracks
         self._loops = set()
         self._lit = set()                 # luzes CutLight_* que esta cutscene acendeu
+        self._head_limit = None           # (valor original) se a entidade foi erguida por esta cutscene
 
     def _snapshot(self):
         try:
@@ -116,6 +117,12 @@ class Stage:
     def entity(self):
         return self.host.entity
 
+    def stand_tall(self, entity):
+        """Tira o limite de altura da cabeça (a rig curva a entidade sob o forro); `finish_up` devolve."""
+        if hasattr(entity, "head_limit") and self._head_limit is None:
+            self._head_limit = (entity.head_limit,)
+            entity.head_limit = None
+
     def entity_head(self):
         return tuple(self.entity.head_position())
 
@@ -124,3 +131,6 @@ class Stage:
         self.stop_all_loops()
         for name in list(self._lit):
             self.set_light(name, 0.0)
+        if self._head_limit is not None:
+            self.entity.head_limit = self._head_limit[0]
+            self._head_limit = None

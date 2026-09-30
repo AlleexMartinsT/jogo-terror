@@ -16,6 +16,7 @@ from test_engine_fakes import (DT, InputState, aim_at, game_with_fake_entity, ki
 
 from sem_alvorada import conventions as C  # noqa: E402
 from sem_alvorada import layout, story  # noqa: E402
+from sem_alvorada.engine import flashlight as flashlight_module  # noqa: E402
 from sem_alvorada.engine import lights, state, texts  # noqa: E402
 from sem_alvorada.engine.interact import Interactable  # noqa: E402
 
@@ -260,6 +261,23 @@ def test_flashlight_battery_swap():
     assert game.state.flashlight_on and game.state.battery > 0.99, "lanterna morta não voltou a acender"
 
 
+def test_flashlight_light_sits_at_the_lens_and_retracts_near_walls():
+    for mode, game in each_mode():
+        game.state.has_flashlight = game.state.flashlight_on = True
+        beam = game.scene.objects[C.OBJ_FLASHLIGHT]
+        teleport(game, 6.5, 2.0, 0.0, 0)                       # hall comprido à frente
+        run_for(game, 0.6)
+        assert abs(beam.location.z + flashlight_module.LIGHT_FORWARD_MAX) < 0.01, (mode, beam.location)
+        teleport(game, 7.5, 9.575, 0.0, 0)                     # encostado na parede norte (fora da janela do hall)
+        run_for(game, 0.6)
+        assert -flashlight_module.LIGHT_FORWARD_MAX < beam.location.z <= -flashlight_module.LIGHT_FORWARD_MIN + 1e-6
+        distance_to_wall = 10.0 - 0.125 - game.player.y
+        assert -beam.location.z <= distance_to_wall - flashlight_module.WALL_GAP + 0.02, (mode, beam.location.z, distance_to_wall)
+        teleport(game, 6.5, 2.0, 0.0, 0)
+        run_for(game, 0.6)
+        assert abs(beam.location.z + flashlight_module.LIGHT_FORWARD_MAX) < 0.01, "a luz não voltou depois de afastar da parede"
+
+
 def test_flashlight_lags_behind_camera_and_viewmodel_follows_pickup():
     game = start_playing(make_game(world=True))
     game.state.has_flashlight = True
@@ -440,7 +458,7 @@ def test_door_sight_line_opens_with_door():
     assert not game.world_view.line_of_sight((6.5, 5.0, 1.5), (6.5, 5.0, 4.3)), "laje devia bloquear"
     assert not game.world_view.line_of_sight((9.0, 2.0, 1.5), (9.0, 2.0, 4.3)), "andares diferentes nunca se veem fora da escada"
     stairwell_a, stairwell_b = (5.6, 3.6, 1.65), (5.6, 6.5, 4.4)
-    assert game.world_view.line_of_sight(stairwell_a, stairwell_b) or True      # o vão da escada é a única exceção
+    assert game.world_view.line_of_sight(stairwell_a, stairwell_b), "o vão da escada é a única exceção entre andares"
     assert game.world_view.line_of_sight((6.5, 1.0, 1.5), (6.5, 9.0, 1.5))
     assert game.world_view.room_at(6.5, 5.0, 0.0) == "hall_g" and game.world_view.room_at(-5.0, 5.0, 0.0) is None
 

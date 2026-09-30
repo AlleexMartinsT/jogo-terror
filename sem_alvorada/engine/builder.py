@@ -34,22 +34,22 @@ launcher.start()
 '''
 
 
-def _new_object(name, data):
+def _new_object(name, datablock):
     obj = bpy.data.objects.get(name)
     if obj is None:
-        obj = bpy.data.objects.new(name, data)
+        obj = bpy.data.objects.new(name, datablock)
     return obj
 
 
 def make_player_camera(ctx):
-    data = bpy.data.cameras.get(C.OBJ_PLAYER_CAM) or bpy.data.cameras.new(C.OBJ_PLAYER_CAM)
-    data.sensor_fit = "HORIZONTAL"
-    data.lens_unit = "FOV"
-    data.angle = math.radians(C.FOV_DEG)
-    data.clip_start = 0.05
-    data.clip_end = PLAYER_FAR_CLIP
-    data.show_passepartout = False
-    cam = _new_object(C.OBJ_PLAYER_CAM, data)
+    camera_data = bpy.data.cameras.get(C.OBJ_PLAYER_CAM) or bpy.data.cameras.new(C.OBJ_PLAYER_CAM)
+    camera_data.sensor_fit = "HORIZONTAL"
+    camera_data.lens_unit = "FOV"
+    camera_data.angle = math.radians(C.FOV_DEG)
+    camera_data.clip_start = 0.05
+    camera_data.clip_end = PLAYER_FAR_CLIP
+    camera_data.show_passepartout = False
+    cam = _new_object(C.OBJ_PLAYER_CAM, camera_data)
     x, y, z = layout.PLAYER_START
     cam.location = (x, y, z + C.PLAYER_EYE_STAND)
     cam.rotation_euler = (math.pi / 2, 0.0, math.radians(layout.PLAYER_START_YAW_DEG))
@@ -58,14 +58,14 @@ def make_player_camera(ctx):
 
 
 def make_flashlight(ctx, cam):
-    data = bpy.data.lights.get(C.OBJ_FLASHLIGHT) or bpy.data.lights.new(C.OBJ_FLASHLIGHT, "SPOT")
-    data.energy = C.FLASH_ENERGY
-    data.spot_size = math.radians(C.FLASH_SPOT_DEG)
-    data.spot_blend = 0.25
-    data.color = WARM
-    data.use_shadow = True
-    data.shadow_soft_size = 0.03
-    light = _new_object(C.OBJ_FLASHLIGHT, data)
+    spot_data = bpy.data.lights.get(C.OBJ_FLASHLIGHT) or bpy.data.lights.new(C.OBJ_FLASHLIGHT, "SPOT")
+    spot_data.energy = C.FLASH_ENERGY
+    spot_data.spot_size = math.radians(C.FLASH_SPOT_DEG)
+    spot_data.spot_blend = 0.25
+    spot_data.color = WARM
+    spot_data.use_shadow = True
+    spot_data.shadow_soft_size = 0.03
+    light = _new_object(C.OBJ_FLASHLIGHT, spot_data)
     light.parent = cam
     light.location = LIGHT_OFFSET
     light.rotation_euler = (0.0, 0.0, 0.0)

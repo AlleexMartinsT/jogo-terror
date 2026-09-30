@@ -13,6 +13,7 @@ eixos locais do osso, que dependem do "roll" escolhido ao criar a armadura). Ass
 Para o Blender, a rig converte `Q` em rotação local do pose bone por conjugação:
 `B = R^-1 @ Q @ R`, onde `R` é a orientação de repouso do osso (`bone.matrix_local`).
 """
+import math
 from dataclasses import dataclass, field
 
 import bpy  # noqa: F401  (no pacote pip, importar bpy é o que torna `mathutils` importável)
@@ -38,7 +39,7 @@ FINGER_LENGTH = {"Index": 0.21, "Middle": 0.23, "Ring": 0.21, "Pinky": 0.17}
 # com a mão pendurada e a palma para a coxa, os dedos ficam lado a lado no eixo Y (polegar na frente)
 FINGER_Y = {"Index": 0.030, "Middle": 0.010, "Ring": -0.010, "Pinky": -0.030}
 ARM_SPREAD = {"shoulder": 0.21, "elbow": 0.25, "wrist": 0.29}
-MAX_FORCED_BEND = 0.34 * 3.141592653589793      # ~61 graus: quanto um osso com orientação imposta (pé) pode dobrar
+MAX_FORCED_BEND = 0.39 * 3.141592653589793      # ~70 graus: quanto um osso com orientação imposta (pé) pode dobrar
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,23 @@ for _side in ("L", "R"):
 
 def bone(name):
     return BONE_MAP[name]
+
+
+# pontos da sola do pé relativos ao tornozelo (calcanhar e ponta dos dedos), iguais aos do modelo
+SOLE_POINTS = (Vector((0.0, -0.065, -ANKLE_Z)), Vector((0.0, 0.30, -ANKLE_Z)))
+
+
+def sole_rise(pitch_degrees):
+    """Quanto o tornozelo precisa subir para a sola, inclinada `pitch_degrees`, não entrar no chão."""
+    p = math.radians(pitch_degrees)
+    lowest = min(pt.y * math.sin(p) + pt.z * math.cos(p) for pt in SOLE_POINTS)
+    return max(0.0, -lowest - ANKLE_Z)
+
+
+def sole_height(solution, foot_name):
+    """Altura do ponto mais baixo da sola do pé `foot_name` numa pose resolvida."""
+    origin, orientation = solution.head[foot_name], solution.world[foot_name]
+    return min((origin + orientation @ pt).z for pt in SOLE_POINTS)
 
 
 def foot_bones():

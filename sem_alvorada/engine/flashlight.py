@@ -10,8 +10,15 @@ from .. import conventions as C
 from .. import story
 from . import angles, texts
 
-LIGHT_OFFSET = (0.09, -0.10, -0.15)       # SPOT no espaço da câmera (x direita, y cima, z para trás)
-VIEWMODEL_OFFSET = (0.16, -0.15, -0.30)
+# Espaço da câmera: x direita, y cima, z para trás. O SPOT nasce na lente (à frente do corpo da lanterna,
+# que assim fica fora do cone e não estoura de tão perto) e recua quando há parede: lanterna colada na parede.
+VIEWMODEL_OFFSET = (0.15, -0.10, -0.20)
+LIGHT_XY = (0.15, -0.10)
+LIGHT_FORWARD_MAX = 0.52
+LIGHT_FORWARD_MIN = 0.10
+WALL_GAP = 0.12                           # a luz fica pelo menos isto antes da superfície à frente
+LIGHT_RETRACT_RATE = 18.0
+LIGHT_OFFSET = (LIGHT_XY[0], LIGHT_XY[1], -LIGHT_FORWARD_MAX)
 SWAP_SECONDS = 1.1
 SWAP_DIP = 0.22                           # quanto a lanterna desce na mão durante a troca
 BATTERY_FULL_ENOUGH = 0.9
@@ -45,6 +52,7 @@ class Flashlight:
         self._lag_pitch = 0.0
         self._clock = 0.0
         self.offset = (0.0, 0.0)           # (pitch, yaw) atual da luz em relação à câmera
+        self.forward_offset = LIGHT_FORWARD_MAX     # quanto a luz está à frente da câmera (m)
 
     # ---- comandos ----
     def toggle(self):
@@ -92,6 +100,7 @@ class Flashlight:
         self._drain(dt)
         self.intensity = self._effective_intensity(dt)
         self._follow_camera(dt, cam_yaw, cam_pitch)
+        self._retract_from_walls(dt)
         self._write_light()
         self._write_viewmodel(bob, show_viewmodel and self.state.has_flashlight)
 
@@ -152,6 +161,13 @@ class Flashlight:
         idle = IDLE_SWAY * math.sin(self._clock * 1.9)
         self.offset = (pitch_offset + idle, yaw_offset + idle * 0.6)
 
+    def _retract_from_walls(self, dt):
+        player = self.game.player
+        wall = self.game.collision.ray_distance(player.eye_pos, player.forward(), LIGHT_FORWARD_MAX + WALL_GAP)
+        target = min(LIGHT_FORWARD_MAX, max(LIGHT_FORWARD_MIN, wall - WALL_GAP))
+        follow = 1.0 - math.exp(-LIGHT_RETRACT_RATE * dt)
+        self.forward_offset += (target - self.forward_offset) * follow
+
     def snap_to_camera(self, cam_yaw, cam_pitch):
         self._lag_yaw, self._lag_pitch = cam_yaw, cam_pitch
         self.offset = (0.0, 0.0)
@@ -173,15 +189,16 @@ class Flashlight:
         if light is None:
             return
         battery_gain = low_battery_gain(self.state.battery)
-        data = light.data
-        data.energy = C.FLASH_ENERGY * self.intensity
-        data.spot_size = math.radians(C.FLASH_SPOT_DEG) * (0.8 + 0.2 * battery_gain)
+        spot = light.data
+        spot.energy = C.FLASH_ENERGY * self.intensity
+        spot.spot_size = math.radians(C.FLASH_SPOT_DEG) * (0.8 + 0.2 * battery_gain)
         mix = 1.0 - battery_gain
-        data.color = tuple(w + (k - w) * mix for w, k in zip(WARM, WEAK))
-        if hasattr(data, "use_custom_distance"):
-            data.use_custom_distance = True
-            data.cutoff_distance = 30.0 * (0.45 + 0.55 * battery_gain)
+        spot.color = tuple(w + (k - w) * mix for w, k in zip(WARM, WEAK))
+        if hasattr(spot, "use_custom_distance"):
+            spot.use_custom_distance = True
+            spot.cutoff_distance = 30.0 * (0.45 + 0.55 * battery_gain)
         pitch, yaw = self.offset
+        light.location = (LIGHT_XY[0], LIGHT_XY[1], -self.forward_offset)
         light.rotation_euler = (pitch, yaw, 0.0)
 
     def _write_viewmodel(self, bob, visible):

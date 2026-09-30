@@ -87,9 +87,9 @@ def add_item_objects(scene):
 def add_ceiling_lights(scene):
     for room, spots in layout.CEILING_LIGHTS.items():
         for index, (x, y) in enumerate(spots):
-            data = bpy.data.lights.new(f"Light_{room}_c{index}", "POINT")
-            data.energy = 60.0
-            light = bpy.data.objects.new(f"Light_{room}_c{index}", data)
+            lamp = bpy.data.lights.new(f"Light_{room}_c{index}", "POINT")
+            lamp.energy = 60.0
+            light = bpy.data.objects.new(f"Light_{room}_c{index}", lamp)
             scene.collection.objects.link(light)
             light.location = (x, y, layout.LEVEL_Z[layout.ROOMS[room].level] + 2.4)
             light[C.P_ROOM] = room

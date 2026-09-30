@@ -209,11 +209,14 @@ def demo_views():
         "front": ((0.0, 6.2, 1.5), (0, 0, 1.3), 34),
         "side": ((6.2, 0.0, 1.5), (0, 0, 1.3), 34),
         "threeq": ((-3.6, 4.6, 1.8), (0, 0, 1.3), 34),
-        "face": ((0.0, 1.1, 2.55), (0, 0.0, 2.52), 30),
+        "face": (None, None, 30),
     }
     tiles, labels = [], []
     os.makedirs(OUT_DIR, exist_ok=True)
     for name, (pos, target, fov) in views.items():
+        if pos is None:                                   # close do rosto: segue a cabeça da rig
+            head = Vector(rig.head_position())
+            pos, target = (head.x, head.y + 1.05, head.z + 0.03), tuple(head)
         aim_camera(cam, pos, target, fov)
         path = render(scene, os.path.join(OUT_DIR, f"view_{name}.png"), (360, 540) if name != "face" else (360, 540), 24)
         tiles.append(load_pixels(path))
@@ -289,6 +292,19 @@ def anim_strip(name, samples=None, size=(260, 440), samples_per_pixel=14):
     return out
 
 
+def combine_strips(names=None):
+    """Junta a linha de frente (metade de cima) de cada faixa `anim_<nome>.png` numa folha só, reduzida à metade."""
+    rows = []
+    for name in (names or ANIM_SAMPLES):
+        strip = load_pixels(os.path.join(OUT_DIR, f"anim_{name}.png"))
+        top = strip[: strip.shape[0] // 2]
+        rows.append(0.25 * (top[0::2, 0::2] + top[1::2, 0::2] + top[0::2, 1::2] + top[1::2, 1::2]))
+    width = min(row.shape[1] for row in rows)
+    out = os.path.join(OUT_DIR, "contact_sheet.png")
+    save_png(out, np.concatenate([row[:, :width] for row in rows], axis=0))
+    return out
+
+
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "views"
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -297,3 +313,7 @@ if __name__ == "__main__":
     elif mode == "anims":
         for anim in (sys.argv[2:] or ANIM_SAMPLES):
             print(anim_strip(anim))
+        if not sys.argv[2:]:
+            print(combine_strips())
+    elif mode == "combine":
+        print(combine_strips())

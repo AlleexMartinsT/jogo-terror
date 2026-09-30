@@ -233,9 +233,9 @@ class NavGrid:
 
     def _center_on_doors(self, points):
         """Faz o caminho cruzar cada porta pelo centro, perpendicular ao vão."""
-        result = []
+        path_points = []
         for index, point in enumerate(points):
-            result.append(point)
+            path_points.append(point)
             if index + 1 >= len(points) or points[index + 1][2] != point[2]:
                 continue
             nxt = points[index + 1]
@@ -244,8 +244,8 @@ class NavGrid:
                     continue
                 crossing = _crossing(point, nxt, op)
                 if crossing is not None:
-                    result.extend(crossing)
-        return result
+                    path_points.extend(crossing)
+        return path_points
 
 
 def layout_floor(x, y, level):

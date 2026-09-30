@@ -17,6 +17,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 import bpy  # noqa: E402
+from mathutils import Vector  # noqa: E402
 
 from sem_alvorada import build as project_build  # noqa: E402
 from sem_alvorada import conventions as C  # noqa: E402
@@ -110,7 +111,42 @@ def set_room_fill(scene, room, power):
     fill.location = (*rect.center, layout.LEVEL_Z[layout.ROOMS[room].level] + 2.35)
 
 
+def item_views(scene):
+    """Uma vista por item (lanterna de frente): de cima e de lado para os apoiados, de frente para os presos na parede."""
+    views = []
+    for obj in sorted(scene.objects, key=lambda o: o.name):
+        if not obj.name.startswith(C.N_ITEM):
+            continue
+        target = obj.matrix_world.translation
+        if obj.get("sa_mount") == "wall":
+            fx, fy = C.yaw_dir(obj.rotation_euler.z)
+            eye = target + Vector((fx * 0.75, fy * 0.75, 0.25))
+        else:
+            room = layout.ROOMS[obj[C.P_ROOM]].rect
+            to_center = Vector((room.center[0] - target.x, room.center[1] - target.y, 0.0))
+            to_center = to_center.normalized() if to_center.length > 0.01 else Vector((0.0, -1.0, 0.0))
+            eye = target + to_center * 0.75 + Vector((0.0, 0.0, 0.6))
+        views.append(look_at_view(obj.name, tuple(eye), tuple(target), 0.0))
+    return views
+
+
+def viewmodel_views(scene):
+    """Mostra o viewmodel (oculto no jogo) flutuando no escuro, de lado e de trás da mão."""
+    obj = scene.objects[C.OBJ_VIEW_FLASH]
+    obj.hide_render = False
+    obj.location = (16.0, -4.0, 1.4)
+    obj.rotation_euler = (math.radians(90), 0, 0)
+    pos = Vector(obj.location)
+    return [look_at_view("viewmodel_side", tuple(pos + Vector((0.9, 0.0, 0.0))), tuple(pos), 0.0),
+            look_at_view("viewmodel_fp", tuple(pos + Vector((0.12, -0.75, 0.2))), tuple(pos + Vector((0.0, 0.15, 0.0))), 0.0)]
+
+
 def render_room_views(scene, rooms, args):
+    if "items" in rooms or "viewmodel" in rooms:
+        extra = item_views(scene) if "items" in rooms else viewmodel_views(scene)
+        preview.render_views(scene, extra, os.path.join(OUT_DIR, "v"), "cycles", tuple(args.res), args.samples,
+                             0.002 if args.flash else args.fill, args.exposure, args.fov)
+        rooms = [r for r in rooms if r not in ("items", "viewmodel")]
     for room in rooms:
         floor = layout.LEVEL_Z[layout.ROOMS[room].level] if room in layout.ROOMS else 0.0
         set_room_fill(scene, "garage" if room == "car" else room, 0.0 if args.flash else args.room_light)
@@ -128,6 +164,7 @@ def main(argv=None):
     ap.add_argument("--samples", type=int, default=24)
     ap.add_argument("--exposure", type=float, default=0.0)
     ap.add_argument("--res", default="640x360")
+    ap.add_argument("--fov", type=float, default=72.0, help="campo de visão; use ~28 nas vistas de itens")
     ap.add_argument("--no-render", action="store_true")
     ap.add_argument("--save", default="")
     args = ap.parse_args(argv)
@@ -140,6 +177,7 @@ def main(argv=None):
     from sem_alvorada import props
     ctx.stage = "props"
     props.build(ctx)
+    bpy.context.view_layer.update()            # matrix_world dos objetos novos, usada nas vistas dos itens
     problems = placement.validate_layout(scene)
     for line in problems:
         print("AVISO:", line)

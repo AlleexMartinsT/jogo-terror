@@ -187,14 +187,12 @@ def foot_cycle(gait, p, irregular):
     if p < gait.duty:
         s = p / gait.duty
         y = gait.stride * (0.5 - s)
-        heel = 9.0 * (1.0 - smoothstep(s, 0.0, 0.25))
-        toe_off = -34.0 * smoothstep(s, 0.72, 1.0)
-        rise = 0.20 * math.sin(math.radians(-toe_off)) if toe_off < 0 else 0.0
-        return y, rise, heel + toe_off
+        pitch = 9.0 * (1.0 - smoothstep(s, 0.0, 0.25)) - 34.0 * smoothstep(s, 0.72, 1.0)
+        return y, S.sole_rise(pitch), pitch
     q = (p - gait.duty) / (1.0 - gait.duty)
     y = gait.stride * (-0.5 + smoothstep(q))
-    z = gait.lift * irregular * math.sin(math.pi * q) ** 0.8
-    return y, z, lerp(-34.0, 9.0, smoothstep(q))
+    pitch = lerp(-34.0, 9.0, smoothstep(q))
+    return y, gait.lift * irregular * math.sin(math.pi * q) ** 0.8 + S.sole_rise(pitch), pitch
 
 
 def locomotion(pose, motion, name, weight):
@@ -479,7 +477,7 @@ class Motion:
         BUILDERS[name](pose, self)
         apply_look(pose, self.look_yaw, self.look_pitch, self.look_weight)
         solution = S.solve(pose.to_spec())
-        if self.head_limit is not None and name != "attack":
+        if self.head_limit is not None:
             solution = self._stoop(pose, solution)
         return solution
 
@@ -526,7 +524,7 @@ class Motion:
     @staticmethod
     def _ground_clamp(solution):
         """Se algum pé afundou no chão (mistura de poses), sobe o quadril o suficiente."""
-        lowest = min(min(solution.tail(f).z, solution.head[f].z - 0.055) for f in S.foot_bones())
+        lowest = min(S.sole_height(solution, f) for f in S.foot_bones())
         if lowest >= -1e-4:
             return solution
         hips = solution.hips_shift + Vector((0.0, 0.0, -lowest))
