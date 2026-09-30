@@ -171,8 +171,7 @@ def _clipped(piece, rect, exclusion):
 def _add_trim_strips(builder, piece, side, room_id):
     if piece.kind in ("full", "sill"):
         for x0, y0, x1, y1 in _clipped(piece, _strip(piece, side, BASEBOARD_DEPTH), _stairs_exclusion(piece, side)):
-            builder.box(x0, y0, piece.z0, x1, y1, piece.z0 + BASEBOARD_HEIGHT, "trim_white",
-                        skip=("-z", "-x", "+x", "-y", "+y") if False else ("-z",))
+            builder.box(x0, y0, piece.z0, x1, y1, piece.z0 + BASEBOARD_HEIGHT, "trim_white", skip=("-z",))
     if piece.kind in ("full", "lintel") and room_id not in NO_CROWN_ROOMS:
         top = layout.CEIL_Z[piece.level]
         x0, y0, x1, y1 = _strip(piece, side, CROWN_DEPTH)

@@ -1,5 +1,9 @@
-"""Stub inicial do módulo 'world'. O agente responsável substitui este arquivo."""
+"""Módulo world: a casa, o exterior, os materiais, as luzes de teto e a atmosfera.
+
+`build(ctx)` cria tudo em ordem; cada parte registra o que fez com `ctx.log`.
+"""
+from . import shell
 
 
 def build(ctx):
-    ctx.log("stub, nada a construir ainda")
+    shell.build(ctx)
