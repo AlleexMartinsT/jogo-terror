@@ -24,7 +24,7 @@ def build_master(ctx):
     bedrooms.make_bedside_clutter(ctx, room, 0.42, 6.34, top + 0.001, -math.pi / 2, "book")
     bedrooms.make_bedside_clutter(ctx, room, 0.27, 8.60, top + 0.001, 0.0, "pills")
     bedrooms.make_table_lamp(ctx, room, 0.30, 8.90, top + 0.001, 0.0, height=0.42, name="lamp_master")
-    bedrooms.make_alarm_clock(ctx, room, 0.44, 8.74, top + 0.001, -math.pi / 2)
+    bedrooms.make_alarm_clock(ctx, room, 0.47, 8.70, top + 0.001, -math.pi / 2)
     make_point_light(ctx, room, 1, (0.30, 8.90, top + 0.30), 40.0, WARM_LAMP, "lamp", flicker=0.0)
 
     x, y, wall_yaw = against_wall(room, "E", 6.9, 0.5)
@@ -89,7 +89,7 @@ def build_study(ctx):
     office.make_papers(ctx, room, 10.05, 9.45, top + 0.001, count=5)
     office.make_desk_lamp(ctx, room, 11.15, 9.6, top + 0.001, math.pi)
     make_point_light(ctx, room, 1, (11.1, 9.42, top + 0.34), 30.0, WARM_LAMP, "lamp", flicker=0.15)
-    furniture.make_chair(ctx, room, 10.0, 8.15, math.radians(160), style="office", fallen=True, cushion="leather_brown")
+    furniture.make_chair(ctx, room, 10.0, 7.6, math.radians(160), style="office", fallen=True, cushion="leather_brown")
     office.make_bookcase(ctx, room, "W", 6.4, width=1.6, name="bookcase_study")
     office.make_filing_cabinet(ctx, room, "E", 6.7)
     office.make_globe(ctx, room, 11.5, 7.6)

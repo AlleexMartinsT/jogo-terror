@@ -80,16 +80,6 @@ class MeshBuilder:
             self.polygon(near[::-1], material)
             self.polygon(far, material)
 
-    def prism(self, outline, z0, z1, material, cap_materials=None):
-        """Extrusão vertical de um contorno 2D anti-horário (colunas, dutos, tampas)."""
-        n = len(outline)
-        for i in range(n):
-            (ax, ay), (bx, by) = outline[i], outline[(i + 1) % n]
-            self.quad((ax, ay, z0), (bx, by, z0), (bx, by, z1), (ax, ay, z1), material)
-        caps = cap_materials or (material, material)
-        self.polygon([(x, y, z0) for x, y in reversed(outline)], caps[0])
-        self.polygon([(x, y, z1) for x, y in outline], caps[1])
-
     def cylinder(self, u, v, w0, w1, radius, material, sides=8, radius_top=None, caps=True, axis="z"):
         """Cilindro (ou tronco de cone se `radius_top` difere) com eixo em x, y ou z.
 

@@ -80,7 +80,7 @@ def make_tv_console(ctx, room, x, y, yaw, *, anchor=None, z=None):
 def _crt_television(m, z0):
     """TV de tubo de 20 polegadas: caixa frontal, fundo afunilado, tela com o chiado e antena."""
     half_w, half_h = 0.30, 0.24
-    front_y, mid_y, back_y = 0.16, -0.06, -0.36
+    front_y, mid_y, back_y = 0.18, -0.02, -0.22
     rings = [[(-half_w, front_y, z0), (half_w, front_y, z0), (half_w, front_y, z0 + 2 * half_h), (-half_w, front_y, z0 + 2 * half_h)],
              [(-half_w, mid_y, z0), (half_w, mid_y, z0), (half_w, mid_y, z0 + 2 * half_h), (-half_w, mid_y, z0 + 2 * half_h)],
              [(-0.17, back_y, z0 + 0.06), (0.17, back_y, z0 + 0.06), (0.17, back_y, z0 + 0.38), (-0.17, back_y, z0 + 0.38)]]

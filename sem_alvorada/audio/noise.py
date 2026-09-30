@@ -33,7 +33,7 @@ da casa não seja previsível.
 """
 import heapq
 import math
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from .. import conventions as C
@@ -54,6 +54,8 @@ class NoiseRules:
     hear_threshold: float = HEAR_THRESHOLD
     door_open_transparent: float = 0.5     # abertura (0..1) a partir da qual a porta não bloqueia mais
     hold_fraction: float = 0.35            # fração do ttl em força total; depois cai linearmente a 0
+    hear_window: float = 0.35              # a entidade só percebe um som pontual enquanto ele é novo (s)
+    sustained_ttl: float = 2.0             # eventos com ttl a partir disto (telefone tocando) valem a vida toda
     merge_distance: float = 0.35           # emissões contínuas iguais e próximas viram um evento só
     merge_window: float = 0.15
     max_events: int = 96
@@ -242,6 +244,7 @@ class NoiseSystem:
         self._events = []
         self._next_uid = 1
         self._listener = None
+        self._last_player_pos = None
         self._hud = {"player": 0.0, "ambient": 0.0, "entity": 0.0}
         self._silence_left = 0.0
         self._ambient_countdown = None
@@ -269,7 +272,7 @@ class NoiseSystem:
         if len(self._events) > rules.max_events:
             self._events.pop(0)
         if source == "player":
-            self._listener_fallback = pos
+            self._last_player_pos = pos
         return event
 
     def update(self, dt):
@@ -433,13 +436,21 @@ class NoiseSystem:
         """Eventos do jogador e do ambiente que a entidade em `pos` consegue ouvir, do mais forte ao mais fraco."""
         door_share, mask_cache, heard = self._door_losses(), {}, []
         for event in self._events:
-            if event.source == "entity":
+            if event.source == "entity" or not self._is_fresh(event):
                 continue
             value = self._effective(event, pos, door_share, mask_cache)
             if value >= self.rules.hear_threshold:
                 heard.append(HeardEvent(event.uid, event.source, event.kind, event.pos, value, event.age, event.room))
         heard.sort(key=lambda h: -h.loudness)
         return heard
+
+    def _is_fresh(self, event):
+        """Um estalo já aconteceu e passou; uma campainha insistente continua chamando por toda a duração.
+
+        Sem isto, abrir uma porta um segundo depois "revelaria" o passo dado atrás dela.
+        """
+        rules = self.rules
+        return event.age <= rules.hear_window or event.ttl >= rules.sustained_ttl
 
     def _ambient_level(self, room_id, exclude_uid=None):
         room = layout.ROOMS.get(room_id)
@@ -463,7 +474,7 @@ class NoiseSystem:
 
     # ---- medidores do HUD -------------------------------------------------
     def _listener_pos(self):
-        return self._listener or getattr(self, "_listener_fallback", None)
+        return self._listener or self._last_player_pos
 
     def _hud_targets(self):
         targets = {"player": 0.0, "ambient": 0.0, "entity": 0.0}

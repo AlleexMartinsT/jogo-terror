@@ -186,10 +186,12 @@ class Sim:
 # --------------------------------------------------------------------------
 # Verificações geométricas sobre um traçado
 # --------------------------------------------------------------------------
+_WALLS = {level: layout.solid_rects(level) for level in (0, 1)}
+
+
 def inside_any_wall(x, y, z):
     """O ponto está DENTRO de alguma parede (folga zero)? Usa `layout.solid_rects` do andar da altura z."""
-    rects = layout.solid_rects(layout.level_of_z(z))
-    return any(r.x0 < x < r.x1 and r.y0 < y < r.y1 for r in rects)
+    return any(r.x0 < x < r.x1 and r.y0 < y < r.y1 for r in _WALLS[layout.level_of_z(z)])
 
 
 def wall_violations(trace):
@@ -197,10 +199,13 @@ def wall_violations(trace):
     bad = []
     for previous, current in zip(trace, trace[1:]):
         level = layout.level_of_z(current[3])
-        walls = layout.solid_rects(level)
         a, b = (previous[1], previous[2]), (current[1], current[2])
-        if inside_any_wall(current[1], current[2], current[3]) or (
-                layout.level_of_z(previous[3]) == level and any(segment_hits_rect(a, b, w) and not _touches_only(a, b, w) for w in walls)):
+        crossed = False
+        if layout.level_of_z(previous[3]) == level and a != b:
+            low_x, high_x, low_y, high_y = min(a[0], b[0]), max(a[0], b[0]), min(a[1], b[1]), max(a[1], b[1])
+            crossed = any(w.x0 < high_x and low_x < w.x1 and w.y0 < high_y and low_y < w.y1
+                          and segment_hits_rect(a, b, w) and not _touches_only(a, b, w) for w in _WALLS[level])
+        if inside_any_wall(current[1], current[2], current[3]) or crossed:
             bad.append((round(current[0], 2), round(current[1], 2), round(current[2], 2)))
     return bad
 
@@ -293,12 +298,13 @@ def scenario_kill_standing(seed=5, flashlight=True):
     return sim
 
 
-def scenario_hide_behind_door(seed=6):
-    """Perseguição no andar de cima: o jogador entra no quarto da menina, fecha a porta e fica quieto no canto."""
-    sim = Sim(seed, player_at=(6.9, 1.6, 2.8), entity_at=(6.9, 7.0, 2.8), entity_yaw=C.dir_yaw(0, -1))
+def scenario_hide_behind_door(seed=6, lock_after_close=False):
+    """Perseguição no andar de cima: o jogador entra no quarto da menina, fecha a porta, corre até o canto
+    (o ruído não atravessa a porta fechada) e fica agachado e quieto."""
+    sim = Sim(seed, player_at=(5.9, 1.6, 2.8), entity_at=(6.9, 9.0, 2.8), entity_yaw=C.dir_yaw(0, -1), entity_pause=20.0)
     player = sim.player
     player.flashlight = True
-    player.aim = (6.9, 7.0, 5.0)
+    player.aim = (6.9, 9.0, 5.0)
     phase = {"in": False, "closed": False, "hidden": False}
 
     def script(s, out):
@@ -310,8 +316,10 @@ def scenario_hide_behind_door(seed=6):
         if phase["in"] and not phase["closed"] and player.body.x < 4.0:
             phase["closed"] = True
             s.world.close_door("kids_hall")
-            player.make_noise("door_close", C.NOISE_PLAYER["door_close"])
-            player.goto(0.6, 4.4, 2.8, "crouch")
+            if lock_after_close:          # o quarto da menina tem duas portas: tranca as duas
+                s.world.lock("kids_hall")
+                s.world.lock("kids_master")
+            player.goto(0.6, 4.4, 2.8, "run")
         if phase["closed"] and not player.moving and not phase["hidden"]:
             phase["hidden"] = True
             player.stop(crouch=True)
@@ -329,9 +337,11 @@ def scenario_stalk(seed=7):
     return sim
 
 
-def scenario_wander(seed=8, seconds=300.0, aggression=1):
+def scenario_wander(seed=8, seconds=300.0, aggression=1, unlock_garage=False):
     """Jogador imortal que vaga pela casa; quando a entidade o mata, ele reaparece longe e ela é reativada."""
     sim = Sim(seed, aggression, player_at=layout.PLAYER_START, entity_at=layout.ENTITY_SPAWN, hunt=True)
+    if unlock_garage:
+        sim.world.unlock("garage_door")
     rng = random.Random(seed + 100)
     rooms = [r for r in layout.ROOMS if r != "garage"]
     kills = {"count": 0}

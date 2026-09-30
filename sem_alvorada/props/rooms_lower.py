@@ -49,7 +49,7 @@ def build_den(ctx):
     office.make_crt_computer(ctx, room, 1.2, 9.5, top, math.radians(200))
     office.make_desk_lamp(ctx, room, 2.28, 9.55, top, math.pi)
     make_point_light(ctx, room, 1, (2.22, 9.4, top + 0.34), 28.0, WARM_LAMP, "lamp", flicker=0.1)
-    office.make_papers(ctx, room, 1.75, 9.45, top + 0.001, count=6)
+    office.make_papers(ctx, room, 1.62, 9.45, top + 0.001, count=6, spread=0.18)
     for cx, cy in ((1.75, 9.65), (2.42, 9.25), (0.98, 9.28)):
         furniture.make_cup(ctx, room, cx, cy, top)
     furniture.make_chair(ctx, room, 1.75, 8.6, 0.25, style="office", cushion="fabric_gray")
@@ -67,9 +67,9 @@ def build_den(ctx):
 def build_hall_ground(ctx):
     """Entrada: calçados de toda a família, o casaco amarelo da Emma e as fotos subindo a escada."""
     room = "hall_g"
-    entrance.make_shoe_rack(ctx, room, "S", 5.62)
-    entrance.make_umbrella_stand(ctx, room, 7.15, 0.32)
-    entrance.make_coat_rack(ctx, room, 7.68, 0.48)
+    entrance.make_shoe_rack(ctx, room, "S", 5.72)
+    entrance.make_umbrella_stand(ctx, room, 5.21, 0.33)
+    entrance.make_coat_rack(ctx, room, 7.38, 0.48)
     furniture.make_side_table(ctx, room, "E", 5.2, width=1.1, depth=0.38, height=0.82, name="hall_console")
     living.make_telephone(ctx, room, 7.75, 4.85, 0.82, math.pi / 2)
     furniture.make_photo_frame(ctx, room, 7.76, 5.6, 0.82, math.pi / 2 + 0.1, "photo_trio")
@@ -138,7 +138,7 @@ def build_garage(ctx):
     garage.make_chest_freezer(ctx, room, "W", 1.6)
     garage.make_kids_bicycle(ctx, room, 12.4, 3.25, 0.0)
     garage.make_water_heater(ctx, room, 18.05, 6.5)
-    garage.make_lawn_mower(ctx, room, 17.95, 1.35, math.radians(20))
+    garage.make_lawn_mower(ctx, room, 17.85, 1.3, math.radians(10))
     furniture.make_box_stack(ctx, room, 12.55, 0.6, 0.0, [(1.0, 0, 0, 0), (0.9, 0.0, 0.0, 8), (0.8, 0.03, 0.0, -6)],
                              label="cardboard_emma")
     furniture.make_box_stack(ctx, room, 12.5, 4.3, 0.0, [(0.9, 0, 0, 0), (0.7, 0.0, 0.0, 14)], label="cardboard_toys")

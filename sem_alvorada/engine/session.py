@@ -165,6 +165,7 @@ class PlaySession:
         finally:
             self.controls.inp.clear_edges()
         self.model = self.game.hud_model()
+        self.view.sync_size()
         self.view.area.tag_redraw()
 
     def _register_error(self, error):

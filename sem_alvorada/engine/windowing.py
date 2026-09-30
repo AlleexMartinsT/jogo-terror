@@ -36,6 +36,7 @@ class PlayView:
         self.region = _region_of(area)
         self.made_fullscreen = False
         self._saved = {}
+        self._fitted_size = None
 
     @property
     def space(self):
@@ -87,6 +88,13 @@ class PlayView:
         render.resolution_y = RENDER_HEIGHT
         render.resolution_x = max(320, round(RENDER_HEIGHT * aspect))
         render.resolution_percentage = 100
+        self._fitted_size = (self.region.width, self.region.height)
+
+    def sync_size(self):
+        """Reajusta o quadro se a região mudou de tamanho (o Blender só atualiza depois da maximização)."""
+        if self._saved and self._fitted_size != (self.region.width, self.region.height):
+            self._match_render_aspect()
+            self._fit_camera_frame()
 
     def _fit_camera_frame(self):
         try:

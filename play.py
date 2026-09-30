@@ -10,11 +10,12 @@ import argparse
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+import bpy
+
+# `__file__` não existe quando o script roda pelo editor de texto; aí vale a pasta do .blend aberto.
+ROOT = os.path.dirname(os.path.abspath(globals().get("__file__") or bpy.data.filepath or "."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
-
-import bpy  # noqa: E402
 
 from sem_alvorada import BLEND_PATH  # noqa: E402
 

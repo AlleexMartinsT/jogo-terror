@@ -204,6 +204,13 @@ def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, 
     os.makedirs(out_dir, exist_ok=True)
     setup_cycles(scene, res, samples, exposure)
     host = PreviewHost(scene, START_STATE[name])
+    if name == "death":                    # no jogo a entidade já está colada no jogador quando mata
+        px, py, pz, pyaw = host.state
+        dx, dy = C.yaw_dir(pyaw)
+        host.entity.set_visible(True)
+        host.entity.set_transform(px + dx * 1.1, py + dy * 1.1, pz, pyaw + math.pi)
+        host.entity.set_anim("attack")
+        host.entity.eyes(0.6)
     player = CutscenePlayer(host)
     player.play(name)
     tiles, labels = [], []

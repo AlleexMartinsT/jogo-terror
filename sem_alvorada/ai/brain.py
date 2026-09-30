@@ -20,8 +20,8 @@ from .. import conventions as C
 from .. import layout
 from . import nav as nav_module
 from .pathfollow import Body, PathFollower
-from .perception import (ENTITY_EYE_HEIGHT, Hearing, Senses, awareness_change, entity_head, flashlight_points_at,  # noqa: F401
-                         look_at_player, player_target)
+from .perception import (Hearing, awareness_change, entity_head, flashlight_points_at, look_at_player,
+                         player_target)
 from .tuning import BrainTuning
 
 MAX_CHASE_SPEED = 4.5          # abaixo da corrida do jogador (4.6) mesmo com agressividade máxima
@@ -181,7 +181,7 @@ class EntityBrain:
         px, py, pz = senses.player_pos
         if abs(pz - self.body.z) >= 1.5 or math.hypot(px - self.body.x, py - self.body.y) > self.t.presence_radius:
             return False
-        return self.world.room_at(px, py, pz) == self.world.room_at(*self.body.pos())
+        return self._room_at(px, py, pz) == self._room_at(*self.body.pos())
 
     def _refresh_presence_guess(self, dt, senses):
         """A cada segundo atualiza um palpite de onde o jogador está (erro de ~1 m)."""
@@ -199,11 +199,11 @@ class EntityBrain:
         if self.nav.layer_at(*origin) == nav_module.STAIRS:
             st = layout.STAIRS
             return (min(max(target[0], st.x0 + 0.3), st.x1 - 0.2), min(max(target[1], st.y0), st.y1), origin[2])
-        room = self.world.room_at(*origin)
+        room = self._room_at(*origin)
         for share in (1.0, 0.6, 0.3):
             x = origin[0] + (target[0] - origin[0]) * share
             y = origin[1] + (target[1] - origin[1]) * share
-            if self.world.room_at(x, y, origin[2]) == room:
+            if self._room_at(x, y, origin[2]) == room:
                 return (x, y, origin[2])
         return tuple(origin)
 
@@ -494,17 +494,22 @@ class EntityBrain:
             rate = self.t.turn_rate_chase if self.state in ("chase", "attack") else self.t.turn_rate_walk
             self.body.yaw = _turn_towards(self.body.yaw, wanted, rate * dt)
 
+    def _room_at(self, x, y, z):
+        """Id do cômodo; aceita que o engine devolva o objeto Room em vez do id."""
+        room = self.world.room_at(x, y, z)
+        return getattr(room, "id", room)
+
     # ---- escolhas -------------------------------------------------------------------------
     def _note_room(self):
-        room = self.world.room_at(*self.body.pos())
+        room = self._room_at(*self.body.pos())
         if room:
             self.visits[room] = self.now
 
     def _choose_patrol_goal(self, senses):
         """Sorteia o próximo cômodo (mais tempo sem visita = melhor) e um ponto nele. False se nada é alcançável."""
-        here = self.world.room_at(*self.body.pos())
+        here = self._room_at(*self.body.pos())
         rooms = [r for r in layout.ROOMS if r != here and not (r == "garage" and self.world.is_locked("garage_door"))]
-        player_room = self.world.room_at(*senses.player_pos)
+        player_room = self._room_at(*senses.player_pos)
         bias = self.t.patrol_player_bias * self.aggression
         scored = []
         for room in rooms:
@@ -526,7 +531,7 @@ class EntityBrain:
 
     def _pick_look_target(self):
         """Olha por uma porta do cômodo (60%) ou para uma direção qualquer."""
-        here = self.world.room_at(*self.body.pos())
+        here = self._room_at(*self.body.pos())
         links = [link for _, link in layout.neighbors(here)] if here else []
         eye_z = self.body.z + 1.6
         if links and self.rng.random() < 0.6:
@@ -538,7 +543,7 @@ class EntityBrain:
     def _pick_search_points(self):
         """Último ponto conhecido e alguns pontos nos cômodos vizinhos, do mais perto ao mais longe."""
         centre = self.last_known or self.body.pos()
-        room_id = self.world.room_at(*centre) or self.world.room_at(*self.body.pos())
+        room_id = self._room_at(*centre) or self._room_at(*self.body.pos())
         rooms = [room_id] if room_id else []
         for neighbour, link in layout.neighbors(room_id) if room_id else []:
             if link.opening and self.world.is_locked(link.opening):

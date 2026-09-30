@@ -16,6 +16,7 @@ import math
 import os
 import sys
 import time
+from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -29,7 +30,6 @@ from sem_alvorada import conventions as C  # noqa: E402
 from sem_alvorada import layout, story  # noqa: E402
 from sem_alvorada.engine import collision  # noqa: E402
 from sem_alvorada.engine.game import Game  # noqa: E402
-from sem_alvorada.engine.interact import SIGHT_MARGIN  # noqa: E402
 from sem_alvorada.engine.player import STAND_HEIGHT  # noqa: E402
 
 OUT_BLEND = os.path.join(fk.ROOT, "out", "engine", "sim.blend")
@@ -53,6 +53,7 @@ class NavGrid:
         self.ny = int(10.5 / GRID)
         self.free = {level: self._scan(level) for level in (0, 1)}
         self.locked_cells = set()
+        self.leaf_cells = set()
         self.reachable = set()
         self.refresh_locks()
 
@@ -99,7 +100,23 @@ class NavGrid:
         """Célula livre E alcançável desde o início (a colisão deixa células "livres" dentro de móveis)."""
         return (0 <= ix < self.nx and 0 <= iy < self.ny and self.free[level][ix][iy]
                 and not (level == 0 and (ix, iy) in self.locked_cells)
+                and (level, ix, iy) not in self.leaf_cells
                 and (not self.reachable or (level, ix, iy) in self.reachable))
+
+    def refresh_leaves(self):
+        """Folhas de porta abertas são paredes finas: bloqueiam as células coladas nelas."""
+        self.leaf_cells = set()
+        reach = C.PLAYER_RADIUS + 0.04
+        for door in self.game.doors.doors.values():
+            if door.openness < 0.3:
+                continue
+            x0, y0, x1, y1, _ = door.segment
+            for ix in range(int((min(x0, x1) - reach) / GRID), int((max(x0, x1) + reach) / GRID) + 1):
+                for iy in range(int((min(y0, y1) - reach) / GRID), int((max(y0, y1) + reach) / GRID) + 1):
+                    cx, cy = self.cell_center(ix, iy)
+                    nearest = collision.closest_on_segment(cx, cy, x0, y0, x1, y1)
+                    if math.hypot(cx - nearest[0], cy - nearest[1]) < reach:
+                        self.leaf_cells.add((door.level, ix, iy))
 
     def _flood(self, start_xy):
         """Todas as células alcançáveis a partir de start_xy (andar do jogador), inclusive pela escada."""
@@ -271,6 +288,7 @@ class Bot:
         self.stuck_clock = 0.0
         self.last_probe = (game.player.x, game.player.y, game.clock)
         self.detour = 0.0
+        self.stuck = False
         self.goals_failed = []
 
     # ---- controle de baixo nível ----
@@ -328,7 +346,9 @@ class Bot:
     # ---- movimento ----
     def plan(self, goal):
         player = self.game.player
+        self.nav.refresh_leaves()
         self.path = self.nav.path((player.x, player.y, player.level), goal) or []
+        self.last_probe = (player.x, player.y, self.game.clock)
         return bool(self.path)
 
     def follow_path(self, hurry=False):
@@ -354,12 +374,13 @@ class Bot:
     def _watch_progress(self):
         player = self.game.player
         x0, y0, t0 = self.last_probe
-        if self.game.clock - t0 < 3.0:
+        if self.game.clock - t0 < 3.0 or self.game.phase != "play":
             return
         moved = math.hypot(player.x - x0, player.y - y0)
         self.last_probe = (player.x, player.y, self.game.clock)
         if moved < 0.3 and self.game.phase == "play":
             self.detour = 0.6
+            self.stuck = True
             self.log.append(f"t={self.game.clock:.0f}s preso perto de ({player.x:.1f},{player.y:.1f}); tentando desviar")
 
     def _door_in_the_way(self):
@@ -400,17 +421,15 @@ class Bot:
                 x, y = self.nav.cell_center(ix0 + dx, iy0 + dy)
                 dist = math.hypot(x - tx, y - ty)
                 eye = (x, y, z + C.PLAYER_EYE_STAND)
-                if 0.7 <= dist <= 1.5 and self._sees(eye, target):
+                if 0.5 <= dist <= 1.8 and math.dist(eye, target) <= C.INTERACT_RANGE - 0.1 and self._sees(eye, target):
                     score = dist
                     if best is None or score < best[0]:
                         best = (score, x, y)
         return None if best is None else (best[1], best[2], level)
 
     def _sees(self, eye, target):
-        """Mesma regra de visada do jogo: a linha para 8 cm antes do alvo está livre."""
-        distance = math.dist(eye, target)
-        end = tuple(e + (t - e) * (distance - SIGHT_MARGIN) / distance for e, t in zip(eye, target))
-        return self.game.collision.line_clear(eye, end) and not self.game.doors.blocks_sight(eye, end)
+        """A mesma regra de visada do jogo (Interact.can_see)."""
+        return self.game.interact.can_see(eye, target)
 
     def go_and_use(self, target, done, label):
         """Anda até perto de `target` (x, y, z), mira e aperta [E] até `done()` ficar verdadeiro."""
@@ -427,6 +446,9 @@ class Bot:
                 if game.phase == "credits":
                     return done()
                 continue
+            if self.stuck:
+                self.stuck = False
+                self.plan(spot)
             if self.path and not self.follow_path(hurry=self.run):
                 self.tick()
                 continue
@@ -607,6 +629,8 @@ def summarize(title, game, bot, wall_seconds):
           f"pilhas encontradas={state.batteries_found} (reserva {state.spare_batteries}) notas lidas={len(state.notes_read)}")
     print(f"  ruído máximo   : {game.peak_noise:.2f}   eventos de ruído do jogador: "
           f"{sum(1 for e in game.noise_log if e[0] == 'player')}   mortes: {state.deaths}")
+    seen = Counter(game.cutscene_history)
+    print(f"  cutscenes vistas: {', '.join(f'{name} x{count}' if count > 1 else name for name, count in seen.items()) or '-'}")
     print(f"  colisão        : {game.collision.kind}   entidade: {'ligada' if game.entity.enabled else 'desligada'}   "
           f"cutscenes: {'reais' if game.cutscenes is not None else 'ausentes'}")
     if game.interact.missing_from_scene:

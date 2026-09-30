@@ -24,7 +24,7 @@ CURTAINS = {
     "w_master_n": ("open", "long"), "w_master_w": ("closed", "long"),
     "w_kids_s": ("closed", "long"), "w_kids_w": ("closed", "long"),
 }
-SHUTTERED_WALL = 0.0   # persianas de madeira nas janelas largas da fachada da rua
+SHUTTER_WALL_Y = 0.0   # venezianas nas janelas largas do térreo voltadas para a rua
 
 
 def build(ctx):
@@ -168,7 +168,7 @@ def build_window(ctx, op, piece):
     builder = MeshBuilder(f"Window_{op.id}")
     _sash(builder, op, z_bottom, z_top)
     _window_trim(builder, op, piece, inward, z_bottom, z_top)
-    if op.axis == "x" and op.pos == SHUTTERED_WALL and op.width >= 1.0 and op.level == 0:
+    if op.axis == "x" and op.pos == SHUTTER_WALL_Y and op.width >= 1.0 and op.level == 0:
         _shutters(builder, op, piece, z_bottom, z_top)
     window = builder.build(ctx, C.COL_WORLD, origin=centre)
     _window_blocker(ctx, op, piece, z_bottom, z_top)

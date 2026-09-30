@@ -472,6 +472,8 @@ def collision_footprints(objects, min_height=0.3):
     footprints = {0: [], 1: []}
     for obj in objects:
         corners = [obj.matrix_world @ vertex.co for vertex in obj.data.vertices]
+        if not corners:
+            continue
         z_low, z_high = min(c.z for c in corners), max(c.z for c in corners)
         if z_high - z_low < min_height:
             continue

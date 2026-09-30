@@ -121,6 +121,10 @@ _GLYPHS = {
     "C": "01111 10000 10000 10000 10000 10000 01111", "D": "11110 10001 10001 10001 10001 10001 11110",
     "E": "11111 10000 10000 11110 10000 10000 11111", "F": "11111 10000 10000 11110 10000 10000 10000",
     "G": "01111 10000 10000 10011 10001 10001 01111", "H": "10001 10001 10001 11111 10001 10001 10001",
+    "J": "00111 00010 00010 00010 00010 10010 01100", "Q": "01110 10001 10001 10001 10101 10010 01101",
+    ",": "00000 00000 00000 00000 01100 00100 01000", "?": "01110 10001 00001 00110 00100 00000 00100",
+    "!": "00100 00100 00100 00100 00100 00000 00100", "(": "00010 00100 01000 01000 01000 00100 00010",
+    ")": "01000 00100 00010 00010 00010 00100 01000", "'": "00100 00100 01000 00000 00000 00000 00000",
     "I": "11111 00100 00100 00100 00100 00100 11111", "K": "10001 10010 10100 11000 10100 10010 10001",
     "L": "10000 10000 10000 10000 10000 10000 11111", "M": "10001 11011 10101 10101 10001 10001 10001",
     "N": "10001 11001 10101 10011 10001 10001 10001", "O": "01110 10001 10001 10001 10001 10001 01110",
@@ -215,6 +219,28 @@ def demo_views():
         tiles.append(load_pixels(path))
         labels.append(name)
     save_png(os.path.join(OUT_DIR, "views_sheet.png"), contact_sheet(tiles, 4, labels))
+    torch_views(scene, rig)
+
+
+def torch_views(scene, rig):
+    """Como o jogador vê: escuro total e só a lanterna (spot na câmera) a 5 m, 3 m e 1,6 m do rosto."""
+    for name in ("Key", "Rim", "Fill", "SideKey"):
+        scene.objects[name].data.energy = 0.0
+    torch = _light(scene, "Torch", "SPOT", 1400, (0, 0, 0), (0, 1, 0), (1.0, 0.93, 0.8), 0.05)
+    torch.data.spot_size = math.radians(48)
+    torch.data.spot_blend = 0.25
+    cam = scene.camera
+    tiles, labels = [], []
+    for name, (pos, target, fov) in {"torch5m": ((0.3, 5.2, 1.65), (0, 0, 1.4), 72),
+                                     "torch3m": ((0.2, 3.2, 1.65), (0, 0, 1.9), 72),
+                                     "torch1m": ((0.15, 1.6, 1.65), (0, 0, 2.3), 72)}.items():
+        aim_camera(cam, pos, target, fov)
+        torch.location = pos
+        torch.rotation_euler = cam.rotation_euler
+        path = render(scene, os.path.join(OUT_DIR, f"view_{name}.png"), (480, 270), 32)
+        tiles.append(load_pixels(path))
+        labels.append(name)
+    save_png(os.path.join(OUT_DIR, "torch_sheet.png"), contact_sheet(tiles, 3, labels))
 
 
 # nome -> (instantes em segundos desde set_anim, velocidade, ponto para olhar)

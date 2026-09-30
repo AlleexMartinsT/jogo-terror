@@ -63,6 +63,7 @@ def _light(ctx, name, kind, color, location, target=None, size=0.05, area=None):
 def create_lights(ctx):
     clock = layout.ANCHORS["nightstand_clock"]
     _light(ctx, sc.CLOCK_GLOW, "POINT", (1.0, 0.12, 0.07), (clock.x + 0.16, clock.y, clock.z + 0.72))
+    _light(ctx, sc.BED_LAMP, "POINT", (1.0, 0.72, 0.42), (clock.x + 0.05, clock.y + 0.12, clock.z + 1.05), size=0.12)
     window = sc.window_center("w_master_n")
     _light(ctx, sc.DAWN_LIGHT, "AREA", (0.55, 0.68, 0.95), (window[0], window[1] + 0.9, window[2]),
            target=(window[0], window[1] - 3.0, window[2] - 0.6), area=(2.6, 1.6))

@@ -88,7 +88,7 @@ def make_chest_freezer(ctx, room, wall, along):
     x, y, yaw = against_wall(room, wall, along, depth)
     m = MeshBuilder("chest_freezer")
     m.soft_box(0, 0, 0.06, width, depth, height - 0.1, "appliance_panel", radius=0.03, edge=0.02)
-    m.box(0, 0, height - 0.06, width + 0.03, depth + 0.03, 0.06, "plastic_beige")
+    m.box(0, 0.016, height - 0.06, width + 0.03, depth + 0.03, 0.06, "plastic_beige")
     m.box(0, depth / 2 + 0.02, height - 0.05, 0.3, 0.03, 0.03, "chrome")
     m.box(0, depth / 2 + 0.005, height - 0.16, 0.05, 0.02, 0.06, "steel_dark")
     for fx in (-0.45, 0.45):

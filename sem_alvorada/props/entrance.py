@@ -9,7 +9,7 @@ from .placement import against_wall, place
 
 def make_shoe_rack(ctx, room, wall, along):
     """Sapateira de três prateleiras: botas do Dan, sapatilhas da Laura e as galochas amarelas da Emma."""
-    width, depth, height = 0.70, 0.28, 0.56
+    width, depth, height = 0.62, 0.28, 0.56
     x, y, yaw = against_wall(room, wall, along, depth)
     m = MeshBuilder("shoe_rack")
     for side in (-1, 1):
@@ -18,11 +18,11 @@ def make_shoe_rack(ctx, room, wall, along):
     for level in range(4):
         m.box(0, 0, level * (height - 0.03) / 3, width - 0.02, depth - 0.02, 0.03, "wood_mid")
     z_first = 0.03
-    parts.shoe_pair(m, -0.16, 0.0, z_first, 1.3, "leather_brown", 0.1)
-    parts.shoe_pair(m, 0.16, 0.0, z_first, 1.3, "coat_dark", -0.15)
-    parts.shoe_pair(m, -0.12, 0.0, z_first + 0.18, 1.0, "coat_beige", 0.05)
+    parts.shoe_pair(m, -0.16, 0.01, z_first, 1.0, "leather_brown", 0.1)
+    parts.shoe_pair(m, 0.16, 0.01, z_first, 1.0, "coat_dark", -0.15)
+    parts.shoe_pair(m, -0.12, 0.01, z_first + 0.18, 0.85, "coat_beige", 0.05)
     parts.shoe_pair(m, 0.16, 0.0, z_first + 0.18, 0.62, "boot_yellow", 0.0, tall=True)
-    parts.shoe_pair(m, 0.0, 0.0, z_first + 0.36, 1.1, "fabric_gray", 0.2)
+    parts.shoe_pair(m, 0.0, 0.01, z_first + 0.36, 0.95, "fabric_gray", 0.2)
     return place(ctx, m, room, "shoe_rack", x, y, yaw)
 
 
@@ -51,7 +51,7 @@ def make_coat_rack(ctx, room, x, y):
 
 def make_umbrella_stand(ctx, room, x, y):
     m = MeshBuilder("umbrella_stand")
-    m.cylinder(0, 0, 0, 0.11, 0.45, "ceramic_cream", seg=8, r_top=0.13, caps=(True, False))
+    m.cylinder(0, 0, 0, 0.09, 0.45, "ceramic_cream", seg=8, r_top=0.11, caps=(True, False))
     for i, (dx, dy, lean) in enumerate(((-0.04, 0.02, -4), (0.03, -0.03, 6), (0.04, 0.04, 2))):
         tip = (dx + math.tan(math.radians(lean)) * 0.75, dy, 0.85)
         m.tube((dx, dy, 0.05), tip, 0.011, "coat_dark" if i < 2 else "plush_pink", seg=5)

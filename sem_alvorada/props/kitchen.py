@@ -64,7 +64,7 @@ def make_corner_counter(ctx, room, x0, y0, x1, y1, *, name="counter_corner"):
     with m.at(0, 0, 0):
         _cabinet_body(m, north_len, depth, doors=2)
     north = place(ctx, m, room, "counter", nx, ny, yaw_north, name=name + "_north")
-    east_len = (y1 - y0) - depth
+    east_len = (y1 - y0) - depth - 0.04
     ex, ey, yaw_east = against_wall(room, "E", y0 + east_len / 2, depth)
     east_mesh = MeshBuilder(name + "_east")
     _cabinet_body(east_mesh, east_len, depth, doors=2)

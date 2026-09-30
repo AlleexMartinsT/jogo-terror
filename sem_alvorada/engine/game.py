@@ -72,6 +72,7 @@ class Game:
         self._silence_until = -1.0
         self.checkpoint = None
         self.current_cutscene = None
+        self.cutscene_history = []        # nomes das cutscenes já iniciadas (resumo dos testes)
         self.cutscene_camera = None
         self.peak_noise = 0.0
         self.noise_log = deque(maxlen=500)     # (fonte, tipo, volume, tempo): para testes e depuração
@@ -200,9 +201,13 @@ class Game:
         self.flashlight.snap_to_camera(yaw, 0.0)
         self._sync_camera()
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, at_player=True):
+        """Grava o estado da partida. `at_player=False` mantém a posição do checkpoint anterior: o apagão
+        marca o progresso, mas o retry não deve nascer no corredor, ao lado da entidade."""
         player = self.player
-        self.checkpoint = {"state": self.state.snapshot(), "pos": (player.x, player.y, player.z, player.yaw)}
+        here = (player.x, player.y, player.z, player.yaw)
+        previous = self.checkpoint["pos"] if self.checkpoint else here
+        self.checkpoint = {"state": self.state.snapshot(), "pos": here if at_player else previous}
 
     def restart_from_checkpoint(self):
         """Volta ao último checkpoint (após a morte). A entidade reaparece longe do jogador."""
@@ -216,7 +221,7 @@ class Game:
         self.place_player(x, y, z, yaw)
         self.end_cutscene()
         if FLAG_BLACKOUT in self.state.flags:
-            self.entity.activate(self.entity.respawn_point((x, y, z)))
+            self.entity.activate(self.entity.respawn_point((x, y, z)), hunt=False)
         self.phase = "play"
         self.say(texts.MSG_RESPAWN, RESPAWN_HINT_SECONDS)
 
@@ -231,6 +236,7 @@ class Game:
     # ---- cutscenes ----
     def play_cutscene(self, name):
         self.current_cutscene = name
+        self.cutscene_history.append(name)
         self.phase = "cutscene"
         self.audio.stop("breath_heavy")
         self.audio.stop("heartbeat")

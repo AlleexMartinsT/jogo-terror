@@ -4,7 +4,6 @@
 """
 import os
 import sys
-import tempfile
 import wave
 
 import numpy as np

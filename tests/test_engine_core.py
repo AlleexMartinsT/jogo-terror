@@ -395,6 +395,41 @@ def test_interaction_needs_line_of_sight_and_center_of_view():
     assert game.interact.current is not probe
 
 
+def test_item_inside_furniture_proxy_stays_interactable_but_walls_still_block():
+    """Uma pilha na gaveta fica dentro do proxy do móvel: o móvel que envolve o alvo não pode bloqueá-lo."""
+    game = start_playing(make_game(world=True))
+    shelf = fk.add_box(game.scene, "COL_shelf", 2.0, 3.0, 0.0, 3.0, 3.6, 0.9, hidden=True)
+    game.collision = type(game.collision).from_scene(game.scene)
+    game.player.collision = game.collision
+    inside = Interactable("item", "BATTERY_IN_DRAWER", "BATTERY", None, (2.5, 3.3, 0.5))
+    game.interact.targets.append(inside)
+    teleport(game, 2.5, 2.0, 0.0, 0)
+    aim_at(game, inside.position)
+    step(game)
+    assert game.interact.current is inside, "item dentro do proxy deveria ser selecionável"
+    assert not game.collision.line_clear(game.player.eye_pos, inside.position), "sem a exceção o proxy bloquearia"
+    fk.add_box(game.scene, "COL_screen", 2.0, 2.4, 0.0, 3.0, 2.5, 2.2, hidden=True)      # um biombo no meio
+    game.collision = type(game.collision).from_scene(game.scene)
+    game.player.collision = game.collision
+    step(game)
+    assert game.interact.current is not inside, "outro móvel entre o jogador e o item deve bloquear"
+
+
+def test_big_wall_mesh_never_counts_as_enclosing_the_target():
+    """Uma única malha de parede cobre a casa toda: não pode virar exceção de visada."""
+    game = start_playing(make_game(world=True))
+    fk.add_box(game.scene, "AllWalls", 0.0, 0.0, 0.0, 12.0, 10.0, 5.0)        # caixa que envolve tudo, sem prefixo COL_
+    wall = fk.add_box(game.scene, "Partition", 1.0, 5.0, 0.0, 4.0, 5.2, 2.5)
+    game.collision = type(game.collision).from_scene(game.scene)
+    assert not game.collision.line_clear((2.0, 3.0, 1.6), (2.0, 7.0, 1.0), through_target_solids=True)
+    rotated = fk.add_box(game.scene, "COL_turned", -0.5, -0.3, 0.0, 0.5, 0.3, 0.8, hidden=True)
+    rotated.rotation_euler.z = math.radians(45)
+    rotated.location = (8.0, 8.0, 0.0)
+    game.collision = type(game.collision).from_scene(game.scene)
+    assert game.collision._enclosing_objects((8.2, 8.2, 0.3)), "proxy girado: o ponto dentro da caixa deve contar"
+    assert not game.collision._enclosing_objects((8.5, 7.5, 0.3)), "canto do AABB do proxy girado está fora da caixa"
+
+
 def test_door_sight_line_opens_with_door():
     game = start_playing(make_game(world=True))
     a, b = (2.0, 6.6, 1.5), (2.0, 5.4, 1.5)
@@ -520,6 +555,8 @@ def test_story_flow_intro_blackout_collect_unlock_ending():
     assert game.phase == "cutscene" and cutscenes.played[-1] == "blackout"
     run_for(game, 1.5)
     assert game.phase == "play" and state.FLAG_BLACKOUT in game.state.flags
+    assert state.FLAG_BLACKOUT in game.checkpoint["state"]["flags"]
+    assert abs(game.checkpoint["pos"][0] - layout.PLAYER_START[0]) < 0.01, "o checkpoint do apagão deve manter a posição segura"
     assert not game.lights.power_on and game.entity.active and brain.activated_at is not None and rig.visible
     assert game.state.objective == story.OBJ_COLLECT and brain.aggression == 0
     game.state.has_key = game.state.has_map = True
@@ -575,6 +612,7 @@ def test_death_shows_card_and_retries_from_checkpoint_far_from_entity():
     step(game, InputState(confirm=True))
     assert game.phase == "play" and abs(game.player.x - 2.5) < 1e-6
     assert game.entity.active and farness(brain.activated_at, (2.5, 8.0, 0.0)) >= 8.0, brain.activated_at
+    assert brain.hunt is False, "no retry a entidade não pode nascer sabendo onde o jogador está"
 
 
 def test_pause_and_quit_flow():

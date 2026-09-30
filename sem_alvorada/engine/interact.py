@@ -63,9 +63,7 @@ class Interact:
                 continue
             ref = obj.get(C.P_ID) or obj.name.split("_", 1)[-1]
             item = obj.get(C.P_ITEM, C.ITEM_NOTE if kind == "note" else "")
-            position = _bounds_center(obj) if kind in ("look", "car") else collision.object_position(obj)
-            if kind == "car":
-                position = (position[0], position[1], position[2] + 1.0)
+            position = _bounds_center(obj) if kind == "look" else collision.object_position(obj)
             self.targets.append(Interactable(kind, ref, item, obj, position, obj.get(C.P_PROMPT, "")))
 
     def _add_virtual_items(self):
@@ -129,16 +127,21 @@ class Interact:
             angle = math.acos(max(-1.0, min(1.0, cosine)))
             tolerance = CONE + math.atan2(RADIUS[target.kind], max(distance, 0.1))
             ratio = angle / tolerance
-            if ratio >= best_ratio or not self._clear_view(eye, pos, distance, target):
+            if ratio >= best_ratio or not self.can_see(eye, pos, target):
                 continue
             best, best_ratio = target, ratio
         return best
 
-    def _clear_view(self, eye, pos, distance, target):
-        shrink = (distance - SIGHT_MARGIN) / distance
+    def can_see(self, eye, pos, target=None):
+        """Linha de visada até o alvo, parando 8 cm antes dele. Móveis que envolvem o alvo não bloqueiam."""
+        distance = math.dist(eye, pos)
+        if distance < 1e-6:
+            return True
+        shrink = max(distance - SIGHT_MARGIN, 0.0) / distance
         end = tuple(e + (p - e) * shrink for e, p in zip(eye, pos))
-        ignore = target.ref if target.kind == "door" else None
-        return self.game.collision.line_clear(eye, end) and not self.game.doors.blocks_sight(eye, end, ignore)
+        ignore = target.ref if target is not None and target.kind == "door" else None
+        return (self.game.collision.line_clear(eye, end, through_target_solids=True)
+                and not self.game.doors.blocks_sight(eye, end, ignore))
 
     def update(self, eye, forward):
         self.current = self.select(eye, forward)

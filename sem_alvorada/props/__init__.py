@@ -10,7 +10,7 @@ from .. import conventions as C
 
 def _is_props_object(obj):
     name = obj.name
-    return (name.startswith((C.N_ANCHOR, C.N_COL, C.N_ITEM, "Car")) or name == C.OBJ_VIEW_FLASH
+    return (name.startswith((C.N_ANCHOR, C.N_COL, C.N_ITEM, "Car_")) or name in (C.OBJ_CAR, C.OBJ_VIEW_FLASH)
             or "sa_prop_mode" in obj or (name.startswith(C.N_LIGHT) and "_p" in name))
 
 
@@ -23,7 +23,7 @@ def clear_previous_build():
 
 
 def build(ctx):
-    from . import rooms_lower, rooms_upper
+    from . import anchors, flashlight, items, rooms_lower, rooms_upper
     clear_previous_build()
     rooms_upper.build_master(ctx)
     rooms_upper.build_kids(ctx)
@@ -33,4 +33,7 @@ def build(ctx):
     for build_room in (rooms_lower.build_living, rooms_lower.build_den, rooms_lower.build_hall_ground,
                        rooms_lower.build_dining, rooms_lower.build_kitchen, rooms_lower.build_garage):
         build_room(ctx)
-    ctx.log(f"{sum(1 for o in bpy.data.objects if 'sa_prop_mode' in o)} props")
+    items.make_items(ctx)
+    flashlight.make_viewmodel(ctx)
+    anchors.make_anchors(ctx)
+    ctx.log(f"{sum(1 for o in bpy.data.objects if 'sa_prop_mode' in o)} props, {len(bpy.data.collections[C.COL_ITEMS].objects)} itens")

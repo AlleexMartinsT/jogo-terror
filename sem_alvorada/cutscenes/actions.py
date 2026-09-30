@@ -6,7 +6,6 @@ câmera não são essenciais.
 """
 import math
 
-from .. import conventions as C
 from .timeline import Action
 
 Vec = tuple
@@ -56,15 +55,15 @@ def show(name, visible=True):
     return Action(lambda st: st.set_visible(name, visible))
 
 
-def hide_matching(anchor_pos, radius, needles):
-    """Esconde objetos cujo nome contém alguma das palavras e que estão perto de `anchor_pos` (relógio do quarto)."""
+def hide_matching(anchor_pos, radius, needles, unless=("nightstand", "col_", "anchor", "light", "cut")):
+    """Esconde objetos cujo nome contém alguma das palavras (e nenhuma de `unless`) perto de `anchor_pos`."""
     def run(stage):
         scene = getattr(stage.host, "scene", None)
         if scene is None:
             return
         for obj in scene.objects:
             lowered = obj.name.lower()
-            if obj.name.startswith("Cut_") or not any(n in lowered for n in needles):
+            if not any(n in lowered for n in needles) or any(u in lowered for u in unless):
                 continue
             x, y, z = obj.matrix_world.translation
             if math.dist((x, y), anchor_pos[:2]) < radius and abs(z - anchor_pos[2]) < 0.8:
@@ -180,24 +179,3 @@ def entity_lunge(eye, amount_start=0.0, amount_end=1.0):
     def apply(stage, f):
         stage.entity.pose_for_death(stage.resolve(eye), amount_start + (amount_end - amount_start) * f)
     return apply
-
-
-def entity_walk(start: Vec, end: Vec, yaw, speed):
-    """Desloca a entidade em linha reta enquanto a animação de marcha usa `speed`."""
-    def apply(stage, f):
-        x, y, z = _lerp3(start, end, f)
-        stage.entity.set_transform(x, y, z, stage.resolve(yaw))
-    return apply
-
-
-def sequence(*applies):
-    """Combina várias trilhas no mesmo intervalo."""
-    def apply(stage, f):
-        for one in applies:
-            one(stage, f)
-    return apply
-
-
-def heading_yaw(a: Vec, b: Vec):
-    """Yaw do Blender de quem está em `a` olhando para `b`."""
-    return C.dir_yaw(b[0] - a[0], b[1] - a[1])

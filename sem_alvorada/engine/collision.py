@@ -151,7 +151,7 @@ class LayoutCollision:
     def headroom(self, x, y, z, height):
         return True
 
-    def line_clear(self, a, b):
+    def line_clear(self, a, b, through_target_solids=False):
         level_a, level_b = layout.level_of_z(a[2]), layout.level_of_z(b[2])
         if level_a != level_b:
             hole = layout.STAIRS.hole.inflate(0.3)
@@ -185,9 +185,20 @@ def object_position(obj):
     return tuple(world_matrix(obj).translation)
 
 
+def _proxy_box(obj, local_coords, matrix):
+    """(mundo->local, mínimo local, máximo local) se `obj` é um proxy COL_* (caixa); senão None.
+
+    Só proxies de móveis podem "envolver" um item; paredes e pisos nunca (uma malha grande de parede
+    tem uma caixa que cobre a casa inteira)."""
+    if not obj.name.startswith(C.N_COL):
+        return None
+    coords = local_coords.reshape(-1, 3)
+    return np.linalg.inv(matrix), coords.min(axis=0), coords.max(axis=0)
+
+
 def _world_triangles(scene):
-    """Vértices e triângulos (mundo) de todos os meshes com sa_col, num só par de arrays."""
-    vertex_chunks, triangle_chunks, offset = [], [], 0
+    """Vértices, triângulos, dono de cada triângulo e caixa de cada objeto com sa_col (None se não é proxy)."""
+    vertex_chunks, triangle_chunks, owner_chunks, boxes, offset = [], [], [], [], 0
     for obj in scene.objects:
         if obj.type != "MESH" or not obj.get(C.P_COL):
             continue
@@ -201,28 +212,33 @@ def _world_triangles(scene):
         indices = np.empty(triangle_count * 3, np.int64)
         mesh.loop_triangles.foreach_get("vertices", indices)
         matrix = np.array(world_matrix(obj), np.float64)
-        vertex_chunks.append(local.reshape(-1, 3) @ matrix[:3, :3].T + matrix[:3, 3])
+        world_vertices = local.reshape(-1, 3) @ matrix[:3, :3].T + matrix[:3, 3]
+        vertex_chunks.append(world_vertices)
         triangle_chunks.append(indices.reshape(-1, 3) + offset)
+        owner_chunks.append(np.full(triangle_count, len(boxes), np.int64))
+        boxes.append(_proxy_box(obj, local, matrix))
         offset += vertex_count
     if not vertex_chunks:
-        return None, None
-    return np.vstack(vertex_chunks), np.vstack(triangle_chunks)
+        return None
+    return np.vstack(vertex_chunks), np.vstack(triangle_chunks), np.concatenate(owner_chunks), boxes
 
 
 class SceneCollision:
     """BVH único com todos os objetos `sa_col` da cena (paredes, pisos, escada, proxies COL_*)."""
     kind = "bvh"
 
-    def __init__(self, vertices, triangles):
+    def __init__(self, vertices, triangles, owners, boxes):
         self._tree = BVHTree.FromPolygons(vertices.tolist(), triangles.tolist(), all_triangles=True)
         self.triangle_count = len(triangles)
+        self._owners = owners
+        self._boxes = boxes
         self._layout = LayoutCollision()
         self.missing_floor_reports = 0
 
     @classmethod
     def from_scene(cls, scene):
-        vertices, triangles = _world_triangles(scene)
-        return None if vertices is None else cls(vertices, triangles)
+        built = _world_triangles(scene)
+        return None if built is None else cls(*built)
 
     def covers(self, x, y, z):
         return self._layout.covers(x, y, z)
@@ -290,13 +306,37 @@ class SceneCollision:
                 return False
         return True
 
-    def line_clear(self, a, b):
+    def line_clear(self, a, b, through_target_solids=False):
+        """Visada livre de a até b. Com `through_target_solids`, sólidos que ENVOLVEM b não contam:
+        um item dentro da gaveta ou da prateleira fica dentro do proxy do móvel e continua visível."""
         start, end = Vector(a), Vector(b)
         span = end - start
         length = span.length
         if length < 1e-6:
             return True
-        return self._tree.ray_cast(start, span / length, length)[0] is None
+        direction = span / length
+        enclosing = self._enclosing_objects(b) if through_target_solids else ()
+        for _ in range(8):
+            hit, _normal, face, distance = self._tree.ray_cast(start, direction, length)
+            if hit is None:
+                return True
+            if int(self._owners[face]) not in enclosing:
+                return False
+            start, length = hit + direction * 0.002, length - distance - 0.002
+        return False
+
+    def _enclosing_objects(self, point, margin=0.05):
+        """Índices dos proxies COL_* cuja caixa (no espaço local do próprio proxy) contém o ponto."""
+        here = np.array([point[0], point[1], point[2], 1.0])
+        enclosing = set()
+        for index, box in enumerate(self._boxes):
+            if box is None:
+                continue
+            to_local, low, high = box
+            local = (to_local @ here)[:3]
+            if np.all(local >= low - margin) and np.all(local <= high + margin):
+                enclosing.add(index)
+        return enclosing
 
 
 def _sample_heights(z, height, radius):

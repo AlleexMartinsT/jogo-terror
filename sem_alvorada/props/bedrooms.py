@@ -77,7 +77,7 @@ def make_nightstand(ctx, room, x, y, yaw, *, anchor=None, z=None, name=None):
         m.box(0, 0, 0.16, 0.44, 0.46, 0.02, "wood_mid")
         m.box(0, 0.02, 0.32, 0.44, 0.44, 0.12, "wood_mid", mats={"front": "veneer_mid"})
         parts.knob(m, 0, 0.245, 0.38, outward=1.0)
-        m.box(0, 0.01, 0.49, 0.52, 0.52, 0.03, "wood_dark")
+        m.box(0, 0.01, 0.52, 0.52, 0.52, 0.03, "wood_dark")
         m.box(0, 0.25, 0.10, 0.44, 0.02, 0.02, "wood_mid")
     return place(ctx, m, room, "nightstand", x, y, yaw, z, name=name, anchor=anchor)
 

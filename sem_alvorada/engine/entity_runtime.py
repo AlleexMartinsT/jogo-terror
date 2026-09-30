@@ -94,16 +94,35 @@ class EntityRuntime:
     def enabled(self):
         return self.rig is not None and self.brain is not None
 
-    def activate(self, pos=None):
-        """Começa a caçada. `pos` padrão: o fundo do corredor de cima."""
+    def activate(self, pos=None, hunt=True):
+        """Acorda a entidade. `pos` padrão: o fundo do corredor de cima.
+
+        `hunt=True` (apagão): ela já sabe aproximadamente onde o jogador está. `hunt=False` (retry depois
+        da morte): ela recomeça patrulhando, sem saber de nada.
+        """
         if not self.enabled:
             return
         pos = pos or layout.ENTITY_SPAWN
-        self.brain.activate(pos)
+        try:
+            self._wake(pos, hunt)
+        except ValueError as error:          # fora da malha de navegação: volta ao ponto de partida
+            print(f"[engine] {error}; usando ENTITY_SPAWN", flush=True)
+            pos = layout.ENTITY_SPAWN
+            self._wake(pos, hunt)
         self.rig.set_transform(pos[0], pos[1], pos[2], 0.0)
         self.rig.set_visible(True)
         self.active = True
         self._last_pos = pos
+
+    def _wake(self, pos, hunt):
+        """`activate` do cérebro; o argumento `hunt` é uma extensão do contrato, então é opcional."""
+        if hunt:
+            self.brain.activate(pos)
+            return
+        try:
+            self.brain.activate(pos, hunt=False)
+        except TypeError:
+            self.brain.activate(pos)
 
     def set_aggression(self, level):
         if self.enabled:
@@ -182,7 +201,7 @@ class EntityRuntime:
         if self._stride_left > 0:
             return
         self._stride_left = STRIDE_BY_STATE.get(out.state, STRIDE_DEFAULT)
-        kind = STEP_KIND_BY_STATE.get(out.state, "step_patrol")
+        kind = getattr(out, "step_noise", None) or STEP_KIND_BY_STATE.get(out.state, "step_patrol")
         rng = self.game.rng
         sound = f"ent_step_stalk_{rng.randint(1, 2)}" if kind == "step_stalk" else f"ent_step_{rng.randint(1, 4)}"
         self.game.make_noise(kind, pos, C.NOISE_ENTITY[kind], sound=sound, source="entity")

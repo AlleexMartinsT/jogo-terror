@@ -4,8 +4,6 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Optional
 
-from .. import conventions as C
-
 ENTITY_EYE_HEIGHT = 2.3
 PLAYER_CHEST = 1.35
 PLAYER_CHEST_CROUCHED = 0.85

@@ -15,12 +15,13 @@ from . import actions as act
 from .timeline import Cue, Cutscene, Line, Shot, Track, View
 
 ROAD_FACING = 0.0                  # yaw da entidade parada na rua: olha para +Y, para a casa
-CLOCK_NAMES = ("clock", "alarm", "despert", "relogio")    # como o módulo props pode ter batizado o despertador
+CLOCK_NAMES = ("clock", "alarm", "despert", "relogio")    # como o módulo props pode ter batizado o despertador (AlarmClock)
 EYE = C.PLAYER_EYE_STAND
 FLOOR_1 = layout.LEVEL_Z[1]
 GAMEPLAY_FOV = C.FOV_DEG
 
 CLOCK_GLOW = "CutLight_ClockGlow"
+BED_LAMP = "CutLight_BedLamp"
 DAWN_LIGHT = "CutLight_Dawn"
 DAWN_GLOW = "Cut_DawnGlow"
 END_CLOCK = "Cut_EndClock"
@@ -38,10 +39,6 @@ def anchor(name, dx=0.0, dy=0.0, dz=0.0):
 
 def add(a, b):
     return tuple(x + y for x, y in zip(a, b))
-
-
-def lerp3(a, b, t):
-    return tuple(x + (y - x) * t for x, y in zip(a, b))
 
 
 def yaw_of(a, b):
@@ -120,25 +117,28 @@ def gameplay_view(eye, yaw):
 def build_intro():
     clock = anchor("nightstand_clock", dz=0.62)
     bed = layout.ANCHORS["bed_master"]
-    lying_eye = (bed.x - 0.62, bed.y + 0.20, bed.z + 0.72)
-    near_clock_eye = (0.60, 8.15, bed.z + 0.70)
-    sitting_eye = (bed.x - 0.35, bed.y + 0.15, bed.z + 1.35)
+    # o despertador olha para +X: a câmera precisa estar a leste dele, na borda norte da cama
+    lying_eye = (1.15, 8.50, bed.z + 0.86)
+    near_clock_eye = (0.82, 8.60, bed.z + 0.77)
+    sitting_eye = (bed.x - 0.30, bed.y + 0.25, bed.z + 1.40)
     window_eye = window_vantage("w_master_n")
-    radio_eye = (0.95, 8.30, FLOOR_1 + 1.15)
+    radio_eye = (1.05, 8.55, bed.z + 0.95)
     start_eye = (layout.PLAYER_START[0], layout.PLAYER_START[1], layout.PLAYER_START[2] + EYE)
     start_yaw = math.radians(layout.PLAYER_START_YAW_DEG)
 
     shots = (
         Shot(3.6, View(lying_eye, clock, 44.0), handheld=0.08,
              fade=((0.0, 1.0), (2.4, 1.0), (3.5, 0.0)), letterbox=((0.0, 0.0), (2.0, 1.0)),
-             cues=(Cue(0.0, act.cut_light(CLOCK_GLOW, 5.0)),
+             cues=(Cue(0.0, act.power(False)),
+                   Cue(0.0, act.cut_light(CLOCK_GLOW, 5.0)),
                    Cue(0.5, act.sound("alarm_beep", clock, 0.5)),
                    Cue(1.3, act.sound("alarm_beep", clock, 0.5)))),
         Shot(5.4, View(lying_eye, clock, 44.0), View(near_clock_eye, clock, 34.0), handheld=0.10,
              lines=(say("intro", 0, 0.5, 3.4),),
              cues=(Cue(3.0, act.loop("radio", "amb_radio_static", 0.25)),)),
         Shot(7.0, View(near_clock_eye, clock, 34.0), View(sitting_eye, toward_sun(sitting_eye), 58.0),
-             handheld=0.22, lines=(say("intro", 1, 1.0, 4.6),)),
+             handheld=0.22, lines=(say("intro", 1, 1.0, 4.6),),
+             cues=(Cue(0.6, act.sound("flash_on", None, 0.5)), Cue(0.6, act.cut_light(BED_LAMP, 28.0)))),
         Shot(8.5, View(sitting_eye, toward_sun(sitting_eye), 58.0), View(window_eye, toward_sun(window_eye), 42.0),
              handheld=0.30,
              lines=(say("intro", 2, 0.4, 4.4), say("intro", 3, 4.9, 7.9)),
@@ -150,7 +150,8 @@ def build_intro():
              shake=((0.0, 0.0), (3.5, 0.30), (6.0, 0.10))),
         Shot(6.5, View(radio_eye, clock, 38.0), gameplay_view(start_eye, start_yaw), handheld=0.15,
              lines=(say("intro", 5, 1.0, 5.6),),
-             cues=(Cue(4.4, act.stop_loop("radio")),
+             cues=(Cue(0.8, act.sound("flash_on", None, 0.5)), Cue(0.8, act.power(True, 0.3)),
+                   Cue(4.4, act.stop_loop("radio")),
                    Cue(6.45, act.cut_light(CLOCK_GLOW, 0.0)),
                    Cue(6.45, act.place_player(layout.PLAYER_START[0], layout.PLAYER_START[1],
                                               layout.PLAYER_START[2], start_yaw))),

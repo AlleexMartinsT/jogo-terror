@@ -203,10 +203,12 @@ class FakeBrain:
         self.hunts = hunts
         self.aggression = -1
         self.activated_at = None
+        self.hunt = None
 
-    def activate(self, pos):
+    def activate(self, pos, hunt=True):
         self.x, self.y, self.z = pos
         self.activated_at = pos
+        self.hunt = hunt
 
     def set_aggression(self, level):
         self.aggression = level

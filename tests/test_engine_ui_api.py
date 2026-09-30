@@ -143,6 +143,9 @@ class FakeView:
     def warp_to_center(self):
         self.window.cursor_warp(*self.center)
 
+    def sync_size(self):
+        pass
+
     def restore(self):
         self.restored += 1
 
@@ -186,6 +189,7 @@ def test_session_keys_mouse_and_timer():
     session.handle_event(event("TIMER"))
     assert game.player.yaw == yaw_after
     assert session.model["phase"] == "play" and game.player.feet != start
+    assert session.errors_in_a_row == 0 and not game.error_text
 
 
 def test_session_survives_warp_that_does_nothing():
@@ -195,6 +199,7 @@ def test_session_survives_warp_that_does_nothing():
     session.handle_event(event("MOUSEMOVE", x=1000, y=360))               # aciona o warp (que não vai funcionar)
     session.handle_event(event("MOUSEMOVE", x=1010, y=360))               # o cursor continuou por perto
     session.handle_event(event("TIMER"))
+    assert session.errors_in_a_row == 0
     assert abs((yaw - game.player.yaw) - (1000 - 640 + 10) * controls.MOUSE_SENSITIVITY) < 1e-6, (
         "sem warp, o deslocamento deve continuar contando")
 
@@ -267,6 +272,114 @@ def test_leave_scene_restores_file_state():
     assert all(not l.obj.hide_viewport and l.obj.data.energy == l.base_energy for l in game.lights.lights)
     assert game.doors.openness("kids_hall") == 0.0 and scene.camera is game.player_cam
     assert scene.objects["ViewModel_Flashlight"].hide_viewport
+
+
+# --------------------------------------------------------------------------
+# PlayView com um bpy falso: entra e sai do modo de jogo devolvendo a interface
+# --------------------------------------------------------------------------
+class FakeSpace:
+    def __init__(self):
+        for name in windowing.SPACE_FLAGS:
+            setattr(self, name, True)
+        self.shading = SimpleNamespace(type="SOLID", use_compositor="DISABLED")
+        self.overlay = SimpleNamespace(show_overlays=True)
+        self.region_3d = SimpleNamespace(view_perspective="PERSP")
+
+
+class FakeScreenWorld:
+    """Uma janela com um editor 3D; screen_full_area troca a tela por uma temporária (e de volta)."""
+
+    def __init__(self):
+        self.space = FakeSpace()
+        self.region = SimpleNamespace(type="WINDOW", x=10, y=20, width=1600, height=900)
+        self.area = SimpleNamespace(type="VIEW_3D", regions=[self.region], spaces=SimpleNamespace(active=self.space),
+                                    tag_redraw=lambda: None)
+        self.window = SimpleNamespace(screen=SimpleNamespace(show_fullscreen=False, areas=[self.area]),
+                                      cursor_log=[], warp_log=[])
+        self.window.cursor_modal_set = lambda name: self.window.cursor_log.append(("set", name))
+        self.window.cursor_modal_restore = lambda: self.window.cursor_log.append(("restore",))
+        self.window.cursor_warp = lambda x, y: self.window.warp_log.append((x, y))
+        self.toggles = 0
+        self.fail_centering = False
+        self.manager = SimpleNamespace(windows=[self.window])
+        self.ops = SimpleNamespace(
+            screen=SimpleNamespace(screen_full_area=self._toggle),
+            view3d=SimpleNamespace(view_center_camera=self._center))
+        self.context = SimpleNamespace(window_manager=self.manager, temp_override=self._override)
+
+    def _override(self, **kwargs):
+        import contextlib
+        return contextlib.nullcontext()
+
+    def _toggle(self, use_hide_panels=False):
+        self.toggles += 1
+        self.window.screen.show_fullscreen = not self.window.screen.show_fullscreen
+
+    def _center(self):
+        if self.fail_centering:
+            raise RuntimeError("poll falhou")
+
+
+def with_fake_bpy(world, action):
+    real = windowing.bpy
+    windowing.bpy = SimpleNamespace(context=world.context, ops=world.ops)
+    try:
+        return action()
+    finally:
+        windowing.bpy = real
+
+
+def test_playview_enter_then_restore_brings_back_the_interface():
+    world = FakeScreenWorld()
+    scene = fk.fresh_scene()
+    scene.render.resolution_x, scene.render.resolution_y = 1280, 720
+    original_camera = scene.camera = None
+    view = windowing.PlayView(world.window, world.area, scene)
+    with_fake_bpy(world, lambda: view.enter(scene.objects["PlayerCam"]))
+    space = world.space
+    assert world.toggles == 1 and view.made_fullscreen
+    assert not any(getattr(space, name) for name in windowing.SPACE_FLAGS) and not space.overlay.show_overlays
+    assert space.shading.type == "RENDERED" and space.shading.use_compositor == "ALWAYS"
+    assert space.region_3d.view_perspective == "CAMERA" and scene.camera.name == "PlayerCam"
+    assert scene.render.resolution_y == 720 and abs(scene.render.resolution_x / 720 - 1600 / 900) < 0.01
+    assert world.window.cursor_log == [("set", "NONE")] and world.window.warp_log == [(10 + 800, 20 + 450)]
+    with_fake_bpy(world, view.restore)
+    assert world.toggles == 2 and not world.window.screen.show_fullscreen
+    assert all(getattr(space, name) for name in windowing.SPACE_FLAGS) and space.overlay.show_overlays
+    assert space.shading.type == "SOLID" and space.shading.use_compositor == "DISABLED"
+    assert space.region_3d.view_perspective == "PERSP" and scene.camera is original_camera
+    assert (scene.render.resolution_x, scene.render.resolution_y) == (1280, 720)
+    assert world.window.cursor_log[-1] == ("restore",)
+    with_fake_bpy(world, view.restore)
+    assert world.toggles == 2, "restaurar duas vezes não pode alternar a tela de novo"
+
+
+def test_playview_tolerates_failures_and_still_unfullscreens():
+    world = FakeScreenWorld()
+    world.fail_centering = True
+    scene = fk.fresh_scene()
+    view = windowing.PlayView(world.window, world.area, scene)
+    with_fake_bpy(world, lambda: view.enter(scene.objects["PlayerCam"]))
+    assert view._saved, "view_center_camera falhando não pode abortar a entrada"
+    del world.space.shading
+    broken = windowing.PlayView(FakeScreenWorld().window, world.area, scene)
+    broken.made_fullscreen = True
+    try:
+        with_fake_bpy(world, lambda: broken.enter(scene.objects["PlayerCam"]))
+    except AttributeError:
+        pass
+    with_fake_bpy(world, broken.restore)
+    assert not broken.made_fullscreen, "entrada interrompida deve ainda devolver a tela cheia"
+
+
+def test_playview_resizes_frame_when_region_changes():
+    world = FakeScreenWorld()
+    scene = fk.fresh_scene()
+    view = windowing.PlayView(world.window, world.area, scene)
+    with_fake_bpy(world, lambda: view.enter(scene.objects["PlayerCam"]))
+    world.region.width, world.region.height = 1920, 1080
+    with_fake_bpy(world, view.sync_size)
+    assert abs(scene.render.resolution_x / scene.render.resolution_y - 16 / 9) < 0.01
 
 
 def main():

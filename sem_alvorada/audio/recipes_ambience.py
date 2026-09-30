@@ -3,7 +3,7 @@ import numpy as np
 
 from . import dsp as D
 from .catalog import SR_LOOP, sound, sound_family
-from .textures import burst, creak_texture, metal_tick, soft_burst
+from .textures import burst, creak_texture, soft_burst
 
 
 def _slow_depth(rng, n, rate_hz, depth, sr):

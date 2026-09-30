@@ -16,7 +16,7 @@ CLOTH_SIZE = 128
 SKIN_BASE = np.array([0.43, 0.44, 0.42], np.float32)
 SKIN_SHADE = np.array([0.27, 0.29, 0.30], np.float32)
 VEIN_COLOR = np.array([0.10, 0.12, 0.17], np.float32)
-CLOTH_BASE = np.array([0.075, 0.070, 0.068], np.float32)
+CLOTH_BASE = np.array([0.105, 0.098, 0.092], np.float32)
 
 # onde ficam as órbitas dos olhos no quadrante da cabeça (u, v em 0..1 do atlas)
 HEAD_ATLAS = (0.0, 0.5, 0.5, 1.0)          # u0, v0, u1, v1

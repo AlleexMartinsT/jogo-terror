@@ -57,6 +57,8 @@ class LightManager:
         self.lights = []
         for index, obj in enumerate(sorted(scene.objects, key=lambda o: o.name)):
             if obj.type == "LIGHT" and obj.name.startswith(C.N_LIGHT):
+                if obj.data.users > 1:
+                    obj.data = obj.data.copy()       # energia por luz: dados compartilhados piscariam juntos
                 energy = float(obj.get(C.P_LIGHT_ENERGY, obj.data.energy))
                 self.lights.append(ManagedLight(obj, _room_of(obj), energy,
                                                 float(obj.get(C.P_LIGHT_FLICKER, 0.0)),

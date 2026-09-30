@@ -93,7 +93,7 @@ class Director:
             game.entity.activate()
         game.entity.set_aggression(AGGRESSION_HUNT)
         game.phase = "play"
-        game.save_checkpoint()
+        game.save_checkpoint(at_player=False)
 
     def _after_unlock(self):
         game = self.game

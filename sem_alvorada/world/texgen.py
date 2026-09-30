@@ -427,7 +427,7 @@ def garage_door_paint(rng, size=64, base=(0.30, 0.30, 0.285)):
     """Chapa pintada do portão: amassados suaves e veios de ferrugem escorrendo pela parte baixa."""
     image = gain(solid(size, size, base), 0.78 + 0.34 * fbm(rng, size, size, 3, 3))
     streaks = value_noise(rng, size, size, 14, 2) * (1 - _rows(size)) ** 0.8
-    rust = np.clip((streaks - 0.42) * 3.0, 0, 1)
+    rust = np.clip((streaks - 0.45) * 1.6, 0, 0.6)
     image = lerp(image, np.array((0.16, 0.085, 0.05), np.float32) * (0.7 + 0.5 * streaks[..., None]), rust * 0.7)
     return finish(gain(image, 1 + speckle(rng, size, size, 0.04)))
 
