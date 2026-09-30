@@ -3,6 +3,7 @@ import numpy as np
 
 from . import dsp as D
 from .catalog import SR_LOOP, sound, sound_family
+from .textures import breath_cycles
 from .textures import burst as _burst
 from .textures import creak_texture as _creak
 from .textures import crackle as _crackle
@@ -19,6 +20,9 @@ def _two_contacts(rng, contact, toe_gain, delay_range):
     return out
 
 
+# --------------------------------------------------------------------------
+# Passos: madeira, carpete, azulejo, concreto, escada
+# --------------------------------------------------------------------------
 def _wood_contact(rng, scale):
     n = D.samples(0.4)
     base = rng.uniform(165, 235)
@@ -279,36 +283,14 @@ def flash_flicker(rng):
 # --------------------------------------------------------------------------
 # Corpo do jogador
 # --------------------------------------------------------------------------
-def _breath_loop(rng, seconds, cycle_seconds, inhale_share, band, rasp_hz=0.0, wheeze_hz=0.0, depth=1.0):
-    """Respiração periódica: `seconds` é múltiplo de `cycle_seconds`, então o loop emenda."""
-    sr = SR_LOOP
-    n = D.samples(seconds, sr)
-    voice = D.formants(D.white(rng, n), [(500, 400, 1.0), (1500, 900, 0.6), (3000, 1300, 0.25)], sr, floor=0.08)
-    voice = D.unit_rms(D.bandpass(voice, *band, sr))
-    if rasp_hz:
-        voice *= 0.55 + 0.45 * D.smooth_noise(rng, n, rasp_hz, sr) ** 2 * 2.0
-    envelope = np.zeros(n)
-    cycle_n = D.samples(cycle_seconds, sr)
-    inhale_n, exhale_n = int(cycle_n * inhale_share), int(cycle_n * (0.92 - inhale_share))
-    for cycle in range(int(round(seconds / cycle_seconds))):
-        start = cycle * cycle_n
-        vary = 1.0 + 0.15 * rng.uniform(-1, 1)
-        envelope[start:start + inhale_n] = depth * vary * D.swell(inhale_n, 0.7, 1.5)
-        envelope[start + inhale_n + int(0.04 * cycle_n):][:exhale_n] = 0.8 * depth * vary * D.swell(exhale_n, 0.3, 1.5)
-    out = voice * envelope
-    if wheeze_hz:
-        out += 0.12 * D.sine(wheeze_hz * (1 + 0.02 * D.smooth_noise(rng, n, 3, sr)), n, sr) * envelope
-    return out
-
-
 @sound("breath_calm", sr=SR_LOOP, peak=0.5, loop=True, group="body")
 def breath_calm(rng):
-    return _breath_loop(rng, 8.0, 4.0, 0.42, (280, 3200), depth=0.8)
+    return breath_cycles(rng, 8.0, 4.0, 0.42, (280, 3200), depth=0.8)
 
 
 @sound("breath_heavy", sr=SR_LOOP, peak=0.7, loop=True, group="body")
 def breath_heavy(rng):
-    return _breath_loop(rng, 4.0, 1.0, 0.45, (200, 4500), rasp_hz=40, wheeze_hz=640)
+    return breath_cycles(rng, 4.0, 1.0, 0.45, (200, 4500), rasp_hz=40, wheeze_hz=640)
 
 
 @sound("heartbeat", sr=SR_LOOP, peak=0.85, loop=True, group="body")

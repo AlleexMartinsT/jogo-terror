@@ -48,6 +48,23 @@ def crackle(rng, seconds, per_second, low, high, sr=D.SR):
     return D.unit_rms(D.bandpass(hits, low, high, sr))
 
 
-# --------------------------------------------------------------------------
-# Passos: madeira, carpete, azulejo, concreto, escada
-# --------------------------------------------------------------------------
+def breath_cycles(rng, seconds, cycle_seconds, inhale_share, band, rasp_hz=0.0, wheeze_hz=0.0, depth=1.0):
+    """Respiração periódica: `seconds` é múltiplo de `cycle_seconds`, então o loop emenda."""
+    sr = D.SR_LOOP
+    n = D.samples(seconds, sr)
+    voice = D.formants(D.white(rng, n), [(500, 400, 1.0), (1500, 900, 0.6), (3000, 1300, 0.25)], sr, floor=0.08)
+    voice = D.unit_rms(D.bandpass(voice, *band, sr))
+    if rasp_hz:
+        voice *= 0.55 + 0.45 * D.smooth_noise(rng, n, rasp_hz, sr) ** 2 * 2.0
+    envelope = np.zeros(n)
+    cycle_n = D.samples(cycle_seconds, sr)
+    inhale_n, exhale_n = int(cycle_n * inhale_share), int(cycle_n * (0.92 - inhale_share))
+    for cycle in range(int(round(seconds / cycle_seconds))):
+        start = cycle * cycle_n
+        vary = 1.0 + 0.15 * rng.uniform(-1, 1)
+        envelope[start:start + inhale_n] = depth * vary * D.swell(inhale_n, 0.7, 1.5)
+        envelope[start + inhale_n + int(0.04 * cycle_n):][:exhale_n] = 0.8 * depth * vary * D.swell(exhale_n, 0.3, 1.5)
+    out = voice * envelope
+    if wheeze_hz:
+        out += 0.12 * D.sine(wheeze_hz * (1 + 0.02 * D.smooth_noise(rng, n, 3, sr)), n, sr) * envelope
+    return out

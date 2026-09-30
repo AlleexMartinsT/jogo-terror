@@ -1,0 +1,157 @@
+"""Céu noturno e o Sol Negro.
+
+O `World` é quase preto, com uma faixa fraca de luz fria no horizonte (é ela que desenha as
+casas e árvores como silhuetas) e um halo cinza-quente em volta do Sol Negro. O disco e a
+coroa são malhas a 140 m, para o disco preto cobrir o halo e a coroa brilhar de verdade.
+
+O nó `SA_DawnGain` multiplica o halo: a cena final pode chamar `set_dawn` para deixar o
+horizonte "um pouco mais claro".
+"""
+import math
+
+import bpy
+from mathutils import Vector
+
+from .. import conventions as C
+from .. import layout
+from .meshkit import MeshBuilder, empty
+
+SUN_ANCHOR = (2.5, 10.0, 4.4)       # centro da janela w_master_n: dali o disco fica concêntrico com o halo
+CORONA_SCALE = 1.7                  # raio da malha da coroa em múltiplos do raio do disco
+DISC_SIDES = 48
+FOG_COLOR = (0.55, 0.60, 0.68, 1.0)
+FOG_ANISOTROPY = 0.35
+DAWN_GAIN_NODE = "SA_DawnGain"
+FOG_NODE = "SA_Fog"
+
+HORIZON_RAMP = [(0.00, (0.030, 0.034, 0.043)), (0.10, (0.012, 0.014, 0.019)),
+                (0.35, (0.0035, 0.0042, 0.0065)), (1.00, (0.0012, 0.0015, 0.0028))]
+HALO_RAMP = [(0.000, (0.060, 0.050, 0.038)), (0.056, (0.052, 0.044, 0.034)), (0.170, (0.022, 0.021, 0.020)),
+             (0.450, (0.008, 0.009, 0.011)), (1.000, (0.0, 0.0, 0.0))]
+
+
+def sun_direction():
+    """Vetor unitário para o Sol Negro (azimute medido do norte para leste)."""
+    ring = layout.SUN_RING
+    azimuth, elevation = math.radians(ring["azimuth_deg"]), math.radians(ring["elevation_deg"])
+    return Vector((math.sin(azimuth) * math.cos(elevation), math.cos(azimuth) * math.cos(elevation),
+                   math.sin(elevation)))
+
+
+def build(ctx):
+    build_world(ctx.scene)
+    build_black_sun(ctx)
+    ctx.log("céu, neblina e Sol Negro")
+
+
+def _ramp(tree, stops, factor_socket):
+    node = tree.nodes.new("ShaderNodeValToRGB")
+    node.color_ramp.interpolation = "LINEAR"
+    elements = node.color_ramp.elements
+    while len(elements) < len(stops):
+        elements.new(0.5)
+    for element, (position, color) in zip(elements, stops):
+        element.position = position
+        element.color = (*color, 1.0)
+    tree.links.new(factor_socket, node.inputs["Fac"])
+    return node.outputs["Color"]
+
+
+def _math(tree, operation, a, b=None, clamp=False):
+    node = tree.nodes.new("ShaderNodeMath")
+    node.operation = operation
+    node.use_clamp = clamp
+    for index, value in enumerate((a, b)):
+        if value is None:
+            continue
+        if isinstance(value, (int, float)):
+            node.inputs[index].default_value = value
+        else:
+            tree.links.new(value, node.inputs[index])
+    return node.outputs[0]
+
+
+def build_world(scene):
+    world = bpy.data.worlds.get("SA_World") or bpy.data.worlds.new("SA_World")
+    scene.world = world
+    world.use_nodes = True
+    tree = world.node_tree
+    tree.nodes.clear()
+    coords = tree.nodes.new("ShaderNodeTexCoord")
+    heading = tree.nodes.new("ShaderNodeVectorMath")
+    heading.operation = "NORMALIZE"
+    tree.links.new(coords.outputs["Generated"], heading.inputs[0])
+    split = tree.nodes.new("ShaderNodeSeparateXYZ")
+    tree.links.new(heading.outputs["Vector"], split.inputs["Vector"])
+
+    elevation = _math(tree, "POWER", _math(tree, "ABSOLUTE", split.outputs["Z"]), 0.5)
+    horizon = _ramp(tree, HORIZON_RAMP, elevation)
+
+    toward_sun = tree.nodes.new("ShaderNodeVectorMath")
+    toward_sun.operation = "DOT_PRODUCT"
+    toward_sun.inputs[1].default_value = tuple(sun_direction())
+    tree.links.new(heading.outputs["Vector"], toward_sun.inputs[0])
+    angle = _math(tree, "ARCCOSINE", toward_sun.outputs["Value"], clamp=False)
+    halo = _ramp(tree, HALO_RAMP, angle)
+
+    dawn = tree.nodes.new("ShaderNodeVectorMath")
+    dawn.name = DAWN_GAIN_NODE
+    dawn.operation = "SCALE"
+    dawn.inputs["Scale"].default_value = 1.0
+    tree.links.new(halo, dawn.inputs[0])
+    total = tree.nodes.new("ShaderNodeVectorMath")
+    total.operation = "ADD"
+    tree.links.new(horizon, total.inputs[0])
+    tree.links.new(dawn.outputs["Vector"], total.inputs[1])
+
+    background = tree.nodes.new("ShaderNodeBackground")
+    tree.links.new(total.outputs["Vector"], background.inputs["Color"])
+    output = tree.nodes.new("ShaderNodeOutputWorld")
+    tree.links.new(background.outputs["Background"], output.inputs["Surface"])
+
+    fog = tree.nodes.new("ShaderNodeVolumeScatter")
+    fog.name = FOG_NODE
+    fog.inputs["Color"].default_value = FOG_COLOR
+    fog.inputs["Density"].default_value = 0.0
+    fog.inputs["Anisotropy"].default_value = FOG_ANISOTROPY
+    tree.links.new(fog.outputs["Volume"], output.inputs["Volume"])
+    return world
+
+
+def set_dawn(scene, amount):
+    """0 = noite (padrão); 1 = horizonte e halo bem mais claros. Usado no final do jogo."""
+    node = scene.world.node_tree.nodes.get(DAWN_GAIN_NODE)
+    if node is not None:
+        node.inputs["Scale"].default_value = 1.0 + 3.0 * amount
+
+
+def set_fog_density(scene, density):
+    node = scene.world.node_tree.nodes.get(FOG_NODE)
+    if node is not None:
+        node.inputs["Density"].default_value = density
+
+
+def _disc_mesh(name, material):
+    """Disco de raio 1 no plano XY, com a normal em +Z."""
+    builder = MeshBuilder(name)
+    builder.polygon([(math.cos(2 * math.pi * i / DISC_SIDES), math.sin(2 * math.pi * i / DISC_SIDES), 0.0)
+                     for i in range(DISC_SIDES)], material)
+    return builder
+
+
+def build_black_sun(ctx):
+    ring = layout.SUN_RING
+    direction = sun_direction()
+    radius = ring["distance"] * math.tan(math.radians(ring["radius_deg"]))
+    facing = (-direction).to_track_quat("Z", "Y").to_euler()
+
+    root = empty(ctx, "BlackSun", C.COL_WORLD, tuple(Vector(SUN_ANCHOR) + direction * ring["distance"]))
+    root.rotation_euler = facing
+    root["sa_kind"] = "black_sun"
+    # +Z local aponta para a casa: o disco fica 0,6 m na frente da coroa para cobri-la
+    for name, material, scale, toward_viewer in (("BlackSun_Corona", "sun_corona", radius * CORONA_SCALE, 0.0),
+                                                 ("BlackSun_Disc", "sun_black", radius, 0.6)):
+        disc = _disc_mesh(name, material).build(ctx, C.COL_WORLD)
+        disc.parent = root
+        disc.location = (0.0, 0.0, toward_viewer)
+        disc.scale = (scale, scale, scale)

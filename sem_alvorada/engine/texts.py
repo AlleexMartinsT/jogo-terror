@@ -15,6 +15,7 @@ MSG_BATTERY_GOOD = "A pilha ainda está boa."
 MSG_LOOK_WINDOW = "Lá fora só existe o preto. Nem estrelas."
 MSG_GARAGE_NEEDS = "Ainda falta: {missing}."
 MSG_CAR_LOCKED = "Preciso destrancar a porta da garagem primeiro."
+MSG_RESPAWN = "Você acorda no último lugar seguro."
 
 READER_CLOSE = "[E] fechar"
 

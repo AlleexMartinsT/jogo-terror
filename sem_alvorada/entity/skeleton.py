@@ -38,6 +38,7 @@ FINGER_LENGTH = {"Index": 0.21, "Middle": 0.23, "Ring": 0.21, "Pinky": 0.17}
 # com a mão pendurada e a palma para a coxa, os dedos ficam lado a lado no eixo Y (polegar na frente)
 FINGER_Y = {"Index": 0.030, "Middle": 0.010, "Ring": -0.010, "Pinky": -0.030}
 ARM_SPREAD = {"shoulder": 0.21, "elbow": 0.25, "wrist": 0.29}
+MAX_FORCED_BEND = 0.34 * 3.141592653589793      # ~61 graus: quanto um osso com orientação imposta (pé) pode dobrar
 
 
 @dataclass(frozen=True)
@@ -190,6 +191,14 @@ def _solve_chain(origin, goal, upper, lower):
     return upper_world, lower_world
 
 
+def _limit_bend(relative):
+    """Limita a dobra de uma orientação imposta em relação ao pai (o tornozelo não vira 100 graus)."""
+    angle = relative.angle
+    if angle <= MAX_FORCED_BEND:
+        return relative
+    return IDENTITY.slerp(relative, MAX_FORCED_BEND / angle)
+
+
 def solve(spec):
     """Resolve a `PoseSpec` inteira: FK do tronco, IK das cadeias pedidas, FK do resto."""
     local, world, head = {}, {}, {}
@@ -207,7 +216,7 @@ def solve(spec):
         if name in forced:
             absolute = forced[name]
         elif name in spec.world_rot:
-            absolute = spec.world_rot[name]
+            absolute = parent_world @ _limit_bend(parent_world.inverted() @ spec.world_rot[name])
         elif name in spec.ik:
             lower_name = IK_CHAINS[name][0]
             absolute, forced[lower_name] = _solve_chain(origin, spec.ik[name], b, BONE_MAP[lower_name])

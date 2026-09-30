@@ -236,10 +236,12 @@ class MeshBuilder:
             face_mat = (mats or {}).get(face, mat)
             self._face([ids[i] for i in order], [corners[i] for i in order], face_mat, uv_scale=uv)
 
-    def loft(self, rings, mat, cap_start=True, cap_end=True, smooth=False, uv=1.0, closed_volume=True):
+    def loft(self, rings, mat, cap_start=True, cap_end=True, smooth=False, uv=1.0, orient=True, uv_grid=False):
         """Une anéis de pontos (mesmo número de pontos, exceto um anel de 1 ponto = ápice).
 
-        Os anéis vão na ordem em que a peça cresce; o volume é orientado para fora.
+        Os anéis vão na ordem em que a peça cresce. Se a forma for fechada (tampas ou ápices nas
+        duas pontas) o volume é orientado para fora; formas abertas confiam na ordem dos anéis
+        (anti-horário visto de +Z, ou o sentido que o chamador escolher).
         """
         first = len(self._faces)
         ring_ids = [self._push(r) for r in rings]
@@ -252,9 +254,11 @@ class MeshBuilder:
             arc = _arc_lengths(lo if len(lo) > 1 else hi)
             v0, v1 = path[level] * uv, path[level + 1] * uv
             count = len(lo) if len(lo) > 1 else len(hi)
+            if uv_grid:
+                v0, v1 = level / (len(rings) - 1), (level + 1) / (len(rings) - 1)
             for j in range(count):
                 k = (j + 1) % count
-                u0, u1 = arc[j] * uv, arc[j + 1] * uv
+                u0, u1 = (j / count, (j + 1) / count) if uv_grid else (arc[j] * uv, arc[j + 1] * uv)
                 if len(hi) == 1:
                     tri = [lo_ids[j], lo_ids[k], hi_ids[0]]
                     pts = [lo[j], lo[k], hi[0]]
@@ -271,7 +275,8 @@ class MeshBuilder:
             self._face(list(reversed(ring_ids[0])), list(reversed(rings[0])), mat, uv_scale=uv)
         if cap_end and len(rings[-1]) > 2:
             self._face(ring_ids[-1], rings[-1], mat, uv_scale=uv)
-        if closed_volume:
+        closed = (cap_start or len(rings[0]) == 1) and (cap_end or len(rings[-1]) == 1)
+        if orient and closed:
             self._orient_outward(first)
 
     def cylinder(self, cx, cy, z0, radius, height, mat, seg=8, r_top=None, smooth=False,
@@ -287,6 +292,15 @@ class MeshBuilder:
         """Revolve um perfil [(raio, z), ...] de baixo para cima; raio 0 vira ápice."""
         rings = [circle_points(cx, cy, z0 + z, r, seg) if r > 1e-6 else [(cx, cy, z0 + z)] for r, z in profile]
         self.loft(rings, mat, cap_bottom, cap_top, smooth, uv)
+
+    def sphere(self, cx, cy, cz, radius, mat, seg=10, rings=6, smooth=True, squash=1.0):
+        """Esfera com UV equiretangular (globo, olhos, cabeças de pelúcia); `squash` achata em Z."""
+        rows = [[(cx, cy, cz - radius * squash)]]
+        for row in range(1, rings):
+            phi = math.pi * row / rings
+            rows.append(circle_points(cx, cy, cz - radius * squash * math.cos(phi), radius * math.sin(phi), seg))
+        rows.append([(cx, cy, cz + radius * squash)])
+        self.loft(rows, mat, False, False, smooth, uv_grid=True)
 
     def soft_box(self, cx, cy, z0, width, depth, height, mat, radius=0.05, edge=0.02,
                  corner_points=2, uv=1.0, smooth=False):

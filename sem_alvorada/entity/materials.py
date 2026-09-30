@@ -27,8 +27,7 @@ def _packed_image(name, pixels):
     rgba = np.ones((height, width, 4), np.float32)
     rgba[..., :3] = pixels
     image.pixels.foreach_set(rgba.ravel())
-    image.colorspace_settings.name = "sRGB"
-    image.pack()
+    image.pack()          # sem mexer em colorspace_settings antes: isso faz o pack() virar um no-op
     return image
 
 
@@ -66,7 +65,9 @@ def build_eye():
 
 
 def build_all(rng):
-    return {SKIN: build_skin(rng), CLOTH: build_cloth(rng), EYE: build_eye()}
+    """`rng` é o `random.Random` do build; as texturas usam um Generator do numpy derivado dele."""
+    noise_rng = np.random.default_rng(rng.randrange(2 ** 32))
+    return {SKIN: build_skin(noise_rng), CLOTH: build_cloth(noise_rng), EYE: build_eye()}
 
 
 def set_eye_strength(level):

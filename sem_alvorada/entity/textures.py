@@ -20,7 +20,7 @@ CLOTH_BASE = np.array([0.075, 0.070, 0.068], np.float32)
 
 # onde ficam as órbitas dos olhos no quadrante da cabeça (u, v em 0..1 do atlas)
 HEAD_ATLAS = (0.0, 0.5, 0.5, 1.0)          # u0, v0, u1, v1
-EYE_SOCKET_UV = ((0.19, 0.735), (0.31, 0.735))
+EYE_SOCKET_UV = ((0.215, 0.755), (0.285, 0.755))
 
 
 def value_noise(size, cells, rng):
@@ -91,7 +91,7 @@ def skin_texture(rng, size=SKIN_SIZE):
 
     _paint_ribs(image, size)
     for socket in EYE_SOCKET_UV:
-        _paint_soft_disc(image, socket, radius_px=size * 0.075, color=np.array([0.03, 0.03, 0.04]),
+        _paint_soft_disc(image, socket, radius_px=size * 0.038, color=np.array([0.03, 0.03, 0.04]),
                          strength=0.9)
     return np.clip(image, 0.0, 1.0).astype(np.float32)
 

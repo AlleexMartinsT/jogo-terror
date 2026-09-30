@@ -23,7 +23,7 @@ REPORT_DIR = os.path.join(ROOT_DIR, "out", "audio")
 BUDGET_BYTES = 20 * 1024 * 1024
 
 
-def _load_recipes():
+def load_recipes():
     """Importa os módulos de receitas (cada um se registra em `catalog.SPECS`)."""
     from . import recipes_ambience, recipes_entity, recipes_foley, recipes_scene  # noqa: F401
 
@@ -34,7 +34,7 @@ def seed_for(name):
 
 def render(name):
     """Sintetiza o som `name` e o normaliza. Devolve (amostras float64, taxa)."""
-    _load_recipes()
+    load_recipes()
     spec = SPECS[name]
     raw = spec.build(np.random.default_rng(seed_for(name)))
     if spec.loop:
@@ -47,7 +47,7 @@ def wav_path(name, audio_dir=AUDIO_DIR):
 
 
 def selected_names(only=None):
-    _load_recipes()
+    load_recipes()
     names = [n for n in REQUIRED_SOUNDS]
     extra = sorted(set(SPECS) - set(names))
     names += extra
@@ -83,6 +83,22 @@ def ensure_all(audio_dir=AUDIO_DIR, log=print):
         log(f"gerando {len(absent)} sons ausentes")
         render_all(audio_dir, only=absent, log=log)
     return absent
+
+
+def manifest_entries(audio_dir=AUDIO_DIR):
+    """Lista {name, seconds, rate, loop, bytes} lendo só o cabeçalho de cada WAV."""
+    import wave
+    from .catalog import loop_names
+    load_recipes()
+    loops = set(loop_names())
+    entries = []
+    for name in REQUIRED_SOUNDS:
+        path = wav_path(name, audio_dir)
+        with wave.open(path, "rb") as fh:
+            frames, rate = fh.getnframes(), fh.getframerate()
+        entries.append({"name": name, "seconds": round(frames / rate, 3), "rate": rate,
+                        "loop": name in loops, "bytes": os.path.getsize(path)})
+    return entries
 
 
 # --------------------------------------------------------------------------

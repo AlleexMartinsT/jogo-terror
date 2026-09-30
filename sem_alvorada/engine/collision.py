@@ -224,6 +224,9 @@ class SceneCollision:
         vertices, triangles = _world_triangles(scene)
         return None if vertices is None else cls(vertices, triangles)
 
+    def covers(self, x, y, z):
+        return self._layout.covers(x, y, z)
+
     def ground(self, x, y, z, step=STEP):
         top = z + step + 0.05
         reach = step + 0.05 + MAX_DROP + 0.10
@@ -232,18 +235,23 @@ class SceneCollision:
             hit, normal, _face, distance = self._tree.ray_cast(origin, DOWN, reach)
             if hit is None:
                 break
-            if normal.z > 0.4:
+            if abs(normal.z) > 0.4:         # horizontal, qualquer que seja a orientação da face
                 return hit.z
-            origin = Vector((x, y, hit.z - 0.01))       # atravessou a face de baixo de algo
+            origin = Vector((x, y, hit.z - 0.01))       # face inclinada demais para pisar: continua descendo
             reach -= distance + 0.01
             if reach <= 0:
                 break
         return self._ground_from_plan(x, y, z, step)
 
     def _ground_from_plan(self, x, y, z, step):
-        """Sem piso na malha: usa a planta dentro da casa, para não travar o jogo por um buraco."""
+        """Sem piso na malha: usa a planta dentro da casa, para não travar o jogo por um buraco.
+
+        Só vale se o piso da planta está ao alcance dos pés; um vão fundo (escada) continua sendo um vão.
+        """
         height = self._layout.ground(x, y, z, step)
-        if height is not None and self.missing_floor_reports < 3:
+        if height is None or height - z > step or z - height > MAX_DROP:
+            return None
+        if self.missing_floor_reports < 3:
             self.missing_floor_reports += 1
             print(f"[engine] aviso: sem piso sa_col em ({x:.2f}, {y:.2f}, z={z:.2f}); usando a planta", flush=True)
         return height
@@ -318,11 +326,29 @@ def _resolve(collision, x, y, z, radius, height, segments):
     return x, y
 
 
+EDGE_PROBES = ((1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0))
+EDGE_MARGIN = 0.7        # fração do raio: a borda de um vão fica a esta distância do centro
+
+
+def near_a_drop(collision, x, y, z, radius, step):
+    """Há um vão fundo sob a borda do corpo? Mantém o jogador longe de escadas sem corrimão."""
+    reach = radius * EDGE_MARGIN
+    for dx, dy in EDGE_PROBES:
+        ground = collision.ground(x + dx * reach, y + dy * reach, z, step)
+        if ground is None and collision.covers(x + dx * reach, y + dy * reach, z):
+            return True
+        if ground is not None and z - ground > MAX_DROP:
+            return True
+    return False
+
+
 def _try_step(collision, x, y, z, radius, height, segments, step):
     """Posição resolvida e altura do piso ali, ou None se o passo não é permitido."""
     nx, ny = _resolve(collision, x, y, z, radius, height, segments)
     ground = collision.ground(nx, ny, z, step)
     if ground is None or ground - z > step + 1e-3 or z - ground > MAX_DROP:
+        return None
+    if near_a_drop(collision, nx, ny, ground, radius, step):
         return None
     return nx, ny, ground
 

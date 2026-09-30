@@ -80,6 +80,42 @@ def formants(x, peaks, sr=SR, floor=0.03):
     return shape(x, gain, sr)
 
 
+# Formantes (F1, F2, F3) aproximados de cinco vogais; larguras de banda típicas de voz.
+VOWELS = {
+    "a": (800, 1200, 2800), "e": (400, 2000, 2600), "i": (300, 2300, 3000),
+    "o": (500, 900, 2500), "u": (350, 700, 2400),
+}
+_VOWEL_BANDWIDTH = (110, 140, 200)
+_VOWEL_HEIGHT = (1.0, 0.6, 0.25)
+
+
+def vowel_peaks(first, second=None, blend=0.0):
+    """Picos de formante de uma vogal, ou de uma mistura linear `first` -> `second` (blend 0..1)."""
+    a = VOWELS[first]
+    b = VOWELS[second] if second else a
+    return [(a[k] + (b[k] - a[k]) * blend, _VOWEL_BANDWIDTH[k], _VOWEL_HEIGHT[k]) for k in range(3)]
+
+
+def formant_glide(x, peaks_at, sr=SR, frame=1024, floor=0.03):
+    """Filtro de formantes que muda no tempo (STFT com sobreposição).
+
+    `peaks_at(t_seconds)` devolve a lista de picos [(freq, largura, ganho)] daquele instante.
+    O sinal é tratado como periódico (extensão circular), então loops continuam emendando.
+    """
+    hop = frame // 2
+    window = np.hanning(frame)
+    padded = np.concatenate([x[-frame:], x, x[:frame]])
+    freqs = np.fft.rfftfreq(frame, 1.0 / sr)
+    out = np.zeros(len(padded) + frame)
+    for start in range(0, len(padded) - frame, hop):
+        centre = (start + frame / 2 - frame) / sr
+        gain = np.full_like(freqs, floor)
+        for freq, bandwidth, height in peaks_at(centre % (len(x) / sr)):
+            gain += height / (1.0 + ((freqs - freq) / (bandwidth / 2.0)) ** 2)
+        out[start:start + frame] += np.fft.irfft(np.fft.rfft(padded[start:start + frame] * window) * gain, frame)
+    return out[frame:frame + len(x)]
+
+
 def pink(rng, n, sr=SR, low=20.0):
     """Ruído rosa (1/f em potência) periódico em `n` amostras."""
     return unit_rms(shape(white(rng, n), lambda f: 1.0 / np.sqrt(np.maximum(f, low)), sr))

@@ -90,17 +90,45 @@ class MeshBuilder:
         self.polygon([(x, y, z0) for x, y in reversed(outline)], caps[0])
         self.polygon([(x, y, z1) for x, y in outline], caps[1])
 
-    def cylinder(self, x, y, z0, z1, radius, material, sides=8, radius_top=None, caps=True):
-        """Cilindro (ou tronco de cone se `radius_top` difere) de eixo vertical."""
+    def cylinder(self, u, v, w0, w1, radius, material, sides=8, radius_top=None, caps=True, axis="z"):
+        """Cilindro (ou tronco de cone se `radius_top` difere) com eixo em x, y ou z.
+
+        (u, v) é o centro no plano perpendicular ao eixo e w0..w1 o trecho ao longo dele.
+        Os eixos são mapeados por permutação cíclica para manter as normais para fora.
+        """
         top = radius if radius_top is None else radius_top
-        ring_bottom = [(x + radius * math.cos(a), y + radius * math.sin(a)) for a in _angles(sides)]
-        ring_top = [(x + top * math.cos(a), y + top * math.sin(a)) for a in _angles(sides)]
+        place = _AXIS_PLACEMENT[axis]
+        ring_bottom = [(u + radius * math.cos(a), v + radius * math.sin(a)) for a in _angles(sides)]
+        ring_top = [(u + top * math.cos(a), v + top * math.sin(a)) for a in _angles(sides)]
         for i in range(sides):
             j = (i + 1) % sides
-            self.quad((*ring_bottom[i], z0), (*ring_bottom[j], z0), (*ring_top[j], z1), (*ring_top[i], z1), material)
+            self.quad(place(*ring_bottom[i], w0), place(*ring_bottom[j], w0),
+                      place(*ring_top[j], w1), place(*ring_top[i], w1), material)
         if caps:
-            self.polygon([(*p, z1) for p in ring_top], material)
-            self.polygon([(*p, z0) for p in reversed(ring_bottom)], material)
+            self.polygon([place(*p, w1) for p in ring_top], material)
+            self.polygon([place(*p, w0) for p in reversed(ring_bottom)], material)
+
+    def extrude_profile(self, profile, wall_axis, n0, n1, material):
+        """Extrude um perfil (u, z) ao longo da normal de uma parede.
+
+        `wall_axis` é o eixo em que a parede corre ('x' ou 'y'); u é a coordenada
+        absoluta nesse eixo, z a altura, e n0..n1 o trecho na direção da espessura.
+        """
+        if _signed_area(profile) < 0:
+            profile = profile[::-1]
+        flip = wall_axis == "x"
+
+        def world(u, z, n):
+            return (u, n, z) if wall_axis == "x" else (n, u, z)
+
+        def emit(corners):
+            self.polygon(corners[::-1] if flip else corners, material)
+
+        emit([world(u, z, n1) for u, z in profile])
+        emit([world(u, z, n0) for u, z in reversed(profile)])
+        for i in range(len(profile)):
+            (ua, za), (ub, zb) = profile[i], profile[(i + 1) % len(profile)]
+            emit([world(ua, za, n0), world(ub, zb, n0), world(ub, zb, n1), world(ua, za, n1)])
 
     def build(self, ctx, collection, collision=False, hide=False, origin=(0.0, 0.0, 0.0)):
         """Cria o objeto, liga à coleção `collection` e devolve-o (ou None se vazio).
@@ -128,6 +156,18 @@ class MeshBuilder:
             obj.hide_render = True
             obj.hide_viewport = True
         return obj
+
+
+_AXIS_PLACEMENT = {
+    "z": lambda u, v, w: (u, v, w),
+    "x": lambda u, v, w: (w, u, v),
+    "y": lambda u, v, w: (v, w, u),
+}
+
+
+def _signed_area(profile):
+    return sum(profile[i][0] * profile[(i + 1) % len(profile)][1] - profile[(i + 1) % len(profile)][0] * profile[i][1]
+               for i in range(len(profile))) / 2
 
 
 def _angles(sides):

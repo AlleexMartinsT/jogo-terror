@@ -74,7 +74,7 @@ class DoorManager:
         self.game = game
         self.state = game.state
         self.doors = {op.id: _read_door(op, scene) for op in layout.doors()}
-        self._apply_to_objects(force=True)
+        self._apply_to_objects()
 
     # ---- consultas ----
     def get(self, door_id):
@@ -196,7 +196,7 @@ class DoorManager:
         door.refresh_segment()
         return trapped
 
-    def _apply_to_objects(self, force=False):
+    def _apply_to_objects(self):
         for door in self.doors.values():
             self._write(door)
 

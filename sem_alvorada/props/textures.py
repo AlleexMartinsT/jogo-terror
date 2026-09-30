@@ -254,9 +254,8 @@ def draw_city_map(rng, size=256):
     canvas.line(0, 200, 90, 168, (0.75, 0.10, 0.08, 1.0), 2.0)      # Rota 33
     canvas.line(90, 168, size, 30, (0.75, 0.10, 0.08, 1.0), 2.0)
     canvas.text(24, 176, "ROTA 33", (0.6, 0.05, 0.05, 1.0), 1)
-    canvas.line(40, 150, 200, 200, (0.55, 0.04, 0.04, 0.9), 3.0)     # riscada com caneta
-    canvas.line(40, 200, 200, 150, (0.55, 0.04, 0.04, 0.9), 3.0)
-    canvas.ellipse(132, 128, 26, 20, (0.55, 0.04, 0.04, 0.0))
+    canvas.line(128, 96, 176, 142, (0.55, 0.04, 0.04, 0.9), 3.0)     # riscada com caneta
+    canvas.line(128, 142, 176, 96, (0.55, 0.04, 0.04, 0.9), 3.0)
     canvas.text(196, 236, "1 MI", (0.2, 0.18, 0.14, 1.0))
     canvas.line(196, 232, 226, 232, (0.2, 0.18, 0.14, 1.0), 1.0)
     for x in (size // 3, 2 * size // 3):
@@ -470,7 +469,7 @@ def draw_tow_slip(rng, width=96, height=120):
     canvas = _paper(width, height, (0.86, 0.86, 0.82, 1.0), rng, 0.03)
     canvas.rect(0, 0, width, 18, (0.75, 0.35, 0.40, 1.0))
     canvas.text(4, 3, "PATIO MUNICIPAL", (0.12, 0.05, 0.06, 1.0))
-    canvas.text(4, 11, "LIBERACAO DE VEICULO", (0.12, 0.05, 0.06, 1.0))
+    canvas.text(4, 11, "LIBERACAO", (0.12, 0.05, 0.06, 1.0))
     for y in range(26, 82, 12):
         canvas.rect(4, y, width - 4, y + 9, (0.70, 0.70, 0.66, 1.0))
         canvas.rect(5, y + 1, width - 5, y + 8, (0.90, 0.90, 0.86, 1.0))
@@ -646,6 +645,42 @@ def draw_fridge_front(rng, width=96, height=192):
     return canvas
 
 
+def draw_globe(rng, width=64, height=32):
+    """Mapa-múndi grosseiro, azul desbotado com continentes ocres, para envolver a esfera do globo."""
+    canvas = Canvas(width, height, (0.16, 0.26, 0.36, 1.0))
+    land = (0.48, 0.44, 0.26, 1.0)
+    canvas.polygon([(6, 6), (20, 5), (22, 14), (15, 20), (10, 15)], land)
+    canvas.polygon([(16, 20), (22, 22), (19, 30), (16, 27)], land)
+    canvas.polygon([(30, 6), (44, 5), (52, 10), (48, 17), (38, 15), (33, 18)], land)
+    canvas.polygon([(34, 19), (42, 19), (40, 28), (35, 27)], land)
+    canvas.polygon([(50, 22), (58, 22), (57, 27), (51, 27)], land)
+    canvas.rect(0, 0, width, 2, (0.72, 0.72, 0.68, 1.0))
+    canvas.rect(0, height - 2, width, height, (0.72, 0.72, 0.68, 1.0))
+    canvas.grain(rng, 0.05)
+    return canvas
+
+
+def draw_windshield_crack(rng, width=128, height=64):
+    """Para-brisa levemente escuro com uma teia de trincas saindo de um ponto de impacto do lado do passageiro."""
+    canvas = Canvas(width, height, (0.04, 0.07, 0.09, 0.30))
+    cx, cy = width * 0.80, height * 0.70
+    for _ in range(12):
+        angle = rng.uniform(0, math.tau)
+        x, y = cx, cy
+        for _ in range(4):
+            angle += rng.uniform(-0.4, 0.4)
+            step = rng.uniform(6, 16)
+            nx, ny = x + step * math.cos(angle), y + step * math.sin(angle)
+            canvas.line(x, y, nx, ny, (0.85, 0.90, 0.92, 0.85), 1.0)
+            x, y = nx, ny
+    for radius in (8, 15):
+        for _ in range(10):
+            a0 = rng.uniform(0, math.tau)
+            canvas.line(cx + radius * math.cos(a0), cy + 0.8 * radius * math.sin(a0),
+                        cx + radius * math.cos(a0 + 0.5), cy + 0.8 * radius * math.sin(a0 + 0.5), (0.85, 0.9, 0.92, 0.7), 1.0)
+    return canvas
+
+
 def draw_letter_block(letter, base=(0.75, 0.20, 0.20), size=32):
     canvas = Canvas(size, size, (*base, 1.0))
     canvas.rect(2, 2, size - 2, size - 2, (0.90, 0.85, 0.70, 1.0))
@@ -674,7 +709,7 @@ def draw_stain(rng, size=64, color=(0.16, 0.04, 0.03)):
 def draw_handprints(rng, size=64):
     """Duas marcas de mão pequenas, escuras, como se arrastadas na parede (decal com alfa)."""
     canvas = Canvas(size, size, (0.14, 0.03, 0.03, 0.0))
-    for cx, cy, tilt in ((size * 0.30, size * 0.55, -0.15), (size * 0.68, size * 0.42, 0.2)):
+    for cx, cy, tilt in ((size * 0.30 + rng.uniform(-2, 2), size * 0.55, -0.15), (size * 0.68, size * 0.42 + rng.uniform(-2, 2), 0.2)):
         canvas.ellipse(cx, cy + 4, 7, 8, (0.14, 0.03, 0.03, 0.85))
         for i in range(5):
             angle = tilt + (-0.85 + i * 0.4) + math.pi
@@ -762,10 +797,12 @@ TEXTURES = {
     "shower_curtain": draw_shower_curtain,
     "cardboard": draw_cardboard,
     "cardboard_emma": lambda rng: draw_cardboard(rng, "EMMA"),
-    "cardboard_toys": lambda rng: draw_cardboard(rng, "BRINQ."),
+    "cardboard_toys": lambda rng: draw_cardboard(rng, "BRINQ"),
     "can_labels": draw_can_labels,
     "calendar": draw_calendar,
     "fridge_front": draw_fridge_front,
+    "globe": draw_globe,
+    "windshield_crack": draw_windshield_crack,
     "block_e": lambda rng: draw_letter_block("E", (0.75, 0.20, 0.20)),
     "block_m": lambda rng: draw_letter_block("M", (0.20, 0.35, 0.70)),
     "block_a": lambda rng: draw_letter_block("A", (0.25, 0.55, 0.30)),
