@@ -99,7 +99,15 @@ class WorldView:
         self.game = game
 
     def line_of_sight(self, a, b):
+        """Visada livre entre dois pontos (x, y, z). Andares diferentes só se enxergam pelo vão da escada."""
+        if layout.level_of_z(a[2]) != layout.level_of_z(b[2]) and not self._both_in_stairwell(a, b):
+            return False
         return self.game.collision.line_clear(a, b) and not self.game.doors.blocks_sight(a, b)
+
+    @staticmethod
+    def _both_in_stairwell(a, b):
+        hole = layout.STAIRS.hole.inflate(0.6)
+        return hole.contains(a[0], a[1]) and hole.contains(b[0], b[1])
 
     def door_openness(self, door_id):
         return self.game.doors.openness(door_id)

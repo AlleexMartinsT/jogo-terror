@@ -280,6 +280,7 @@ class Game:
          "credits": self._tick_credits}[self.phase](dt, inp)
         self._sync_camera()
         self._update_listener()
+        self.noise.set_listener(self.player.feet)
         self.meter.update(dt, self.noise_levels())
 
     def _tick_message(self, dt):
@@ -379,7 +380,6 @@ class Game:
             flashlight_dir=player.forward())
 
     def _tick_entity(self, dt):
-        self.noise.set_listener(self.player.feet)
         output = self.entity.update(dt, self._senses())
         if output is not None and output.kill:
             self.director.on_player_killed()

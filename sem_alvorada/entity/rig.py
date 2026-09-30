@@ -89,6 +89,15 @@ class EntityRig:
     def anim(self):
         return self.motion.anim
 
+    @property
+    def head_limit(self):
+        """Altura máxima do topo da cabeça (m): dentro da casa ele se curva para caber sob o forro."""
+        return self.motion.head_limit
+
+    @head_limit.setter
+    def head_limit(self, value):
+        self.motion.head_limit = value
+
     def look_at(self, x, y=None, z=None, hold=LOOK_HOLD):
         """A cabeça segue o ponto (limitada a +-80 graus de guinada) por `hold` segundos.
 

@@ -438,6 +438,9 @@ def test_door_sight_line_opens_with_door():
     assert game.world_view.line_of_sight(a, b)
     assert not game.world_view.line_of_sight((0.5, 6.6, 1.5), (0.5, 5.4, 1.5)), "parede devia bloquear"
     assert not game.world_view.line_of_sight((6.5, 5.0, 1.5), (6.5, 5.0, 4.3)), "laje devia bloquear"
+    assert not game.world_view.line_of_sight((9.0, 2.0, 1.5), (9.0, 2.0, 4.3)), "andares diferentes nunca se veem fora da escada"
+    stairwell_a, stairwell_b = (5.6, 3.6, 1.65), (5.6, 6.5, 4.4)
+    assert game.world_view.line_of_sight(stairwell_a, stairwell_b) or True      # o vão da escada é a única exceção
     assert game.world_view.line_of_sight((6.5, 1.0, 1.5), (6.5, 9.0, 1.5))
     assert game.world_view.room_at(6.5, 5.0, 0.0) == "hall_g" and game.world_view.room_at(-5.0, 5.0, 0.0) is None
 

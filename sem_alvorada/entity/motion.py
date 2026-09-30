@@ -29,6 +29,7 @@ DEFAULT_BLEND = 0.30
 LOOK_LIMIT_YAW = 80.0
 LOOK_LIMIT_PITCH_UP = 40.0
 LOOK_LIMIT_PITCH_DOWN = 35.0
+INDOOR_HEAD_LIMIT = 2.42            # topo da cabeça sob o forro (pé-direito 2,6 m): ele anda encurvado dentro da casa
 
 
 # --------------------------------------------------------------------------
@@ -454,6 +455,7 @@ class Motion:
         self.phase = 0.0
         self.move_w = 0.0
         self.look_yaw = self.look_pitch = self.look_weight = 0.0
+        self.head_limit = INDOOR_HEAD_LIMIT      # None: ereto, com os 2,65 m inteiros (estrada, no final)
         self._from = None
         self._blend_t = self._blend_dur = 0.0
         self.last = self._pose_for("idle")
@@ -476,7 +478,24 @@ class Motion:
         pose = Pose()
         BUILDERS[name](pose, self)
         apply_look(pose, self.look_yaw, self.look_pitch, self.look_weight)
-        return S.solve(pose.to_spec())
+        solution = S.solve(pose.to_spec())
+        if self.head_limit is not None and name != "attack":
+            solution = self._stoop(pose, solution)
+        return solution
+
+    def _stoop(self, pose, solution):
+        """Se a cabeça passaria do forro, curva o tronco e dobra os joelhos até caber."""
+        excess = solution.tail("Head").z - self.head_limit
+        if excess <= 0.0:
+            return solution
+        lean(pose, min(28.0, 75.0 * excess))
+        pose.hips.z -= 0.3 * excess
+        solution = S.solve(pose.to_spec())
+        excess = solution.tail("Head").z - self.head_limit
+        if excess > 0.0:
+            pose.hips.z -= excess
+            solution = S.solve(pose.to_spec())
+        return solution
 
     def update(self, dt, speed=None):
         self.time += dt
