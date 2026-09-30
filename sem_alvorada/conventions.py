@@ -1,0 +1,219 @@
+"""Vocabulário comum entre os módulos (nomes de objetos, propriedades, constantes).
+
+Nada aqui importa bpy: pode ser lido por qualquer módulo e pelos testes.
+
+Sistema de coordenadas: metros, Z para cima. A rua fica ao sul (y=0) e os fundos
+ao norte (y=10). O sol deveria nascer a nordeste.
+
+Yaw: é o rotation_euler.z do Blender. yaw=0 olha para +Y (norte), yaw=+90° olha
+para -X (oeste), yaw=-90° olha para +X (leste). Direção = (-sin(yaw), cos(yaw)).
+"""
+import math
+
+# --------------------------------------------------------------------------
+# Coleções da cena
+# --------------------------------------------------------------------------
+COL_WORLD = "SA_World"        # casa, chão, teto, telhado, luzes fixas
+COL_PROPS = "SA_Props"        # móveis e decoração
+COL_ITEMS = "SA_Items"        # itens coletáveis e documentos
+COL_ENTITY = "SA_Entity"      # a entidade
+COL_CUTSCENE = "SA_Cutscene"  # câmeras e objetos que só existem em cutscenes
+COL_PLAYER = "SA_Player"      # câmera do jogador, lanterna e viewmodel
+COL_COLLISION = "SA_Collision"  # proxies de colisão (ocultos)
+
+# --------------------------------------------------------------------------
+# Propriedades customizadas (obj["sa_..."]) lidas pelo runtime
+# --------------------------------------------------------------------------
+P_COL = "sa_col"                # truthy => entra na colisão do jogador e da IA
+P_INTERACT = "sa_interact"      # 'item' | 'door' | 'note' | 'car' | 'switch' | 'look'
+P_ID = "sa_id"                  # id lógico (ex.: 'KEY', 'garage', 'NOTE_3')
+P_PROMPT = "sa_prompt"          # texto curto da dica de interação (pt-BR)
+P_ITEM = "sa_item"              # tipo de item: 'FLASHLIGHT' | 'KEY' | 'MAP' | 'BATTERY' | 'NOTE'
+P_ROOM = "sa_room"              # id do cômodo (layout.ROOMS)
+P_LIGHT_ENERGY = "sa_base_energy"   # energia base da luz (W); o runtime escala/pisca
+P_LIGHT_FLICKER = "sa_flicker"      # 0..1, quanto a luz pisca
+P_LIGHT_KIND = "sa_kind"            # 'ceiling' | 'lamp' | 'tv' | 'fluorescent' | 'window'
+P_DOOR_CLOSED = "sa_closed_yaw"     # rotation_euler.z do pivô da porta fechada
+P_DOOR_OPEN = "sa_open_yaw"         # idem, aberta
+P_LOCK = "sa_lock"                  # '' | 'front' | 'back' | 'garage'
+P_SURFACE = "sa_surface"            # material de piso (som de passos): ver SURFACES
+
+# Prefixos de nome de objeto
+N_DOOR = "Door_"          # Door_<id>  (Empty pivô na dobradiça)
+N_WINDOW = "Window_"
+N_LIGHT = "Light_"        # Light_<room>_<n>
+N_ITEM = "Item_"          # Item_KEY, Item_BATTERY_1, Item_NOTE_3 ...
+N_COL = "COL_"            # proxies de colisão
+N_ANCHOR = "Anchor_"      # Anchor_<nome> (layout.ANCHORS)
+
+# Objetos únicos, criados por módulos específicos
+OBJ_PLAYER_CAM = "PlayerCam"
+OBJ_FLASHLIGHT = "Flashlight"          # SPOT filho da câmera
+OBJ_VIEW_FLASH = "ViewModel_Flashlight"  # mesh da lanterna na mão (props.viewmodel)
+OBJ_ENTITY = "Entity"                  # Empty raiz da entidade (pés na origem, frente = +Y local)
+OBJ_CUT_CAM = "CutsceneCam"
+OBJ_CAR = "Car"
+OBJ_GARAGE_ROLLUP = "GarageRollup"
+
+# --------------------------------------------------------------------------
+# Itens e objetivo
+# --------------------------------------------------------------------------
+ITEM_FLASHLIGHT = "FLASHLIGHT"
+ITEM_KEY = "KEY"
+ITEM_MAP = "MAP"
+ITEM_BATTERY = "BATTERY"
+ITEM_NOTE = "NOTE"
+
+N_BATTERIES_IN_HOUSE = 5
+# Para destrancar a porta da garagem (a entidade continua perseguindo):
+GATE_REQUIRES = {ITEM_KEY: 1, ITEM_MAP: 1, ITEM_BATTERY: 3}   # baterias já ENCONTRADAS
+
+N_NOTES = 7
+
+# --------------------------------------------------------------------------
+# Jogador
+# --------------------------------------------------------------------------
+PLAYER_EYE_STAND = 1.65
+PLAYER_EYE_CROUCH = 1.05
+PLAYER_RADIUS = 0.30
+PLAYER_STEP_HEIGHT = 0.35
+SPEED_CROUCH = 1.2
+SPEED_WALK = 2.6
+SPEED_RUN = 4.6
+STAMINA_MAX = 1.0
+STAMINA_DRAIN = 0.22      # por segundo correndo
+STAMINA_REGEN = 0.15      # por segundo
+INTERACT_RANGE = 2.0
+FOV_DEG = 72.0
+REACH_MIN_STAMINA_TO_RUN = 0.15
+
+# --------------------------------------------------------------------------
+# Lanterna
+# --------------------------------------------------------------------------
+BATTERY_MAX = 1.0
+BATTERY_DRAIN_PER_SEC = 1.0 / 210.0   # ~3,5 min de luz por pilha
+BATTERY_LOW = 0.25                    # abaixo disso a luz começa a falhar
+BATTERY_CRITICAL = 0.08
+START_SPARE_BATTERIES = 0
+FLASH_SPOT_DEG = 48.0
+FLASH_ENERGY = 1400.0                 # W (spot do Blender)
+FLASH_RANGE_VISION = 18.0             # alcance em que a entidade "vê" a luz
+DARK_VISION_RANGE = 5.5               # alcance de visão da entidade sem lanterna
+
+# --------------------------------------------------------------------------
+# RUÍDO (0..1 na fonte). Foco do jogo: ver docs/CONTRACT.md seção "Som e ruído".
+# --------------------------------------------------------------------------
+# Emitido pelo jogador, por ação:
+NOISE_PLAYER = {
+    "idle": 0.00,
+    "breath_heavy": 0.06,      # sem fôlego
+    "crouch_walk": 0.08,
+    "walk": 0.30,
+    "run": 0.75,
+    "door_open": 0.30,
+    "door_close": 0.35,
+    "door_slam": 0.90,
+    "pickup": 0.15,
+    "flash_click": 0.10,
+    "battery_swap": 0.18,
+    "stairs_creak": 0.55,      # degrau que range
+    "knock_over": 0.85,
+}
+# Multiplicador por tipo de piso (SURFACES) aplicado a passos:
+SURFACES = ("wood", "carpet", "tile", "concrete", "stairs")
+SURFACE_NOISE_MULT = {"wood": 1.0, "carpet": 0.55, "tile": 1.15, "concrete": 1.0, "stairs": 1.35}
+
+# Emitido pela entidade (o que o JOGADOR ouve; a entidade também "vaza" presença):
+NOISE_ENTITY = {
+    "drone": 0.30,        # zumbido grave contínuo quando perto (some ao espreitar)
+    "step_stalk": 0.10,
+    "step_patrol": 0.35,
+    "step_chase": 0.85,
+    "breath": 0.12,
+    "growl": 0.70,
+    "scream": 1.00,
+    "door_open": 0.40,
+    "door_break": 0.95,
+}
+
+# Ambiente: cada cômodo tem um ruído base (ver layout.ROOMS[..].ambient), que
+# MASCARA o ruído do jogador. Eventos ambientais pontuais:
+NOISE_AMBIENT_EVENTS = {
+    "creak": 0.20,
+    "thud": 0.40,
+    "phone": 0.60,
+    "tv_burst": 0.70,
+    "clock_chime": 0.45,
+    "glass": 0.65,
+}
+
+# Propagação
+NOISE_DECAY_PER_M = 0.085         # atenuação linear por metro de caminho
+NOISE_DOOR_CLOSED_LOSS = 0.35     # perda extra por porta fechada no caminho
+NOISE_FLOOR_LOSS = 0.30           # perda ao mudar de andar
+NOISE_MASK_FACTOR = 0.9           # o ruído ambiente do cômodo do ouvinte é subtraído com este peso
+
+# --------------------------------------------------------------------------
+# Entidade
+# --------------------------------------------------------------------------
+ENTITY_HEIGHT = 2.65
+ENTITY_RADIUS = 0.38
+ENTITY_SPEED_STALK = 0.9
+ENTITY_SPEED_PATROL = 1.5
+ENTITY_SPEED_CHASE = 4.1          # um pouco menor que correr (4.6): dá pra fugir se houver fôlego
+ENTITY_KILL_DISTANCE = 1.15
+ENTITY_STATES = ("dormant", "patrol", "investigate", "stalk", "chase", "search", "attack")
+
+# --------------------------------------------------------------------------
+# Câmera / render
+# --------------------------------------------------------------------------
+RES_X, RES_Y = 1280, 720
+TEX_SIZE_DEFAULT = 128        # texturas geradas: baixa resolução, estilo GoldSrc / Cry of Fear
+TEX_SIZE_HI = 256
+
+# Paleta base: fria, suja e dessaturada (Cry of Fear)
+PALETTE = {
+    "wall_beige": (0.34, 0.30, 0.24),
+    "wall_green": (0.20, 0.24, 0.20),
+    "wall_gray": (0.24, 0.24, 0.25),
+    "wood_dark": (0.16, 0.10, 0.06),
+    "wood_mid": (0.28, 0.18, 0.10),
+    "carpet_brown": (0.20, 0.14, 0.10),
+    "carpet_green": (0.12, 0.17, 0.13),
+    "tile_white": (0.45, 0.46, 0.44),
+    "tile_kitchen": (0.30, 0.28, 0.20),
+    "concrete": (0.22, 0.22, 0.21),
+    "metal": (0.30, 0.31, 0.33),
+    "fabric_red": (0.28, 0.06, 0.05),
+    "fabric_blue": (0.09, 0.12, 0.22),
+    "fabric_gray": (0.18, 0.18, 0.19),
+    "paper": (0.65, 0.62, 0.50),
+    "black": (0.02, 0.02, 0.02),
+    "rubber": (0.05, 0.05, 0.05),
+    "blood": (0.22, 0.02, 0.02),
+    "glass_dark": (0.02, 0.03, 0.04),
+    "plaster_white": (0.55, 0.53, 0.47),
+    "car_paint": (0.10, 0.16, 0.22),
+    "skin_grey": (0.42, 0.40, 0.38),
+    "emit_white": (1.0, 1.0, 1.0),
+}
+
+# Nomes canônicos de materiais que qualquer módulo pode pedir a matapi.get_material()
+MATERIAL_NAMES = tuple(PALETTE.keys()) + (
+    "wall_wallpaper", "wall_paint_dirty", "wall_tile_bath", "wall_garage", "wall_brick_ext",
+    "floor_wood", "floor_wood_dark", "floor_carpet", "floor_linoleum", "floor_tile_bath",
+    "floor_concrete", "ceiling", "roof_shingle", "door_wood", "trim_white", "stairs_wood",
+    "glass_night", "curtain",
+)
+
+# --------------------------------------------------------------------------
+# Helpers de direção
+# --------------------------------------------------------------------------
+def yaw_dir(yaw):
+    """Vetor (x, y) para onde aponta um yaw do Blender."""
+    return (-math.sin(yaw), math.cos(yaw))
+
+
+def dir_yaw(dx, dy):
+    """Yaw do Blender que faz um objeto olhar na direção (dx, dy)."""
+    return math.atan2(-dx, dy)
