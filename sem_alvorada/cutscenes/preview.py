@@ -19,6 +19,7 @@ if ROOT not in sys.path:
 
 import bpy  # noqa: E402
 import numpy as np  # noqa: E402
+from mathutils import Vector  # noqa: E402
 
 from sem_alvorada import conventions as C  # noqa: E402
 from sem_alvorada import layout  # noqa: E402
@@ -32,7 +33,8 @@ FLASHLIGHT_ENERGY = C.FLASH_ENERGY
 START_STATE = {
     "intro": {"power": False, "flashlight": False, "player": (*layout.PLAYER_START[:3], 0.0)},
     "blackout": {"power": True, "flashlight": True, "player": (5.6, 8.65, 2.8, math.radians(-90))},
-    "garage_unlock": {"power": False, "flashlight": True, "player": (11.1, 5.85, 0.0, math.radians(-90))},
+    "garage_unlock": {"power": False, "flashlight": True, "player": (11.1, 5.85, 0.0, math.radians(-90)),
+                      "aim": (12.0, 6.2, 1.0)},         # o jogador olha para o trinco ao interagir
     "death": {"power": False, "flashlight": True, "player": (6.6, 5.2, 2.8, 0.0)},
     "ending": {"power": False, "flashlight": False, "player": (16.5, 3.6, 0.0, math.radians(90))},
 }
@@ -75,6 +77,7 @@ class PreviewHost:
         self.doors = PreviewDoors(scene)
         self.entity = self._entity()
         self.state = start["player"]
+        self._aim = start.get("aim")
         self.finished = []
         self._lights = [(o, o.get(C.P_LIGHT_ENERGY, o.data.energy)) for o in scene.objects
                         if o.type == "LIGHT" and o.name.startswith(C.N_LIGHT)]
@@ -100,8 +103,12 @@ class PreviewHost:
     def _aim_flashlight(self):
         """A lanterna fica nos olhos do JOGADOR (não na câmera da cutscene), como no jogo."""
         x, y, z, yaw = self.state
-        self._flashlight.location = (x, y, z + C.PLAYER_EYE_STAND)
-        self._flashlight.rotation_euler = (math.pi / 2, 0.0, yaw)
+        eye = Vector((x, y, z + C.PLAYER_EYE_STAND))
+        self._flashlight.location = eye
+        if self._aim is not None:
+            self._flashlight.rotation_euler = (Vector(self._aim) - eye).to_track_quat("-Z", "Y").to_euler()
+        else:
+            self._flashlight.rotation_euler = (math.pi / 2, 0.0, yaw)
 
     def set_camera(self, obj):
         self.scene.camera = obj or self.scene.objects.get(C.OBJ_PLAYER_CAM) or self.scene.camera
@@ -115,6 +122,7 @@ class PreviewHost:
 
     def place_player(self, x, y, z, yaw):
         self.state = (x, y, z, yaw)
+        self._aim = None
         self._aim_flashlight()
 
     def set_power(self, on, flicker=0.0):
@@ -211,10 +219,13 @@ def default_times(name):
     return [t0 + (t1 - t0) * fraction for t0, t1, _ in tl.shots for fraction in (0.5,)]
 
 
-def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, out_dir=OUT_DIR):
+def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, out_dir=OUT_DIR, fill=0.0):
     from sem_alvorada.entity import sheet
     os.makedirs(out_dir, exist_ok=True)
     setup_cycles(scene, res, samples, exposure)
+    if fill > 0:                         # luz branca no mundo, só para conferir enquadramento e geometria
+        from tools import preview as tools_preview
+        tools_preview._apply_fill(scene, fill)
     host = PreviewHost(scene, START_STATE[name])
     if name == "death":                    # no jogo a entidade já está colada no jogador quando mata
         px, py, pz, pyaw = host.state
@@ -254,11 +265,12 @@ def main(argv=None):
     ap.add_argument("--res", default="640x360")
     ap.add_argument("--samples", type=int, default=32)
     ap.add_argument("--exposure", type=float, default=0.0)
+    ap.add_argument("--fill", type=float, default=0.0, help="luz de mundo para depuração (0 = escuro de verdade)")
     args = ap.parse_args(argv)
     bpy.ops.wm.open_mainfile(filepath=os.path.abspath(args.blend))
     times = [float(t) for t in args.times.split(",")] if args.times else default_times(args.cutscene)
     res = tuple(int(v) for v in args.res.lower().split("x"))
-    render_frames(bpy.context.scene, args.cutscene, times, res, args.samples, args.exposure)
+    render_frames(bpy.context.scene, args.cutscene, times, res, args.samples, args.exposure, fill=args.fill)
 
 
 if __name__ == "__main__":

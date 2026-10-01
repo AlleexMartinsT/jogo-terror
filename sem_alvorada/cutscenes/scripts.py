@@ -348,7 +348,7 @@ def build_ending():
     sitting_eye = (bed.x - 0.35, bed.y + 0.15, bed.z + 1.35)
     window_eye = window_vantage("w_master_n")
 
-    ignition = add(driver_eye, (-0.05, -0.55, -0.42))        # a chave, embaixo do volante
+    ignition = add(driver_eye, (-0.12, -0.85, -0.50))        # o volante e a chave embaixo dele, com o relógio 6:12 ao lado
     chest = (road[0], road[1], road[2] + 1.5)
     entity_head = (road[0], road[1], road[2] + 2.48)
     hood_eye = (car_stop[0] + 0.1, car_stop[1] - 2.3, 1.35)   # na ponta do capô, com os faróis acesos à frente
@@ -358,16 +358,16 @@ def build_ending():
         return View(driver_eye, target, fov)
 
     labelled = (
-        ("ignition", Shot(4.0, in_car(ignition, 52.0), in_car(ignition, 44.0), handheld=0.16,
+        ("ignition", Shot(4.0, in_car(ignition, 64.0), in_car(ignition, 54.0), handheld=0.16,
                           fade=((0.0, 1.0), (1.2, 0.0)), letterbox=((0.0, 0.0), (1.5, 1.0)),
                           lines=(say("ending", 0, 1.2, 3.9),),
-                          cues=(Cue(0.0, act.cut_light(CAR_CABIN, 4.0)),
+                          cues=(Cue(0.0, act.cut_light(CAR_CABIN, 35.0)),
                                 Cue(0.4, act.sound("car_door", driver_eye, 0.9)),
                                 Cue(1.5, act.sound("key_jingle", driver_eye, 0.7)),
                                 Cue(2.6, act.sound("car_start", driver_eye, 1.0)),
                                 Cue(3.2, act.loop("engine", "car_idle", 0.7)),
                                 Cue(3.2, act.headlights(True))))),
-        ("windshield", Shot(3.0, in_car(ignition, 44.0), in_car(rollup_mid, 62.0), ease="smoother", handheld=0.2)),
+        ("windshield", Shot(3.0, in_car(ignition, 54.0), in_car(rollup_mid, 62.0), ease="smoother", handheld=0.2)),
         ("rollup", Shot(5.5, in_car(rollup_mid, 62.0), handheld=0.2,
                         cues=(Cue(0.4, act.sound("garage_rollup", rollup_mid, 1.0)),))),
         ("exterior", Shot(5.0, View(exterior_eye, (car.x, 0.8, 1.0), 62.0), View(exterior_eye, (car.x, -5.5, 1.0), 56.0),

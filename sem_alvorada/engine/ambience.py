@@ -9,6 +9,8 @@ from .. import layout
 REFRESH_SECONDS = 0.5
 LEVEL_PENALTY_M = 6.0      # som de outro andar conta como mais longe
 EVENT_VOLUME = (0.35, 0.65)   # volume mínimo e ganho sobre a força do ruído
+# Chiado de TV troca de padrão poucas vezes por segundo; a 60 quadros parece água correndo.
+STATIC_STEPS_PER_SECOND = 12
 
 # chave do loop, som, âncora (ou posição fixa, ou None), volume, alcance em metros
 LOOPS = [
@@ -34,11 +36,25 @@ def _event_sound(event, rng):
     return sound_for_event(event, rng)
 
 
+def _find_static_mappings():
+    """Nós 'StaticMapping' (criados pelos props) cujo deslocamento anima o chiado da TV."""
+    import bpy
+    found = []
+    for material in bpy.data.materials:
+        tree = material.node_tree
+        node = tree.nodes.get("StaticMapping") if tree else None
+        if node is not None:
+            found.append(node)
+    return found
+
+
 class Ambience:
     def __init__(self, game):
         self.game = game
         self._refresh_left = 0.0
         self._playing = set()
+        self._static_nodes = None
+        self._static_left = 0.0
 
     def reset(self):
         for key in list(self._playing):
@@ -47,6 +63,7 @@ class Ambience:
         self._refresh_left = 0.0
 
     def update(self, dt, events_enabled):
+        self._animate_static(dt)
         self._refresh_left -= dt
         if self._refresh_left <= 0:
             self._refresh_left = REFRESH_SECONDS
@@ -55,6 +72,17 @@ class Ambience:
             game = self.game
             for event in game.noise.schedule_ambient_events(dt, game.rng, game.player.room_id):
                 self._play_event(event)
+
+    def _animate_static(self, dt):
+        self._static_left -= dt
+        if self._static_left > 0:
+            return
+        self._static_left = 1.0 / STATIC_STEPS_PER_SECOND
+        if self._static_nodes is None:
+            self._static_nodes = _find_static_mappings()
+        rng = self.game.rng
+        for node in self._static_nodes:
+            node.inputs["Location"].default_value = (rng.random(), rng.random(), 0.0)
 
     def _play_event(self, event):
         sound = _event_sound(event, self.game.rng)
