@@ -21,8 +21,8 @@ from sem_alvorada import conventions as C  # noqa: E402
 from sem_alvorada.world import lighting, materials, quality  # noqa: E402
 
 OUT = os.path.join(ROOT, "out", "world", "test_geometry.blend")
-STATIC_TRIANGLE_BUDGET = 150_000
-WORLD_TRIANGLE_BUDGET = 100_000
+STATIC_TRIANGLE_BUDGET = C.BUDGET_TRIS["scene_total"]
+WORLD_TRIANGLE_BUDGET = C.BUDGET_TRIS["world_total"]
 RAY_HEIGHT = 1.0
 STAIR_TOLERANCE = 0.02
 

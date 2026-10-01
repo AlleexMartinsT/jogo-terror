@@ -59,3 +59,20 @@ def link_to_collection(obj, coll):
         c.objects.unlink(obj)
     coll.objects.link(obj)
     return obj
+
+
+def add_relief(mat, color_socket, strength=0.5, distance=0.01):
+    """Liga a luminância de uma textura ao relevo (Bump) do material: veios, tijolos, trama de tecido.
+
+    Sem relevo, a lanterna rasante vê uma superfície lisa e pintada; com ele, cada fresta pega luz.
+    `distance` é a altura (m) que o branco da textura representa em relação ao preto.
+    """
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    gray = nodes.new("ShaderNodeRGBToBW")
+    links.new(color_socket, gray.inputs["Color"])
+    bump = nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = strength
+    bump.inputs["Distance"].default_value = distance
+    links.new(gray.outputs["Val"], bump.inputs["Height"])
+    links.new(bump.outputs["Normal"], bsdf_of(mat).inputs["Normal"])
+    return bump

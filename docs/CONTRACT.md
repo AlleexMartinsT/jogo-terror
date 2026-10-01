@@ -4,6 +4,10 @@ Jogo de terror psicológico em primeira pessoa, feito **inteiramente no Blender*
 áudio e lógica, tudo gerado por código Python). Visual e clima de **Cry of Fear**: escuro, sujo,
 dessaturado, baixa resolução, lanterna como única fonte confiável de luz.
 
+> **Fase de acabamento em andamento:** `docs/ACABAMENTO.md` substitui a regra de ouro 5 (orçamento: agora em
+> `conventions.BUDGET_TRIS`) e a parte de texturas da regra 4 (256 a 512 px, filtro Linear, relevo). O resto
+> deste contrato continua valendo.
+
 Leia este documento inteiro antes de escrever código. Ele é a fonte de verdade sobre nomes,
 APIs e responsabilidades. Se algo aqui for ambíguo, escolha a interpretação mais simples e
 registre a decisão no relatório final.

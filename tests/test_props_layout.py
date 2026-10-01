@@ -25,9 +25,9 @@ from sem_alvorada import conventions as C  # noqa: E402
 from sem_alvorada.buildctx import BuildContext  # noqa: E402
 from sem_alvorada.props import placement  # noqa: E402
 
-MAX_PROP_TRIS = 1500
-MAX_CAR_TRIS = 6000
-MAX_TOTAL_TRIS = 80_000
+MAX_PROP_TRIS = C.BUDGET_TRIS["hero_prop"]
+MAX_CAR_TRIS = C.BUDGET_TRIS["car"]
+MAX_TOTAL_TRIS = C.BUDGET_TRIS["props_total"]
 MAX_PART_LIGHTS = 13
 ITEM_DISTANCE_LIMIT = 1.2
 REST_TOLERANCE = 0.03       # distância máxima entre o ponto mais baixo de um item/enfeite e a superfície

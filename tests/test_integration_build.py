@@ -97,7 +97,7 @@ def check_scene_contract(scene):
     tris = triangle_count(visible)
     print(f"[integração] {len(scene.objects)} objetos, {tris} triângulos visíveis, "
           f"{len(bpy.data.images)} imagens, {len(bpy.data.materials)} materiais")
-    if tris > 260_000:
+    if tris > C.BUDGET_TRIS["scene_total"]:
         problems.append(f"triângulos demais: {tris}")
     return problems
 

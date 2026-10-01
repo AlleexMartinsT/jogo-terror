@@ -144,8 +144,20 @@ def _build(name, spec):
     return mat
 
 
+# nome -> função sem argumentos que devolve um Material pronto. Para materiais com nós próprios
+# (relevo, mistura de camadas, emissão animada): cada módulo registra os seus sem editar este arquivo.
+BUILDERS = {}
+
+
+def register_builder(name, build):
+    BUILDERS[name] = build
+
+
 def get(name):
-    """Material `name`: próprio dos props se estiver em SPECS, senão o canônico via matapi."""
+    """Material `name`: construtor registrado, senão SPECS dos props, senão o canônico via matapi."""
+    existing_custom = bpy.data.materials.get(name)
+    if name in BUILDERS:
+        return existing_custom if existing_custom is not None else BUILDERS[name]()
     spec = SPECS.get(name)
     if spec is None:
         return matapi.get_material(name)

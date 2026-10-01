@@ -96,6 +96,7 @@ def test_tri_count_matches_blender():
     builder = MeshBuilder("tris")
     builder.soft_box(0, 0, 0, 1, 1, 1, "metal")
     builder.sphere(0, 0, 2, 0.3, "metal")
+    builder.finish = None          # a contagem do builder é da geometria crua, sem chanfro
     mesh = builder.to_mesh("tris_test")
     assert builder.tri_count == sum(len(p.vertices) - 2 for p in mesh.polygons)
 

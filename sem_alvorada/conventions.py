@@ -207,6 +207,19 @@ MATERIAL_NAMES = tuple(PALETTE.keys()) + (
 )
 
 # --------------------------------------------------------------------------
+# Orçamento de geometria (triângulos). Roda em EEVEE ao vivo; a lanterna projeta sombra, então a cena
+# é desenhada duas vezes por quadro. Detalhe vale a pena, desperdício não.
+# --------------------------------------------------------------------------
+BUDGET_TRIS = {
+    "prop": 25_000,          # móvel ou objeto comum
+    "hero_prop": 60_000,     # peça que aparece de perto e de frente: cama, sofá, geladeira, escrivaninha
+    "car": 90_000,
+    "props_total": 650_000,
+    "world_total": 450_000,  # casca, esquadrias, escada, telhado, exterior
+    "scene_total": 1_200_000,
+}
+
+# --------------------------------------------------------------------------
 # Helpers de direção
 # --------------------------------------------------------------------------
 def yaw_dir(yaw):

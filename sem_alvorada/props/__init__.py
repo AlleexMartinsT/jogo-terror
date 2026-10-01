@@ -8,6 +8,7 @@ import random
 import bpy
 
 from .. import conventions as C
+from . import kit
 
 
 def _is_props_object(obj):
@@ -30,6 +31,7 @@ def build(ctx):
     A bagunça usa um gerador próprio derivado da semente: o resultado não depende do que as outras
     etapas sortearam antes, e reconstruir na mesma `ctx` devolve exatamente a mesma cena.
     """
+    kit.set_quality(ctx.quality)
     shared_rng, ctx.rng = ctx.rng, random.Random(f"props:{ctx.seed}")
     try:
         _build_all(ctx)

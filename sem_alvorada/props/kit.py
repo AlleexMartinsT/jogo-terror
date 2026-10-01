@@ -17,6 +17,7 @@ from contextlib import contextmanager
 
 from mathutils import Euler, Matrix, Vector
 
+from .. import craft
 from . import materials
 
 FACE_ORDER = {
@@ -76,11 +77,26 @@ def projected_uv(points, scale):
     return [((x * tx + y * ty) * scale, z * scale) for x, y, z in points]
 
 
+QUALITY = "medium"
+
+
+def set_quality(level):
+    """'low' | 'medium' | 'high': o acabamento usa menos ou mais segmentos de chanfro e subdivisão."""
+    global QUALITY
+    QUALITY = level
+
+
 class MeshBuilder:
-    """Acumula geometria com materiais por face. Veja `to_mesh` para criar o Mesh."""
+    """Acumula geometria com materiais por face. Veja `to_mesh` para criar o Mesh.
+
+    `finish` é a receita de acabamento aplicada em `to_mesh` (ver `sem_alvorada.craft`): chanfro nas
+    arestas, sombreamento por ângulo, subdivisão. Troque por `craft.SOFT` (estofados), `craft.CRISP`
+    (metal, plástico) ou `craft.RAW` (não mexer). O padrão é `craft.STANDARD`; peças de destaque merecem `craft.FURNITURE`.
+    """
 
     def __init__(self, name):
         self.name = name
+        self.finish = craft.STANDARD
         self.materials = []
         self._verts = []
         self._faces = []
@@ -397,6 +413,8 @@ class MeshBuilder:
         layer = mesh.uv_layers.new(name="UVMap")
         layer.data.foreach_set("uv", [c for face_uv in self._uvs for uv_pair in face_uv for c in uv_pair])
         mesh.update()
+        if self.finish is not None:
+            mesh = craft.finish_mesh(mesh, self.finish, QUALITY)
         return mesh
 
 
