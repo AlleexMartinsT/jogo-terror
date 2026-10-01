@@ -21,8 +21,8 @@ OUT_DIR = os.path.join(ROOT, "out", "entity")
 DOOR_HEIGHT = 2.05
 
 
-def _new_object(name, data, scene):
-    obj = bpy.data.objects.new(name, data)
+def _new_object(name, datablock, scene):
+    obj = bpy.data.objects.new(name, datablock)
     scene.collection.objects.link(obj)
     return obj
 
@@ -77,10 +77,10 @@ def build_studio(scene, with_door=True):
     _light(scene, "Rim", "SPOT", 1200, (1.8, -2.0, 3.2), (0, 0, 1.6), (1.0, 0.9, 0.8), 0.2)
     _light(scene, "Fill", "POINT", 90, (2.2, 2.6, 1.0), (0, 0, 1.0), (0.6, 0.7, 1.0), 0.5)
     _light(scene, "SideKey", "SPOT", 1300, (4.2, 1.2, 3.2), (0, 0, 1.4), (0.8, 0.85, 1.0), 0.3)
-    data = bpy.data.cameras.new("StudioCam")
-    data.sensor_fit = "HORIZONTAL"
-    data.clip_start = 0.02
-    cam = _new_object("StudioCam", data, scene)
+    camera_data = bpy.data.cameras.new("StudioCam")
+    camera_data.sensor_fit = "HORIZONTAL"
+    camera_data.clip_start = 0.02
+    cam = _new_object("StudioCam", camera_data, scene)
     scene.camera = cam
     return cam
 

@@ -22,7 +22,7 @@ PLAYER_STATE = (11.1, 5.9, 0.0, math.radians(-90), 1.65)          # cozinha, dia
 HALL_STATE = (5.6, 8.65, 2.8, math.radians(-90), 4.45)              # saindo do quarto do casal
 
 
-class FakeData:
+class FakeDatablock:
     def __init__(self, energy=None):
         self.angle = 1.0
         if energy is not None:
@@ -36,7 +36,7 @@ class FakeObject:
         self.rotation_mode = "XYZ"
         self.rotation_quaternion = (1.0, 0.0, 0.0, 0.0)
         self.hide_viewport = self.hide_render = light
-        self.data = FakeData(0.0 if light else None)
+        self.data = FakeDatablock(0.0 if light else None)
         self.props = {}
 
     def get(self, key, default=None):

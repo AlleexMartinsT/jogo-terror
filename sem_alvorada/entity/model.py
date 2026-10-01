@@ -138,21 +138,21 @@ def _panel_weights(coverage):
         front, right = _smooth(y, -0.4, 0.4), _smooth(x, -0.4, 0.4)
         parts = {"CoatFront.R": front * right, "CoatFront.L": front * (1 - right),
                  "CoatBack.R": (1 - front) * right, "CoatBack.L": (1 - front) * (1 - right)}
-        result = {"Hips": 1.0 - coverage}
-        result.update({name: coverage * w for name, w in parts.items() if coverage * w > 0.01})
-        return result
+        weights = {"Hips": 1.0 - coverage}
+        weights.update({name: coverage * w for name, w in parts.items() if coverage * w > 0.01})
+        return weights
     return weights
 
 
 def _shoulder_weights(angle):
     x = math.cos(angle)
-    result = {"Spine3": 1.0}
+    weights = {"Spine3": 1.0}
     for side, value in (("R", x), ("L", -x)):
         share = 0.55 * _smooth(value, 0.35, 0.9)
         if share > 0.01:
-            result[f"Shoulder.{side}"] = share
-            result["Spine3"] -= share
-    return result
+            weights[f"Shoulder.{side}"] = share
+            weights["Spine3"] -= share
+    return weights
 
 
 def _ring(x, y, z, rx, ry, weights, drop=()):

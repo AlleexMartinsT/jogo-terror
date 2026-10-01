@@ -91,12 +91,12 @@ class PreviewHost:
         return EntityRig(self.scene)
 
     def _make_flashlight(self):
-        data = bpy.data.lights.new("PreviewFlashlight", "SPOT")
-        data.spot_size = math.radians(C.FLASH_SPOT_DEG)
-        data.spot_blend = 0.25
-        data.energy = 0.0
-        data.color = (1.0, 0.93, 0.8)
-        obj = bpy.data.objects.new("PreviewFlashlight", data)
+        light_data = bpy.data.lights.new("PreviewFlashlight", "SPOT")
+        light_data.spot_size = math.radians(C.FLASH_SPOT_DEG)
+        light_data.spot_blend = 0.25
+        light_data.energy = 0.0
+        light_data.color = (1.0, 0.93, 0.8)
+        obj = bpy.data.objects.new("PreviewFlashlight", light_data)
         self.scene.collection.objects.link(obj)
         return obj
 

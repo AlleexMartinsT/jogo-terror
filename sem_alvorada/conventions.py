@@ -96,7 +96,7 @@ BATTERY_LOW = 0.25                    # abaixo disso a luz começa a falhar
 BATTERY_CRITICAL = 0.08
 START_SPARE_BATTERIES = 0
 FLASH_SPOT_DEG = 48.0
-FLASH_ENERGY = 1400.0                 # W (spot do Blender)
+FLASH_ENERGY = 900.0                  # W (spot do Blender); acima disso o cone estoura em branco nas paredes próximas
 FLASH_RANGE_VISION = 18.0             # alcance em que a entidade "vê" a luz
 DARK_VISION_RANGE = 5.5               # alcance de visão da entidade sem lanterna
 

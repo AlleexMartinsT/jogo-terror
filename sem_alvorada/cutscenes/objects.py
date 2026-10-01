@@ -31,12 +31,12 @@ def _place(obj, ctx, hidden=False):
 
 
 def create_camera(ctx):
-    data = bpy.data.cameras.new(C.OBJ_CUT_CAM)
-    data.sensor_fit = "HORIZONTAL"           # `angle` é o FOV horizontal, como o do jogador
-    data.angle = math.radians(CAMERA_FOV_DEG)
-    data.clip_start = 0.03
-    data.clip_end = 400.0
-    cam = bpy.data.objects.new(C.OBJ_CUT_CAM, data)
+    camera_data = bpy.data.cameras.new(C.OBJ_CUT_CAM)
+    camera_data.sensor_fit = "HORIZONTAL"    # `angle` é o FOV horizontal, como o do jogador
+    camera_data.angle = math.radians(CAMERA_FOV_DEG)
+    camera_data.clip_start = 0.03
+    camera_data.clip_end = 400.0
+    cam = bpy.data.objects.new(C.OBJ_CUT_CAM, camera_data)
     first_eye = sc.anchor("nightstand_clock", 0.28, -1.1, 0.75)
     cam.location = first_eye
     cam.rotation_mode = "QUATERNION"
@@ -44,16 +44,16 @@ def create_camera(ctx):
 
 
 def _light(ctx, name, kind, color, location, target=None, size=0.05, area=None):
-    data = bpy.data.lights.new(name, kind)
-    data.color = color
-    data.energy = 0.0
-    data.use_shadow = False
+    light_data = bpy.data.lights.new(name, kind)
+    light_data.color = color
+    light_data.energy = 0.0
+    light_data.use_shadow = False
     if kind == "AREA":
-        data.shape = "RECTANGLE"
-        data.size, data.size_y = area
+        light_data.shape = "RECTANGLE"
+        light_data.size, light_data.size_y = area
     else:
-        data.shadow_soft_size = size
-    obj = bpy.data.objects.new(name, data)
+        light_data.shadow_soft_size = size
+    obj = bpy.data.objects.new(name, light_data)
     obj.location = location
     if target is not None:
         obj.rotation_euler = (Vector(target) - Vector(location)).to_track_quat("-Z", "Y").to_euler()

@@ -20,9 +20,9 @@ EYE_LIGHT_OFFSET = Vector((0.0, 0.16, 2.535))
 
 def _create_armature_object(ctx):
     """Cria a armadura com todos os ossos de `skeleton.BONES`."""
-    data = bpy.data.armatures.new(RIG_NAME)
-    data.display_type = "STICK"
-    obj = bpy.data.objects.new(RIG_NAME, data)
+    armature = bpy.data.armatures.new(RIG_NAME)
+    armature.display_type = "STICK"
+    obj = bpy.data.objects.new(RIG_NAME, armature)
     ctx.link(obj, C.COL_ENTITY)
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
@@ -30,7 +30,7 @@ def _create_armature_object(ctx):
     try:
         edit_bones = {}
         for b in S.BONES:
-            edit = data.edit_bones.new(b.name)
+            edit = armature.edit_bones.new(b.name)
             edit.head, edit.tail = b.head, b.tail
             edit.parent = edit_bones.get(b.parent)
             edit.use_deform = True
