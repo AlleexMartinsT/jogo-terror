@@ -4,6 +4,17 @@ Jogo de terror psicológico em primeira pessoa, feito inteiramente dentro do Ble
 
 Domingo, 6:47, Harlan Ridge, Ohio. O sol devia ter nascido às 6:12 e a janela continua preta. Daniel acorda sozinho numa casa americana de dois andares e precisa de três coisas para sair dela: a **chave do carro**, o **mapa da cidade** e **três pilhas reserva** para a lanterna. Com tudo em mãos, a porta da garagem destranca. Enquanto isso, o Alto, uma figura de 2,65 m com olhos brancos, anda pela casa. Ele escuta melhor do que enxerga.
 
+## Capturas
+
+![Quarto onde o jogo começa](docs/capturas/01_quarto.png)
+![O Alto ao fundo do corredor de cima](docs/capturas/02_corredor_o_alto.png)
+![Cozinha, de lanterna](docs/capturas/04_cozinha.png)
+![Garagem e o carro](docs/capturas/06_garagem_carro.png)
+
+Mais em [`docs/capturas`](docs/capturas): escada, sala com a TV chiando, leitor de notas, tela de título e quadros das cutscenes de abertura, morte e final.
+
+Essas imagens não são gravações da janela do Blender. Foram geradas por `tools/prints.py`, que monta o jogo de verdade (`Game`), posiciona o jogador, renderiza a câmera dele no EEVEE e desenha o HUD por cima com o mesmo código de layout que o jogo usa na GPU. O visual ao vivo deve ser parecido, mas o desempenho e o compositor em tempo real só se confirmam abrindo o jogo.
+
 ## Como jogar
 
 Precisa do Blender 4.2 LTS ou mais novo (testado no 4.2.0 e no 5.0.1) e de uma GPU que rode EEVEE.

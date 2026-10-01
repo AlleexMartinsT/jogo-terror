@@ -97,7 +97,7 @@ SPECS = {
     "food_dried": _flat((0.28, 0.20, 0.10), 0.9),
     "pill_orange": _flat((0.70, 0.32, 0.06), 0.3, alpha=0.9),
     "skin_hand": _flat((0.52, 0.38, 0.31), 0.7),
-    "sleeve_cloth": _flat((0.10, 0.12, 0.18), 0.95),
+    "sleeve_cloth": _flat((0.22, 0.25, 0.33), 0.95),
     "tire_rubber": _flat((0.035, 0.035, 0.04), 0.9),
     "paper_white": _flat((0.72, 0.70, 0.62), 0.9),
     "carpet_stain": _flat((0.12, 0.04, 0.03), 0.9),

@@ -199,6 +199,31 @@ def tick_seconds(game, seconds, inp=None):
         inp.clear_edges()
 
 
+def test_flashlight_keeps_full_power_in_open_space():
+    """Regressão: a adaptação à parede media com um raio curto demais e deixava a lanterna sempre no piso."""
+    game = start_playing(make_game(world=True))
+    game.state.has_flashlight = True
+    teleport(game, 6.5, 1.0, 0.0, 0)          # hall: mais de 8 m livres à frente
+    step(game, InputState(flashlight=True))
+    run_for(game, 0.5)
+    flash = game.flashlight
+    assert flash.wall_distance >= flashlight_module.FULL_POWER_DISTANCE - 1e-6, flash.wall_distance
+    beam = game.scene.objects[C.OBJ_FLASHLIGHT].data
+    assert beam.energy > 0.85 * C.FLASH_ENERGY * flash.intensity, (beam.energy, flash.intensity)
+
+
+def test_close_range_gain_tapers_light_near_walls():
+    from sem_alvorada.engine.flashlight import CLOSE_GAIN_FLOOR
+    flash = start_playing(make_game(world=True)).flashlight
+    gains = []
+    for distance in (10.0, 3.0, 1.5, 0.05):
+        flash.wall_distance = distance
+        gains.append(flash._close_range_gain())
+    assert gains[0] == 1.0, "longe de qualquer parede a lanterna rende a potência cheia"
+    assert gains[0] > gains[1] > gains[2] > gains[3] >= CLOSE_GAIN_FLOOR, gains
+    assert gains[3] == CLOSE_GAIN_FLOOR, "encostado na parede o ganho cai até o piso, sem zerar"
+
+
 def test_flashlight_toggle_drain_flicker_and_death():
     game = start_playing(make_game(world=True))
     step(game, InputState(flashlight=True))
@@ -208,7 +233,8 @@ def test_flashlight_toggle_drain_flicker_and_death():
     assert game.state.flashlight_on
     assert kinds_logged(game, "flash_click")[-1][2] == C.NOISE_PLAYER["flash_click"]
     beam = game.scene.objects[C.OBJ_FLASHLIGHT].data
-    assert abs(beam.energy - C.FLASH_ENERGY) < 1.0 and abs(math.degrees(beam.spot_size) - C.FLASH_SPOT_DEG) < 0.1
+    expected = C.FLASH_ENERGY * game.flashlight._close_range_gain()     # perto de parede a luz se adapta
+    assert abs(beam.energy - expected) < 1.0 and abs(math.degrees(beam.spot_size) - C.FLASH_SPOT_DEG) < 0.1
     tick_seconds(game, 100)
     assert abs(game.state.battery - (1.0 - 100 * C.BATTERY_DRAIN_PER_SEC)) < 0.02, game.state.battery
     step(game, InputState(flashlight=True))

@@ -12,12 +12,17 @@ from . import angles, texts
 
 # Espaço da câmera: x direita, y cima, z para trás. O SPOT nasce na lente (à frente do corpo da lanterna,
 # que assim fica fora do cone e não estoura de tão perto) e recua quando há parede: lanterna colada na parede.
-VIEWMODEL_OFFSET = (0.15, -0.10, -0.20)
+VIEWMODEL_OFFSET = (0.19, -0.15, -0.30)     # mais longe e mais baixo: a mão não cobre o canto da tela
 LIGHT_XY = (0.15, -0.10)
 LIGHT_FORWARD_MAX = 0.52
 LIGHT_FORWARD_MIN = 0.10
 WALL_GAP = 0.12                           # a luz fica pelo menos isto antes da superfície à frente
 LIGHT_RETRACT_RATE = 18.0
+# Perto de uma parede o olho se adapta e a luz parece mais fraca. Sem isso o cone vira um disco branco
+# sem detalhe quando se lê uma nota ou se olha uma porta a 1 m.
+FULL_POWER_DISTANCE = 4.0
+CLOSE_GAIN_EXPONENT = 1.6
+CLOSE_GAIN_FLOOR = 0.12
 LIGHT_OFFSET = (LIGHT_XY[0], LIGHT_XY[1], -LIGHT_FORWARD_MAX)
 SWAP_SECONDS = 1.1
 SWAP_DIP = 0.22                           # quanto a lanterna desce na mão durante a troca
@@ -53,6 +58,7 @@ class Flashlight:
         self._clock = 0.0
         self.offset = (0.0, 0.0)           # (pitch, yaw) atual da luz em relação à câmera
         self.forward_offset = LIGHT_FORWARD_MAX     # quanto a luz está à frente da câmera (m)
+        self.wall_distance = FULL_POWER_DISTANCE
 
     # ---- comandos ----
     def toggle(self):
@@ -163,7 +169,10 @@ class Flashlight:
 
     def _retract_from_walls(self, dt):
         player = self.game.player
-        wall = self.game.collision.ray_distance(player.eye_pos, player.forward(), LIGHT_FORWARD_MAX + WALL_GAP)
+        # O mesmo raio serve ao recuo da luz (só importa abaixo de LIGHT_FORWARD_MAX + WALL_GAP)
+        # e à adaptação do olho (precisa enxergar até FULL_POWER_DISTANCE).
+        wall = self.game.collision.ray_distance(player.eye_pos, player.forward(), FULL_POWER_DISTANCE)
+        self.wall_distance = wall
         target = min(LIGHT_FORWARD_MAX, max(LIGHT_FORWARD_MIN, wall - WALL_GAP))
         follow = 1.0 - math.exp(-LIGHT_RETRACT_RATE * dt)
         self.forward_offset += (target - self.forward_offset) * follow
@@ -184,13 +193,17 @@ class Flashlight:
             self.viewmodel.location = VIEWMODEL_OFFSET
             self.viewmodel.rotation_euler = (0.0, 0.0, 0.0)
 
+    def _close_range_gain(self):
+        ratio = min(1.0, self.wall_distance / FULL_POWER_DISTANCE)
+        return max(CLOSE_GAIN_FLOOR, ratio ** CLOSE_GAIN_EXPONENT)
+
     def _write_light(self):
         light = self.light
         if light is None:
             return
         battery_gain = low_battery_gain(self.state.battery)
         spot = light.data
-        spot.energy = C.FLASH_ENERGY * self.intensity
+        spot.energy = C.FLASH_ENERGY * self.intensity * self._close_range_gain()
         spot.spot_size = math.radians(C.FLASH_SPOT_DEG) * (0.8 + 0.2 * battery_gain)
         mix = 1.0 - battery_gain
         spot.color = tuple(w + (k - w) * mix for w, k in zip(WARM, WEAK))

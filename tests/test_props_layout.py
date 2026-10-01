@@ -405,7 +405,7 @@ def check_car_and_viewmodel(scene):
         zs = [v.co.z for v in viewmodel.data.vertices]
         if not (viewmodel.hide_viewport and viewmodel.hide_render):
             problems.append("ViewModel_Flashlight deve estar oculto")
-        if min(zs) > -0.15 or max(zs) < 0.03:
+        if min(zs) > -0.12 or max(zs) < 0.03 or -min(zs) < max(zs):     # cano mais longo à frente do punho do que a manga atrás
             problems.append(f"ViewModel_Flashlight: cano deveria apontar para -Z (z de {min(zs):.2f} a {max(zs):.2f})")
     return problems
 

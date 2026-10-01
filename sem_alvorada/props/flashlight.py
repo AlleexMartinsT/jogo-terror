@@ -41,7 +41,7 @@ def _hand(m):
     with m.at(0.03, 0.015, GRIP_CENTER + 0.03, rz=20, rx=-20):
         m.soft_box(0, 0, 0, 0.022, 0.018, 0.055, skin, radius=0.007, edge=0.004)
     with m.at(0, -0.01, GRIP_CENTER + 0.045, rx=-14):
-        m.frustum(0, 0, 0, 0.055, 0.05, 0.085, 0.085, 0.30, "sleeve_cloth", oy=-0.03)
+        m.frustum(0, 0, 0, 0.055, 0.05, 0.075, 0.07, 0.07, "sleeve_cloth", oy=-0.01)
 
 
 def build_viewmodel_mesh():
