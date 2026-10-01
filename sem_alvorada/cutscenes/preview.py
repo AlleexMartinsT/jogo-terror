@@ -140,6 +140,17 @@ def _ascii(text):
     return "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
 
 
+def _wrap(text, max_chars):
+    lines, current = [], ""
+    for word in text.split():
+        if len(current) + len(word) + 1 > max_chars:
+            lines.append(current)
+            current = word
+        else:
+            current = f"{current} {word}".strip()
+    return lines + [current]
+
+
 def compose_overlay(image, overlay, label=""):
     """Aplica fade, flash, letterbox, legenda e cartão a `image` (h, w, 3 float)."""
     from sem_alvorada.entity import sheet
@@ -150,28 +161,24 @@ def compose_overlay(image, overlay, label=""):
     if bar:
         out[:bar] = 0.0
         out[height - bar:] = 0.0
+    scale = 2
+    max_chars = max(10, width // (6 * scale) - 2)
     if overlay.subtitle and overlay.subtitle_alpha > 0.02:
-        text = _ascii(overlay.subtitle)
-        scale = 2
-        max_chars = max(10, width // (6 * scale) - 2)
-        lines, current = [], ""
-        for word in text.split():
-            if len(current) + len(word) + 1 > max_chars:
-                lines.append(current)
-                current = word
-            else:
-                current = f"{current} {word}".strip()
-        lines.append(current)
+        lines = _wrap(_ascii(overlay.subtitle), max_chars)
         y = height - bar - 12 - len(lines) * 9 * scale
+        dim = overlay.subtitle_alpha <= 0.6
         for line in lines:
-            x = max(4, (width - len(line) * 6 * scale) // 2)
-            sheet.draw_text(out, line, x, y, scale=scale, color=(0.9, 0.87, 0.7) if overlay.subtitle_alpha > 0.6 else (0.4, 0.38, 0.3))
+            sheet.draw_text(out, line, max(4, (width - len(line) * 6 * scale) // 2), y, scale=scale,
+                            color=(0.4, 0.38, 0.3) if dim else (0.9, 0.87, 0.7))
             y += 9 * scale
     if overlay.card:
-        for i, line in enumerate(overlay.card):
-            text = _ascii(line)
-            x = max(4, (width - len(text) * 12) // 2)
-            sheet.draw_text(out, text, x, height // 2 - 20 + i * 24, scale=2, color=(0.85, 0.82, 0.7))
+        y = height // 2 - 30
+        for text in overlay.card:
+            for line in _wrap(_ascii(text), max_chars):
+                sheet.draw_text(out, line, max(4, (width - len(line) * 6 * scale) // 2), y, scale=scale,
+                                color=(0.85, 0.82, 0.7))
+                y += 9 * scale
+            y += 12
     if label:
         sheet.draw_text(out, label, 4, 4, scale=1, color=(0.5, 1.0, 0.5))
     return out

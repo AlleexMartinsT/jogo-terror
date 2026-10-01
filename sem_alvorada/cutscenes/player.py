@@ -216,9 +216,8 @@ class CutscenePlayer:
         b = shot.to or shot.view
         eye = _lerp3(stage.resolve(a.eye), stage.resolve(b.eye), f)
         target = _lerp3(stage.resolve(a.target), stage.resolve(b.target), f)
-        if shot.follow:
-            shift = stage.offset(shot.follow)
-            eye, target = _add3(eye, shift), _add3(target, shift)
+        if shot.follow:                       # só os olhos andam com o objeto; o alvo é um ponto do mundo
+            eye = _add3(eye, stage.offset(shot.follow))
         fov = a.fov + (b.fov - a.fov) * f
         roll = math.radians(a.roll + (b.roll - a.roll) * f)
 

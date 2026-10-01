@@ -60,13 +60,25 @@ def _light(ctx, name, kind, color, location, target=None, size=0.05, area=None):
     return _place(obj, ctx, hidden=True)
 
 
+def parent_to_car(obj, ctx):
+    """Se o módulo props já criou o `Car`, a luz anda com ele (mantendo a posição de mundo atual)."""
+    car_obj = bpy.data.objects.get(C.OBJ_CAR)
+    if car_obj is not None:
+        obj.parent = car_obj
+        obj.matrix_parent_inverse = car_obj.matrix_world.inverted()
+
+
 def create_lights(ctx):
+    car = layout.ANCHORS["car"]
     clock = layout.ANCHORS["nightstand_clock"]
     _light(ctx, sc.CLOCK_GLOW, "POINT", (1.0, 0.12, 0.07), (clock.x + 0.16, clock.y, clock.z + 0.72))
     _light(ctx, sc.BED_LAMP, "POINT", (1.0, 0.72, 0.42), (clock.x + 0.05, clock.y + 0.12, clock.z + 1.05), size=0.12)
     window = sc.window_center("w_master_n")
     _light(ctx, sc.DAWN_LIGHT, "AREA", (0.55, 0.68, 0.95), (window[0], window[1] + 0.9, window[2]),
            target=(window[0], window[1] - 3.0, window[2] - 0.6), area=(2.6, 1.6))
+    _light(ctx, sc.DRIVEWAY_LIGHT, "SPOT", (0.62, 0.72, 1.0), (10.5, -6.5, 4.8), target=(car.x, -2.0, 0.8), size=0.5)
+    cabin = _light(ctx, sc.CAR_CABIN, "POINT", (0.75, 0.82, 1.0), (car.x + 0.25, car.y + 0.30, 1.30), size=0.1)
+    parent_to_car(cabin, ctx)
     road = layout.ENTITY_ROAD_POS
     _light(ctx, sc.ROAD_LIGHT, "SPOT", (0.85, 0.9, 1.0), (road[0], road[1] + 6.0, 3.4),
            target=(road[0], road[1], 1.4), size=0.4)
@@ -88,11 +100,14 @@ def _flat_material(name, color):
 
 
 def _digit_quads(glyph, x0, z0, width, height):
-    """Retângulos (x0, z0, x1, z1) dos segmentos acesos de um dígito posicionado em (x0, z0)."""
+    """Retângulos (x0, z0, x1, z1) dos segmentos acesos de um dígito posicionado em (x0, z0).
+
+    Quem olha para a frente do objeto (+Y) vê o eixo X crescer para a ESQUERDA, então espelhamos em X.
+    """
     quads = []
     for name in DIGITS[glyph]:
         a, b, c, d = SEGMENTS[name]
-        quads.append((x0 + a * width, z0 + b * height / 2, x0 + c * width, z0 + d * height / 2))
+        quads.append((-(x0 + c * width), z0 + b * height / 2, -(x0 + a * width), z0 + d * height / 2))
     return quads
 
 
@@ -112,7 +127,7 @@ def create_end_clock(ctx):
 
     box(-width / 2, width / 2, -depth / 2, y_front, 0.0, height)
     body_faces = list(faces)
-    glyph_x = {"6": -0.052, "1": -0.002, "2": 0.030}      # 6 : 1 2  (o ":" vai à parte, em x=-0.014)
+    glyph_x = {"6": -0.052, "1": -0.002, "2": 0.030}      # 6 : 1 2  (o ":" vai à parte; tudo é espelhado em X)
     digit_w, digit_h, digit_z = 0.022, 0.048, 0.018
     lit = []
     for glyph, gx in glyph_x.items():
@@ -123,7 +138,7 @@ def create_end_clock(ctx):
             lit.append((base, base + 1, base + 2, base + 3))
     for dz in (0.028, 0.048):                        # os dois pontos do ":"
         base = len(verts)
-        cx, cz = -0.014, digit_z + dz
+        cx, cz = 0.014, digit_z + dz
         verts.extend([(cx - 0.003, y_front + 0.001, cz - 0.003), (cx + 0.003, y_front + 0.001, cz - 0.003),
                       (cx + 0.003, y_front + 0.001, cz + 0.003), (cx - 0.003, y_front + 0.001, cz + 0.003)])
         lit.append((base, base + 1, base + 2, base + 3))
@@ -141,23 +156,7 @@ def create_end_clock(ctx):
     return _place(obj, ctx, hidden=True)
 
 
-def create_dawn_glow(ctx):
-    """Plano emissivo cinza-azulado logo fora da janela norte do quarto: a "janela um pouco mais clara"."""
-    window = sc.window_center("w_master_n")
-    op = layout.OPENINGS["w_master_n"]
-    half_w, half_h = op.width / 2 + 0.6, op.height / 2 + 0.6
-    y = op.pos + layout.WALL_T_EXT / 2 + 0.15
-    verts = [(-half_w, 0, -half_h), (half_w, 0, -half_h), (half_w, 0, half_h), (-half_w, 0, half_h)]
-    mesh = bpy.data.meshes.new(sc.DAWN_GLOW)
-    mesh.from_pydata(verts, [], [(0, 3, 2, 1)])           # normal para -Y: vista de dentro do quarto
-    mesh.materials.append(_emissive_material("cut_dawn_glow", (0.36, 0.45, 0.62), 1.4))
-    obj = bpy.data.objects.new(sc.DAWN_GLOW, mesh)
-    obj.location = (window[0], y, window[2])
-    return _place(obj, ctx, hidden=True)
-
-
 def create_all(ctx):
     create_camera(ctx)
     create_lights(ctx)
     create_end_clock(ctx)
-    create_dawn_glow(ctx)

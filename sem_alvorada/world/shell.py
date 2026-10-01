@@ -224,6 +224,10 @@ def build_trim(ctx, level):
 # --------------------------------------------------------------------------
 # Fundação de tijolo aparente
 # --------------------------------------------------------------------------
+# Face do bloco de fundação que encosta na parede, por (eixo da parede, sentido para fora).
+_INNER_FACE = {("x", 1): "-y", ("x", -1): "+y", ("y", 1): "-x", ("y", -1): "+x"}
+
+
 def build_foundation(ctx):
     corners = exterior_corners(0)
     half = layout.WALL_T_EXT / 2
@@ -238,8 +242,7 @@ def build_foundation(ctx):
         a, b = piece.a - (reach if lo_end else 0.0), piece.b + (reach if hi_end else 0.0)
         near = half if outward > 0 else -half - FOUNDATION_PROUD
         far = near + FOUNDATION_PROUD
-        inner_face = "-y" if piece.axis == "x" and outward > 0 else "+y" if piece.axis == "x" else \
-                     "-x" if outward > 0 else "+x"
+        inner_face = _INNER_FACE[(piece.axis, outward)]
         if piece.axis == "x":
             box = (a, piece.pos + near, b, piece.pos + far)
         else:

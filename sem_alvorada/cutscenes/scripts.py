@@ -17,15 +17,15 @@ from .timeline import Cue, Cutscene, Line, Shot, Track, View
 ROAD_FACING = 0.0                  # yaw da entidade parada na rua: olha para +Y, para a casa
 CLOCK_NAMES = ("alarm", "despert", "relogio")    # nomes que o módulo props pode ter dado ao despertador (hoje: AlarmClock)
 EYE = C.PLAYER_EYE_STAND
-FLOOR_1 = layout.LEVEL_Z[1]
 GAMEPLAY_FOV = C.FOV_DEG
 
 CLOCK_GLOW = "CutLight_ClockGlow"
 BED_LAMP = "CutLight_BedLamp"
 DAWN_LIGHT = "CutLight_Dawn"
-DAWN_GLOW = "Cut_DawnGlow"
 END_CLOCK = "Cut_EndClock"
 ROAD_LIGHT = "CutLight_Road"
+DRIVEWAY_LIGHT = "CutLight_Driveway"
+CAR_CABIN = "CutLight_CarCabin"
 CORRIDOR_RIM = "CutLight_CorridorRim"
 
 
@@ -365,15 +365,18 @@ def build_ending():
              cues=(Cue(0.4, act.sound("car_door", driver_eye, 0.9)),
                    Cue(1.7, act.sound("key_jingle", driver_eye, 0.7)),
                    Cue(3.0, act.sound("car_start", driver_eye, 1.0)),
-                   Cue(3.6, act.loop("engine", "car_idle", 0.7)))),
+                   Cue(0.0, act.cut_light(CAR_CABIN, 2.2)),
+                   Cue(3.6, act.loop("engine", "car_idle", 0.7)),
+                   Cue(3.6, act.headlights(True)))),
         Shot(5.5, in_car(dashboard, 60.0), in_car(rollup_mid, 62.0), ease="smoother", handheld=0.2,
              cues=(Cue(0.4, act.sound("garage_rollup", rollup_mid, 1.0)),
-                   Cue(3.4, act.headlights(True)),
-                   Cue(3.4, act.cut_light(ROAD_LIGHT, 30.0)))),
+                   Cue(3.4, act.cut_light(ROAD_LIGHT, 160.0)))),
         Shot(5.0, View(exterior_eye, (car.x, 0.8, 1.0), 62.0), View(exterior_eye, (car.x, -5.5, 1.0), 56.0),
              handheld=0.14, ease="smooth",
              lines=(say("ending", 1, 0.6, 4.6),),
-             cues=(Cue(0.0, act.entity_place(road, entity_yaw, "stare", 0.0, erect=True)),)),
+             cues=(Cue(0.0, act.entity_place(road, entity_yaw, "stare", 0.0, erect=True)),
+                   Cue(0.0, act.cut_light(DRIVEWAY_LIGHT, 260.0)),
+                   Cue(5.0, act.cut_light(DRIVEWAY_LIGHT, 0.0)))),
         Shot(5.0, in_car(road_horizon, 62.0), in_car(entity_head, 58.0), follow="Car", handheld=0.2, ease="smooth"),
         Shot(8.5, in_car(entity_head, 58.0), in_car(entity_head, 40.0), follow="Car", handheld=0.32,
              lines=(say("ending", 2, 1.4, 6.6),),
@@ -408,10 +411,9 @@ def build_ending():
         Track(starts[1] + 0.6, starts[1] + 4.6, act.lift_object(C.OBJ_GARAGE_ROLLUP, 0.0, lift), "smooth"),
         Track(starts[1] + 3.2, starts[4] - 1.5, act.move_object(C.OBJ_CAR, car_home, car_stop), "smooth"),
         Track(dawn_start, dawn_start + 20.0, act.light_ramp(DAWN_LIGHT, 0.0, 90.0), "linear"),
+        Track(dawn_start + 4.0, dawn_start + 18.0, act.dawn_ramp(0.0, 1.0), "smooth"),
     )
-    cues = (Cue(dawn_start, act.show(DAWN_GLOW)),)
-    return Cutscene("ending", "ending_done", shots, card=story.ENDING_CARD, initial={"fade": 1.0},
-                    tracks=tracks, cues=cues)
+    return Cutscene("ending", "ending_done", shots, card=story.ENDING_CARD, initial={"fade": 1.0}, tracks=tracks)
 
 
 BUILDERS = {

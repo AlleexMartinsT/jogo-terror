@@ -170,19 +170,18 @@ class MeshBuilder:
     # ------------------------------------------------------------------
     # Primitivas
     # ------------------------------------------------------------------
-    def quad(self, p0, p1, p2, p3, mat, uv=None, uv_scale=1.0, double=False):
+    def quad(self, p0, p1, p2, p3, mat, uv=None, uv_scale=1.0):
+        """Um quadrilátero solto. O Blender renderiza os dois lados, então não há face de trás duplicada:
+        faces coplanares sobrepostas se sombreiam entre si e saem pretas sob a lanterna."""
         ids = self._push([p0, p1, p2, p3])
         self._face(ids, [p0, p1, p2, p3], mat, uv=uv, uv_scale=uv_scale)
-        if double:
-            back_uv = None if uv is None else list(reversed(uv))
-            self._face(list(reversed(ids)), [p3, p2, p1, p0], mat, uv=back_uv, uv_scale=uv_scale)
 
     def poly(self, points, mat, uv=None, uv_scale=1.0):
         """Polígono qualquer (anti-horário visto de fora)."""
         ids = self._push(points)
         self._face(ids, points, mat, uv=uv, uv_scale=uv_scale)
 
-    def panel(self, cx, cy, cz, width, height, mat, facing="front", uv_rect=(0, 0, 1, 1), double=False):
+    def panel(self, cx, cy, cz, width, height, mat, facing="front", uv_rect=(0, 0, 1, 1)):
         """Retângulo vertical (ou horizontal se facing for top/bottom) com UV explícito.
 
         `facing`: para onde a frente aponta (front=+Y, back=-Y, right=+X, left=-X, top=+Z).
@@ -205,7 +204,7 @@ class MeshBuilder:
         else:
             raise ValueError(facing)
         u0, v0, u1, v1 = uv_rect
-        self.quad(*pts, mat, uv=[(u0, v0), (u1, v0), (u1, v1), (u0, v1)], double=double)
+        self.quad(*pts, mat, uv=[(u0, v0), (u1, v0), (u1, v1), (u0, v1)])
 
     def box(self, cx, cy, z0, width, depth, height, mat, uv=1.0, mats=None, skip=()):
         """Caixa apoiada em z0. `mats` troca o material de faces (front/back/left/right/top/bottom)."""
@@ -366,7 +365,7 @@ class MeshBuilder:
                     self._face(quad, pts, mat, smooth=True)
             self._orient_outward(first)
 
-    def surface(self, fn, nu, nv, mat, uv_size=(1.0, 1.0), uv=1.0, flip=False, double=False, smooth=False):
+    def surface(self, fn, nu, nv, mat, uv_size=(1.0, 1.0), uv=1.0, flip=False, smooth=False):
         """Malha paramétrica aberta (pano, cortina): `fn(u, v)` com u, v em [0, 1] devolve (x, y, z)."""
         grid = [[fn(i / nu, j / nv) for j in range(nv + 1)] for i in range(nu + 1)]
         ids = [self._push(column) for column in grid]
@@ -380,8 +379,6 @@ class MeshBuilder:
                 if flip:
                     quad, pts, coords = quad[::-1], pts[::-1], coords[::-1]
                 self._face(quad, pts, mat, smooth, coords)
-                if double:
-                    self._face(quad[::-1], pts[::-1], mat, smooth, coords[::-1])
 
     # ------------------------------------------------------------------
     # Saída

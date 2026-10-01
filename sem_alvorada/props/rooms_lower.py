@@ -116,7 +116,7 @@ def build_kitchen(ctx):
     kitchen.make_microwave(ctx, room, 11.58, 8.8, top, math.pi / 2)
     kitchen.make_coffee_maker(ctx, room, 11.63, 9.62, top, math.pi)
     kitchen.make_base_cabinet(ctx, room, "W", 5.62, 0.9, depth=0.55, name="counter_west_a")
-    kitchen.make_mini_fridge(ctx, room, "W", 6.40)
+    kitchen.make_mini_fridge(ctx, room, "W", kitchen.MINI_FRIDGE_ALONG)
     kitchen.make_base_cabinet(ctx, room, "W", 7.16, 0.88, depth=0.55, name="counter_west_b")
     kitchen.make_wall_cabinets(ctx, room, "W", 6.4, 2.4)
     kitchen.make_wall_cabinets(ctx, room, "N", 9.78, 0.44, ajar=False)

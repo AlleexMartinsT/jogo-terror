@@ -86,7 +86,7 @@ class Shot:
     to: View | None = None            # None: câmera parada (só a mão tremendo)
     ease: str = "smooth"
     handheld: float = 0.25            # 0 = tripé, 1 = câmera muito instável
-    follow: str = ""                  # nome de um objeto movido por uma Track cujo deslocamento a câmera acompanha
+    follow: str = ""                  # objeto movido por uma Track: os OLHOS da câmera acompanham o deslocamento dele
     lines: tuple = ()
     cues: tuple = ()
     tracks: tuple = ()

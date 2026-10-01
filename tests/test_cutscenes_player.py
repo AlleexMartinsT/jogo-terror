@@ -139,7 +139,10 @@ class FakeHost:
                      "Cut_EndClock", "Cut_DawnGlow"):
             if name not in missing:
                 self.objects[name] = FakeObject(name, light="Headlight" in name)
-        for name in ("CutLight_ClockGlow", "CutLight_Dawn", "CutLight_Road", "CutLight_CorridorRim"):
+        if "Cut_EndClock" in self.objects:
+            self.objects["Cut_EndClock"].hide_viewport = self.objects["Cut_EndClock"].hide_render = True
+        for name in ("CutLight_ClockGlow", "CutLight_BedLamp", "CutLight_Dawn", "CutLight_Road",
+                     "CutLight_CorridorRim", "CutLight_Driveway", "CutLight_CarCabin"):
             self.objects[name] = FakeObject(name, light=True)
 
     def set_camera(self, obj):
@@ -438,6 +441,7 @@ def test_ending_moves_car_and_shows_card():
     assert seen["fade_end"] > 0.99
     assert host.entity.transform[:3] == layout.ENTITY_ROAD_POS
     assert seen["stood_tall"] and host.entity.head_limit == 2.42, "na estrada ele fica ereto; ao fim volta o limite"
+    assert host.objects["Cut_EndClock"].hide_render, "objetos mostrados pela cutscene voltam a ficar ocultos"
     print("  final: carro sai da garagem, entidade na estrada, flash e cartão")
 
 

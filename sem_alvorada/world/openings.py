@@ -125,16 +125,15 @@ def _door_leaf(name, width, height):
 
 
 def _door_handles(name):
-    """Puxador dos dois lados, centrado na origem do objeto (que fica no ponto da maçaneta)."""
+    """Puxador dos dois lados (roseta, haste e bola), com a origem do objeto no ponto da maçaneta."""
     builder = MeshBuilder(name)
+    face = LEAF_THICKNESS / 2
+    parts = ((0.0, 0.008, 0.038, 0.038), (0.0, 0.05, 0.011, 0.011), (0.05, 0.09, 0.026, 0.02))
     for side in (-1, 1):
-        base = side * LEAF_THICKNESS / 2
-        builder.cylinder(0.0, 0.0, min(base, base + side * 0.008), max(base, base + side * 0.008),
-                         0.038, "metal", sides=8, axis="y")
-        builder.cylinder(0.0, 0.0, min(base, base + side * 0.05), max(base, base + side * 0.05),
-                         0.011, "metal", sides=6, axis="y")
-        builder.cylinder(0.0, 0.0, min(base + side * 0.05, base + side * 0.09), max(base + side * 0.05, base + side * 0.09),
-                         0.026, "metal", sides=8, radius_top=0.02, axis="y")
+        for start, end, radius, tip_radius in parts:
+            y0, y1 = sorted((side * (face + start), side * (face + end)))
+            r_low, r_high = (radius, tip_radius) if side > 0 else (tip_radius, radius)
+            builder.cylinder(0.0, 0.0, y0, y1, r_low, "metal", sides=8, radius_top=r_high, axis="y")
     return builder
 
 

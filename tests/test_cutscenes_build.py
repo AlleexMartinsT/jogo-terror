@@ -22,6 +22,10 @@ from sem_alvorada.cutscenes import player as player_module  # noqa: E402
 from sem_alvorada.cutscenes import preview, scripts, timeline  # noqa: E402
 
 
+LIGHTS = (scripts.CLOCK_GLOW, scripts.BED_LAMP, scripts.DAWN_LIGHT, scripts.ROAD_LIGHT, scripts.CORRIDOR_RIM,
+          scripts.DRIVEWAY_LIGHT, scripts.CAR_CABIN)
+
+
 def fresh_scene():
     scene = build.fresh_scene()
     ctx = BuildContext(scene, verbose=False)
@@ -36,14 +40,12 @@ def test_objects(scene):
     cam = scene.objects[C.OBJ_CUT_CAM]
     assert cam.type == "CAMERA" and cam.data.sensor_fit == "HORIZONTAL"
     assert C.COL_CUTSCENE in [c.name for c in cam.users_collection]
-    for name in (scripts.CLOCK_GLOW, scripts.BED_LAMP, scripts.DAWN_LIGHT, scripts.ROAD_LIGHT, scripts.CORRIDOR_RIM):
+    for name in LIGHTS:
         light = scene.objects[name]
         assert light.type == "LIGHT" and light.data.energy == 0.0 and light.hide_render, name
         assert name.startswith("CutLight_")
-    for name in (scripts.END_CLOCK, scripts.DAWN_GLOW):
-        obj = scene.objects[name]
-        assert obj.hide_render and obj.hide_viewport, name
     clock = scene.objects[scripts.END_CLOCK]
+    assert clock.hide_render and clock.hide_viewport
     assert len(clock.data.polygons) < 120
     lights = [o for o in scene.objects if o.type == "LIGHT" and not o.hide_render]
     assert lights == [], "as luzes de cutscene nascem apagadas e ocultas"
@@ -103,8 +105,9 @@ def test_run_all_in_blender(scene):
         allowed = ("get_object(Car)", "get_object(GarageRollup)", "get_object(Car_Headlight", "get_object(Door_")
         unexpected = [e for e in player.errors if not any(a in e for a in allowed)]
         assert unexpected == [], (name, unexpected)
-        for light in (scripts.CLOCK_GLOW, scripts.BED_LAMP, scripts.DAWN_LIGHT, scripts.ROAD_LIGHT, scripts.CORRIDOR_RIM):
+        for light in LIGHTS:
             assert scene.objects[light].data.energy == 0.0, (name, light)
+        assert scene.objects[scripts.END_CLOCK].hide_render, "o relógio do final volta a ficar oculto"
         print(f"  {name}: {expected:.1f} s de cutscene rodaram no Blender sem erro")
         host.entity.set_visible(False)
 

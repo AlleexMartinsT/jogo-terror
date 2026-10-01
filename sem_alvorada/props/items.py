@@ -47,7 +47,7 @@ def build_map():
     for i in range(3):
         u0, u1 = i / 3, (i + 1) / 3
         m.quad((xs[i], -panel_h / 2, zs[i]), (xs[i + 1], -panel_h / 2, zs[i + 1]), (xs[i + 1], panel_h / 2, zs[i + 1]),
-               (xs[i], panel_h / 2, zs[i]), "city_map", uv=[(u0, 0), (u1, 0), (u1, 1), (u0, 1)], double=True)
+               (xs[i], panel_h / 2, zs[i]), "city_map", uv=[(u0, 0), (u1, 0), (u1, 1), (u0, 1)])
     m.box(xs[0] - 0.004, 0, 0.0, 0.006, panel_h, 0.006, "paper_white")
     return m
 
@@ -118,8 +118,8 @@ def build_note_notebook():
 def build_note_postit():
     """Post-it amarelo grudado na porta do frigobar; de pé, frente em +Y."""
     m = MeshBuilder("Item_NOTE_5")
-    m.panel(0, 0, 0, 0.085, 0.085, "note_postit", "front", double=True)
-    m.box(0, -0.0015, 0.0, 0.05, 0.001, 0.09, "tape_silver")
+    m.panel(0, 0, 0, 0.085, 0.085, "note_postit", "front")
+    m.box(0, -0.0015, 0.03, 0.05, 0.001, 0.02, "tape_silver")
     return m
 
 
@@ -134,10 +134,10 @@ def build_note_prescription():
 def build_note_tow_slip():
     """Guia do pátio: formulário em três vias, dobrado ao meio com a via amarela levantada."""
     m = MeshBuilder("Item_NOTE_7")
-    _sheet(m, 0.125, 0.085, "paper_white", offset=(0.0, -0.045))
+    m.box(0, -0.045, 0, 0.125, 0.085, FLAT_NOTE_THICKNESS, "paper_white", skip=("top",))
     m.panel(0, -0.045, FLAT_NOTE_THICKNESS, 0.125, 0.085, "note_tow", "top", uv_rect=(0, 0, 1, 0.5))
     with m.at(0, 0.0, FLAT_NOTE_THICKNESS, rx=8):
-        m.panel(0, 0.04, 0.0, 0.125, 0.085, "note_tow", "top", uv_rect=(0, 0.5, 1, 1), double=True)
+        m.panel(0, 0.04, 0.0, 0.125, 0.085, "note_tow", "top", uv_rect=(0, 0.5, 1, 1))
     return m
 
 
@@ -147,7 +147,7 @@ def build_note_tow_slip():
 # id -> (construtor, x, y, z da superfície, yaw em graus, modo). z é a superfície onde o item repousa;
 # no modo 'wall' é o centro do item, já na altura em que fica preso.
 def _placements():
-    fridge_x, fridge_y, fridge_z = kitchen.MINI_FRIDGE_FRONT
+    fridge_x, fridge_y, fridge_z = kitchen.mini_fridge_front()
     return {
         "FLASHLIGHT": (build_item_mesh, 0.40, 6.08, 2.8 + 0.55, 0.0, "rest"),
         "KEY": (build_key, 2.00, 9.32, 0.76, 70.0, "rest"),
@@ -163,7 +163,7 @@ def _placements():
         "NOTE_4": (build_note_notebook, 0.165, 9.42, 1.5, -90.0, "wall"),
         "NOTE_5": (build_note_postit, fridge_x + 0.004, fridge_y + 0.05, fridge_z + 0.12, -90.0, "wall"),
         "NOTE_6": (build_note_prescription, 11.62, 6.72, 2.8 + 0.78, 20.0, "rest"),
-        "NOTE_7": (build_note_tow_slip, 15.2, 6.68, 1.005, 195.0, "rest"),
+        "NOTE_7": (build_note_tow_slip, 15.2, 6.68, 1.005, 12.0, "rest"),
     }
 
 

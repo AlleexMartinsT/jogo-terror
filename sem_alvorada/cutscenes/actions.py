@@ -67,7 +67,7 @@ def hide_matching(anchor_pos, radius, needles, unless=("nightstand", "col_", "an
                 continue
             x, y, z = obj.matrix_world.translation
             if math.dist((x, y), anchor_pos[:2]) < radius and abs(z - anchor_pos[2]) < 0.8:
-                obj.hide_viewport = obj.hide_render = True
+                stage.set_hidden(obj, True)
     return Action(run)
 
 
@@ -79,10 +79,6 @@ def place_player(x, y, z, yaw):
     def run(stage):
         stage.safe("place_player", stage.host.place_player, *(stage.resolve(v) for v in (x, y, z, yaw)))
     return Action(run, essential=True)
-
-
-def door_snap(door_id, openness):
-    return Action(lambda st: st.safe("doors.snap", st.host.doors.snap, door_id, openness), essential=True)
 
 
 def activate_brain():
@@ -163,6 +159,13 @@ def lift_object(name, start_z, end_z):
         obj = stage.obj(name)
         if obj is not None:
             obj.location.z = start_z + (end_z - start_z) * f
+    return apply
+
+
+def dawn_ramp(start, end):
+    """O céu clareia de `start` a `end` (0 = noite, 1 = horizonte e halo bem mais claros)."""
+    def apply(stage, f):
+        stage.set_dawn(start + (end - start) * f)
     return apply
 
 

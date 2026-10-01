@@ -6,7 +6,8 @@ from .kit import MeshBuilder
 from .placement import against_wall, flush_center, floor_z, place
 
 BENCH_TOP = 0.90
-SHELF_TIERS = (0.30, 0.65, 1.00, 1.35, 1.70)      # o degrau de 1,00 m recebe o guia do reboque
+SHELF_TIERS = (0.30, 0.65, 1.00, 1.35, 1.70)
+NOTE_TIER = 1.00                                   # o degrau de 1 m recebe o guia do reboque
 
 
 def make_workbench(ctx, room, x, y, yaw, *, anchor=None, z=None):
@@ -65,9 +66,10 @@ def make_garage_shelves(ctx, room, wall, along, *, width=2.5, depth=0.4, height=
     rng = ctx.rng
     for tier in SHELF_TIERS:
         cursor = -width / 2 + 0.1
-        if tier == 1.00:
-            cursor = -width / 2 + 0.95       # deixa o trecho onde o guia repousa (x ~ 15.2) vazio
-        while cursor < width / 2 - 0.25:
+        last_free = width / 2 - 0.25
+        if tier == NOTE_TIER:
+            last_free = 0.55       # a estante gira 180 graus: o trecho do guia (x ~ 15.2) fica no lado +X local
+        while cursor < last_free:
             kind = rng.random()
             span = rng.uniform(0.18, 0.4)
             if kind < 0.4:

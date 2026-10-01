@@ -21,7 +21,6 @@ from . import skeleton as S
 AXIS_X, AXIS_Y, AXIS_Z = Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1))
 
 ANIMATIONS = ("idle", "stalk", "walk", "run", "attack", "stare", "twitch", "appear")
-LOCOMOTION = ("stalk", "walk", "run")
 APPEAR_DURATION = 2.8
 APPEAR_FPS = 8.0                         # a entrada "aos trancos", como quadros perdidos
 BLEND_SECONDS = {"attack": 0.12, "twitch": 0.05, "appear": 0.0, "stare": 0.45}

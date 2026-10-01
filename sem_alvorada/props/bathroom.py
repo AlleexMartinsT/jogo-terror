@@ -40,7 +40,7 @@ def make_shower_curtain(ctx, room, x, rod_y0, rod_y1, hang_length, *, rod_z=1.85
     def fn(u, v):
         return (0.035 * math.sin(u * 20 + v * 0.6), rod_y1 - hang_length + u * hang_length, rod_z - 0.03 - v * drop)
 
-    m.surface(fn, 16, 3, "shower_curtain", uv_size=(hang_length, drop), double=True)
+    m.surface(fn, 16, 3, "shower_curtain", uv_size=(hang_length, drop))
     return place(ctx, m, room, "shower_curtain", x, 0.0, 0.0, mode="decor")
 
 
@@ -106,7 +106,7 @@ def make_towel_bar(ctx, room, wall, along, z):
     def fold(u, v):
         return (-0.2 + 0.4 * u + 0.01 * math.sin(v * 6), 0.09 + 0.03 * v - 0.015 * math.sin(u * 9), -0.6 * v + 0.02)
 
-    m.surface(fold, 4, 4, "linen_dirty", uv_size=(0.4, 0.6), double=True)
+    m.surface(fold, 4, 4, "linen_dirty", uv_size=(0.4, 0.6))
     return place(ctx, m, room, "towel_bar", x, y, yaw, floor_z(room) + z, mode="wall")
 
 

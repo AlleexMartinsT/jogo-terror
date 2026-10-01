@@ -18,7 +18,6 @@ VEIN_COLOR = np.array([0.10, 0.12, 0.17], np.float32)
 CLOTH_BASE = np.array([0.105, 0.098, 0.092], np.float32)
 
 # onde ficam as órbitas dos olhos no quadrante da cabeça (u, v em 0..1 do atlas)
-HEAD_ATLAS = (0.0, 0.5, 0.5, 1.0)          # u0, v0, u1, v1
 EYE_SOCKET_UV = ((0.215, 0.755), (0.285, 0.755))
 
 

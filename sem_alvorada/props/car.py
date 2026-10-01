@@ -87,7 +87,7 @@ def _hood(m):
         ripple = 0.015 * math.sin(y * 14 + x * 5) * math.exp(-(((x - 0.62) / 0.6) ** 2 + ((y - 2.12) / 0.6) ** 2))
         return (x, y, z - dent + ripple)
 
-    m.surface(fn, 6, 6, "car_paint", uv_size=(1.8, 1.4), flip=True, double=True)
+    m.surface(fn, 6, 6, "car_paint", uv_size=(1.8, 1.4), flip=True)
 
 
 def _cabin(m):
@@ -99,9 +99,9 @@ def _cabin(m):
         m.bar((s * 0.72, 0.27, ROOF), (s * 0.72, -0.98, ROOF), 0.05, "car_paint")
         m.bar((s * 0.90, 0.85, BELTLINE), (s * 0.90, -1.5, 1.0), 0.05, "chrome")
         m.quad((s * 0.87, 0.80, 1.0), (s * 0.87, -0.22, 1.0), (s * 0.735, -0.22, 1.37), (s * 0.735, 0.30, 1.37),
-               "car_glass", double=True)
+               "car_glass")
         m.quad((s * 0.87, -0.28, 1.0), (s * 0.86, -1.42, 1.0), (s * 0.735, -0.98, 1.37), (s * 0.735, -0.28, 1.37),
-               "car_glass", double=True)
+               "car_glass")
         for y in (0.80, -0.25, -1.35):
             m.box(s * 0.955, y, 0.44, 0.008, 0.012, 0.54, "black")
         for y in (-0.05, -0.55):
@@ -109,9 +109,9 @@ def _cabin(m):
         m.box(s * 0.885, -0.33, 0.42, 0.03, 2.2, 0.52, "velour_beige")
         m.box(s * 1.0, 0.72, 1.04, 0.08, 0.12, 0.10, "plastic_gray")
     m.quad((-0.84, 0.85, BELTLINE + 0.01), (0.84, 0.85, BELTLINE + 0.01), (0.70, 0.29, ROOF - 0.02),
-           (-0.70, 0.29, ROOF - 0.02), "car_glass_cracked", uv=[(0, 0), (1, 0), (1, 1), (0, 1)], double=True)
+           (-0.70, 0.29, ROOF - 0.02), "car_glass_cracked", uv=[(0, 0), (1, 0), (1, 1), (0, 1)])
     m.quad((-0.82, -1.48, 1.01), (0.82, -1.48, 1.01), (0.70, -1.0, ROOF - 0.02), (-0.70, -1.0, ROOF - 0.02),
-           "car_glass", double=True)
+           "car_glass")
     m.box(0, -0.36, ROOF - 0.02, 1.44, 1.32, 0.04, "car_paint", mats={"bottom": "velour_beige"})
     for x in (-0.42, 0.42):
         m.box(x, 0.16, 1.33, 0.36, 0.22, 0.02, "velour_beige")

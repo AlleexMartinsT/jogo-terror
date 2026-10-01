@@ -35,7 +35,7 @@ def _messy_cover(m, rng, head_y, foot_y, top_z, half_width):
             z += ripple + 0.05 * max(0.0, u - 0.82) / 0.18 + 0.03 * math.exp(-((y - 0.15) ** 2) * 18)
         return (px * half_width, y, z)
 
-    m.surface(fn, 9, 8, "plaid_blanket", uv_size=(1.3, 1.6), flip=True, double=True)
+    m.surface(fn, 9, 8, "plaid_blanket", uv_size=(1.3, 1.6), flip=True)
 
 
 def make_double_bed(ctx, room, x, y, yaw, *, anchor=None, z=None):
@@ -173,7 +173,7 @@ def make_wall_mirror(ctx, room, wall, along, z, width, height, *, draped=False, 
             return (-(width + 0.16) / 2 + u * (width + 0.16), 0.056 + wobble * (0.4 + v),
                     height / 2 + 0.08 - v * (drop + 0.06 * math.sin(u * 9)))
 
-        m.surface(fn, 10, 4, "linen_dirty", uv_size=(width, drop), flip=False, double=True)
+        m.surface(fn, 10, 4, "linen_dirty", uv_size=(width, drop), flip=False)
         m.box(0, 0.04, height / 2 + 0.05, width + 0.2, 0.04, 0.05, "linen_dirty")
     return place(ctx, m, room, "mirror", x, y, yaw, floor_z(room) + z, mode="wall")
 

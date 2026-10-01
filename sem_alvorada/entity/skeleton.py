@@ -20,7 +20,6 @@ import bpy  # noqa: F401  (no pacote pip, importar bpy é o que torna `mathutils
 from mathutils import Quaternion, Vector
 
 IDENTITY = Quaternion((1.0, 0.0, 0.0, 0.0))
-DOWN = Vector((0.0, 0.0, -1.0))
 
 # Alturas de referência (m). O modelo e o esqueleto derivam destes números.
 HIP_Z = 1.24
@@ -141,11 +140,6 @@ def sole_height(solution, foot_name):
 
 def foot_bones():
     return ("Foot.L", "Foot.R")
-
-
-def finger_bones(side):
-    """Ossos dos quatro dedos longos de uma mão, na ordem A, B por dedo."""
-    return [(f"{finger}A.{side}", f"{finger}B.{side}") for finger in FINGER_NAMES]
 
 
 # --------------------------------------------------------------------------

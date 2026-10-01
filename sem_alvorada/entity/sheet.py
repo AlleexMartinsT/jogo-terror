@@ -186,12 +186,6 @@ def build_entity_in(scene):
     return scene
 
 
-def show_all_parts(scene):
-    for name in ("Entity_Body", "Entity_Eyes", "Entity_EyeLight"):
-        obj = scene.objects[name]
-        obj.hide_viewport = obj.hide_render = False
-
-
 def demo_views():
     """Frente, perfil, três-quartos e close do rosto (pose de repouso ou a pose atual da rig)."""
     scene = fresh_studio_scene()

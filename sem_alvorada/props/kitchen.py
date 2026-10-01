@@ -3,11 +3,18 @@ import math
 
 from . import parts
 from .kit import MeshBuilder
-from .placement import against_wall, flush_center, place
+from .placement import against_wall, flush_center, place, room_bounds
 
 COUNTER_HEIGHT = 0.90
-# frente do frigobar (onde o post-it da Laura fica colado): x, y, z (altura acima do piso)
-MINI_FRIDGE_FRONT = (8.66, 6.40, 0.50)
+MINI_FRIDGE_DEPTH = 0.58
+MINI_FRIDGE_ALONG = 6.40        # posição do frigobar ao longo da parede oeste (y)
+MINI_FRIDGE_FRONT_PLATE = 0.012
+
+
+def mini_fridge_front():
+    """(x, y, z) da superfície da porta do frigobar, onde o post-it da Laura fica colado."""
+    bounds = room_bounds("kitchen")
+    return (bounds.x0 + MINI_FRIDGE_DEPTH + MINI_FRIDGE_FRONT_PLATE, MINI_FRIDGE_ALONG, 0.50)
 
 
 def _cabinet_body(m, width, depth, top_mat="laminate", doors=2, body="wood_mid", front="veneer_mid"):
@@ -87,12 +94,12 @@ def make_fridge(ctx, room, x, y, yaw, *, anchor=None, z=None):
     return place(ctx, m, room, "fridge", x, y, yaw, z, name="fridge", anchor=anchor)
 
 
-def make_mini_fridge(ctx, room, wall, along, *, width=0.62, depth=0.58):
+def make_mini_fridge(ctx, room, wall, along, *, width=0.62, depth=MINI_FRIDGE_DEPTH):
     """Frigobar embutido no balcão da parede oeste."""
     x, y, yaw = against_wall(room, wall, along, depth)
     m = MeshBuilder("mini_fridge")
     m.box(0, 0, 0.0, width, depth, 0.86, "appliance_panel")
-    m.box(0, depth / 2 + 0.006, 0.04, width - 0.04, 0.012, 0.78, "plastic_beige")
+    m.box(0, depth / 2 + MINI_FRIDGE_FRONT_PLATE / 2, 0.04, width - 0.04, MINI_FRIDGE_FRONT_PLATE, 0.78, "plastic_beige")
     m.box(width / 2 - 0.07, depth / 2 + 0.03, 0.42, 0.025, 0.03, 0.26, "chrome")
     m.box(0, 0.02, 0.86, width + 0.02, depth + 0.02, 0.04, "laminate")
     return place(ctx, m, room, "mini_fridge", x, y, yaw)

@@ -39,6 +39,8 @@ class Stage:
         self._loops = set()
         self._lit = set()                 # luzes CutLight_* que esta cutscene acendeu
         self._head_limit = None           # (valor original) se a entidade foi erguida por esta cutscene
+        self._dawn_used = False
+        self._visibility = {}             # objeto -> (hide_viewport, hide_render) originais, devolvidos no fim
 
     def _snapshot(self):
         try:
@@ -110,12 +112,25 @@ class Stage:
     def set_visible(self, name, visible):
         obj = self.obj(name)
         if obj is not None:
-            obj.hide_viewport = obj.hide_render = not visible
+            self.set_hidden(obj, not visible)
+
+    def set_hidden(self, obj, hidden):
+        """Mostra/esconde `obj` lembrando como ele estava, para devolver ao terminar a cutscene."""
+        self._visibility.setdefault(obj, (obj.hide_viewport, obj.hide_render))
+        obj.hide_viewport = obj.hide_render = hidden
 
     # ---------------------------------------------------------------- entidade
     @property
     def entity(self):
         return self.host.entity
+
+    def set_dawn(self, amount):
+        """Clareia o céu (halo do Sol Negro e horizonte) via `world.sky.set_dawn`; ignora se não houver mundo."""
+        if getattr(self.host.scene, "world", None) is None:
+            return
+        from ..world import sky
+        self.safe("sky.set_dawn", sky.set_dawn, self.host.scene, amount)
+        self._dawn_used = amount > 0.0
 
     def stand_tall(self, entity):
         """Tira o limite de altura da cabeça (a rig curva a entidade sob o forro); `finish_up` devolve."""
@@ -131,6 +146,11 @@ class Stage:
         self.stop_all_loops()
         for name in list(self._lit):
             self.set_light(name, 0.0)
+        for obj, (hide_viewport, hide_render) in self._visibility.items():
+            obj.hide_viewport, obj.hide_render = hide_viewport, hide_render
+        self._visibility.clear()
+        if self._dawn_used:
+            self.set_dawn(0.0)
         if self._head_limit is not None:
             self.entity.head_limit = self._head_limit[0]
             self._head_limit = None
