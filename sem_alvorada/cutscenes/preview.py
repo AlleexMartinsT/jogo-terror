@@ -219,9 +219,11 @@ def default_times(name):
     return [t0 + (t1 - t0) * fraction for t0, t1, _ in tl.shots for fraction in (0.5,)]
 
 
-def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, out_dir=OUT_DIR, fill=0.0):
+def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, out_dir=OUT_DIR, fill=0.0,
+                  prefix=None):
     from sem_alvorada.entity import sheet
     os.makedirs(out_dir, exist_ok=True)
+    prefix = prefix or name
     setup_cycles(scene, res, samples, exposure)
     if fill > 0:                         # luz branca no mundo, só para conferir enquadramento e geometria
         from tools import preview as tools_preview
@@ -243,7 +245,7 @@ def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, 
         if not player.active:
             break
         overlay = player.overlay()
-        path = os.path.join(out_dir, f"{name}_{index:02d}.png")
+        path = os.path.join(out_dir, f"{prefix}_{index:02d}.png")
         scene.render.filepath = path
         bpy.ops.render.render(write_still=True)
         frame = compose_overlay(sheet.load_pixels(path), overlay)
@@ -253,7 +255,7 @@ def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, 
         print(f"[cutscene] {path} (t={player.time:.1f}s, fade={overlay.fade:.2f}) erros={player.errors}", flush=True)
     if tiles:
         columns = 3
-        sheet.save_png(os.path.join(out_dir, f"{name}_sheet.png"), sheet.contact_sheet(tiles, columns, labels))
+        sheet.save_png(os.path.join(out_dir, f"{prefix}_sheet.png"), sheet.contact_sheet(tiles, columns, labels))
     return host
 
 
@@ -265,12 +267,14 @@ def main(argv=None):
     ap.add_argument("--res", default="640x360")
     ap.add_argument("--samples", type=int, default=32)
     ap.add_argument("--exposure", type=float, default=0.0)
+    ap.add_argument("--tag", default="", help="sufixo do nome dos arquivos (para não sobrescrever a folha completa)")
     ap.add_argument("--fill", type=float, default=0.0, help="luz de mundo para depuração (0 = escuro de verdade)")
     args = ap.parse_args(argv)
     bpy.ops.wm.open_mainfile(filepath=os.path.abspath(args.blend))
     times = [float(t) for t in args.times.split(",")] if args.times else default_times(args.cutscene)
     res = tuple(int(v) for v in args.res.lower().split("x"))
-    render_frames(bpy.context.scene, args.cutscene, times, res, args.samples, args.exposure, fill=args.fill)
+    render_frames(bpy.context.scene, args.cutscene, times, res, args.samples, args.exposure, fill=args.fill,
+                  prefix=f"{args.cutscene}_{args.tag}" if args.tag else None)
 
 
 if __name__ == "__main__":
