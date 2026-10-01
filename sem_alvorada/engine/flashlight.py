@@ -12,7 +12,7 @@ from . import angles, texts
 
 # Espaço da câmera: x direita, y cima, z para trás. O SPOT nasce na lente (à frente do corpo da lanterna,
 # que assim fica fora do cone e não estoura de tão perto) e recua quando há parede: lanterna colada na parede.
-VIEWMODEL_OFFSET = (0.19, -0.15, -0.30)     # mais longe e mais baixo: a mão não cobre o canto da tela
+VIEWMODEL_OFFSET = (0.165, -0.125, -0.28)     # a mão aparece no canto sem cobrir a mira
 LIGHT_XY = (0.15, -0.10)
 LIGHT_FORWARD_MAX = 0.52
 LIGHT_FORWARD_MIN = 0.10

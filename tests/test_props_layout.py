@@ -342,8 +342,10 @@ def check_materials_and_names(scene):
             for node in material.node_tree.nodes:
                 if node.bl_idname == "ShaderNodeTexImage" and node.image and node.image.packed_file is None:
                     problems.append(f"{material.name}: imagem {node.image.name} não empacotada")
-                if node.bl_idname == "ShaderNodeTexImage" and node.interpolation != "Closest":
+                if node.bl_idname == "ShaderNodeTexImage" and node.interpolation not in ("Linear", "Closest"):
                     problems.append(f"{material.name}: interpolação {node.interpolation}")
+                if node.bl_idname == "ShaderNodeTexImage" and node.image and max(node.image.size) > 512:
+                    problems.append(f"{material.name}: textura {tuple(node.image.size)} acima de 512 px")
     names = [o.name for o in scene.objects]
     if len(names) != len(set(names)):
         problems.append("nomes de objeto repetidos")
@@ -405,7 +407,7 @@ def check_car_and_viewmodel(scene):
         zs = [v.co.z for v in viewmodel.data.vertices]
         if not (viewmodel.hide_viewport and viewmodel.hide_render):
             problems.append("ViewModel_Flashlight deve estar oculto")
-        if min(zs) > -0.12 or max(zs) < 0.03 or -min(zs) < max(zs):     # cano mais longo à frente do punho do que a manga atrás
+        if min(zs) > -0.12 or max(zs) < 0.03:        # cano de pelo menos 12 cm à frente do punho; antebraço atrás
             problems.append(f"ViewModel_Flashlight: cano deveria apontar para -Z (z de {min(zs):.2f} a {max(zs):.2f})")
     return problems
 

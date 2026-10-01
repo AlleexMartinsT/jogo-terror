@@ -1,44 +1,90 @@
-"""Sala de estar: sofá, poltrona, mesa de centro, TV de tubo com console, relógio de pé, abajur de chão."""
-from . import parts
-from .kit import MeshBuilder
-from .placement import flush_center, place
+"""Sala de estar: sofá, poltrona, mesa de centro e abajur de chão, além de miudezas de quem mora ali.
+
+A TV com o console fica em `tv.py` e o relógio de pé em `clock.py`. Os estofados são montados com uma
+`Assembly` (madeira firme + estofado macio): ver `assembly.py` e `shapes.py`.
+"""
+import math
+
+from .. import craft
+from . import parts, shapes, tex_sala  # noqa: F401  (tex_sala registra texturas e materiais da sala)
+from .assembly import Assembly
+from .placement import place
+
+LIFT = 0.12                    # altura dos pés do estofado
 
 
-def _upholstered_seat(m, width, depth, fabric, seats, arm=0.17, leg_mat="wood_dark"):
-    """Estofado em U com `seats` assentos: base, encosto, braços, almofadas de assento e de encosto."""
-    seat_w = (width - 2 * arm) / seats
-    parts.four_legs(m, -width / 2 + 0.04, -depth / 2 + 0.04, width / 2 - 0.04, depth / 2 - 0.04, 0.10, 0.06, leg_mat)
-    m.soft_box(0, 0, 0.10, width, depth, 0.18, fabric, radius=0.06, edge=0.03)
-    m.soft_box(0, -depth / 2 + 0.10, 0.28, width, 0.20, 0.52, fabric, radius=0.06, edge=0.04)
-    for side in (-1, 1):
-        m.soft_box(side * (width / 2 - arm / 2), 0, 0.10, arm, depth, 0.50, fabric, radius=0.06, edge=0.035)
-    for i in range(seats):
-        cx = (i - (seats - 1) / 2) * seat_w
-        m.soft_box(cx, 0.09, 0.28, seat_w - 0.01, depth - 0.24, 0.14, fabric, radius=0.05, edge=0.035)
-        with m.at(cx, -depth / 2 + 0.22, 0.42, rx=12):
-            m.soft_box(0, 0, 0, seat_w - 0.03, 0.17, 0.38, fabric, radius=0.05, edge=0.035)
+def _upholstered_seat(asm, width, depth, fabric, seats, *, arm_half=0.085, back_top=0.9, cushion_skew=0.0):
+    """Estofado com `seats` lugares: pés torneados, base, braços enrolados, encosto e almofadas soltas.
+
+    Medidas de sofá de três lugares americano: assento a 0,46 m, braço a 0,64 m, encosto a 0,9 m,
+    profundidade 0,9 m. Devolve o contorno interno dos braços (x_min, x_max) onde as almofadas ficam.
+    """
+    wood, soft = asm.wood, asm.soft
+    roll_radius = arm_half / math.cos(math.radians(35))
+    arm_x = width / 2 - roll_radius
+    inner = arm_x - arm_half
+    span = 2 * inner
+    # base de madeira: pés torneados e travessas aparentes sob o estofado
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            shapes.turned_leg(wood, sx * (width / 2 - 0.085), sy * (depth / 2 - 0.085), 0.0, LIFT + 0.02, 0.036,
+                              "walnut_v", "baluster")
+    wood.box(0, depth / 2 - 0.085, 0.04, width - 0.2, 0.035, 0.08, "walnut")
+    wood.box(0, -depth / 2 + 0.085, 0.04, width - 0.2, 0.035, 0.08, "walnut")
+    for sx in (-1, 1):
+        wood.box(sx * (width / 2 - 0.085), 0, 0.04, 0.035, depth - 0.2, 0.08, "walnut")
+    # corpo estofado: assento corrido, encosto fixo e braços
+    soft.soft_box(0, 0, LIFT, width, depth, 0.17, fabric, radius=0.06, edge=0.025)
+    soft.soft_box(0, -depth / 2 + 0.105, LIFT + 0.05, span + 0.05, 0.21, 0.52, fabric, radius=0.07, edge=0.04)
+    for sx in (-1, 1):
+        shapes.rolled_arm(soft, sx * arm_x, -depth / 2 + 0.01, depth / 2 - 0.015, LIFT, arm_half, 0.545, fabric)
+        shapes.scroll_face(soft, sx * arm_x, depth / 2 - 0.015, 0.545, roll_radius * 0.97, fabric)
+    # almofadas soltas de assento e de encosto
+    seat_w = span / seats - 0.006
+    seat_z = LIFT + 0.17
+    for index in range(seats):
+        cx = (index - (seats - 1) / 2) * (span / seats)
+        rows = shapes.cushion(soft, cx, 0.14, seat_z, seat_w, 0.64, 0.17, fabric, squareness=3.4, corner=0.22,
+                              crown=0.018, wrinkle=0.0025, phase=index * 1.9)
+        shapes.piping_at(soft, rows, 0.82, 0.0045, fabric)
+        shapes.piping_at(soft, rows, -0.82, 0.0045, fabric)
+        with soft.at(cx, -0.17, seat_z + 0.16, rx=-76):
+            rows = shapes.cushion(soft, 0, 0, -0.095, seat_w, 0.50, 0.19, fabric, squareness=3.0, corner=0.22,
+                                  crown=0.02, dimple=0.028, wrinkle=0.0025, phase=index * 2.3 + 1)
+            shapes.piping_at(soft, rows, 0.82, 0.0045, fabric)
+            shapes.button(soft, 0, 0, 0.088, fabric)
+    return span
 
 
 def make_sofa(ctx, room, x, y, yaw, *, anchor=None, z=None):
-    """Sofá de três lugares de frente para a TV, com uma manta jogada e um travesseiro de quem dormiu ali."""
-    m = MeshBuilder("sofa_living")
-    _upholstered_seat(m, 2.1, 0.9, "fabric_blue", 3)
-    with m.at(-0.55, 0.12, 0.43, rz=14, rx=-4):
-        m.soft_box(0, 0, 0, 0.7, 0.5, 0.08, "plaid_blanket", radius=0.05, edge=0.03, uv=1.3)
-    with m.at(-0.62, 0.36, 0.30, rz=-30):
-        m.soft_box(0, 0, 0, 0.5, 0.3, 0.10, "plaid_blanket", radius=0.04, edge=0.04, uv=1.3)
-    with m.at(0.72, -0.05, 0.43, rx=-12, rz=20):
-        m.soft_box(0, 0, 0, 0.46, 0.30, 0.13, "linen_dirty", radius=0.08, edge=0.05, corner_points=3)
-    return place(ctx, m, room, "sofa", x, y, yaw, z, name="sofa_living", anchor=anchor)
+    """Sofá de três lugares de frente para a TV, com uma almofada de quem dormiu ali."""
+    asm = Assembly("sofa_living", wood=craft.FURNITURE, soft=craft.RAW)
+    asm.soft.finish = craft.Finish(bevel=0.010, bevel_segments=3, smooth_angle=70, subsurf=1)
+    span = _upholstered_seat(asm, 2.1, 0.9, "sofa_fabric", 3)
+    with asm.at(0.0, 0.0, 0.0):
+        throw_cushion(asm.soft, 0.62, 0.0, 0.46, tilt=-24, turn=18, fabric="velvet_burgundy")
+    return place(ctx, asm, room, "sofa", x, y, yaw, z, name="sofa_living", anchor=anchor)
+
+
+def throw_cushion(soft, x, y, z, *, tilt=-20, turn=0, fabric="velvet_burgundy", size=0.42):
+    """Almofada de enfeite apoiada no braço: elipsoide achatado levemente amassado."""
+    with soft.at(x, y, z, rx=tilt, rz=turn):
+        shapes.cushion(soft, 0, 0, 0, size, size, 0.13, fabric, squareness=2.3, corner=0.45, crown=0.012,
+                       wrinkle=0.006, phase=turn)
 
 
 def make_armchair(ctx, room, x, y, yaw, *, fabric="fabric_gray", worn=False, z=None):
-    m = MeshBuilder("armchair")
-    _upholstered_seat(m, 0.86, 0.86, fabric, 1, arm=0.16)
-    if worn:
-        with m.at(0.0, 0.1, 0.28, rx=-3):
-            m.soft_box(0, 0, 0, 0.5, 0.55, 0.16, "leather_brown", radius=0.06, edge=0.04)
-    return place(ctx, m, room, "armchair", x, y, yaw, z)
+    """Poltrona de braços enrolados. `worn=True` troca o tecido por couro gasto (a poltrona velha do escritório)."""
+    asm = Assembly("armchair", wood=craft.FURNITURE, soft=craft.RAW)
+    asm.soft.finish = craft.Finish(bevel=0.010, bevel_segments=3, smooth_angle=70, subsurf=1)
+    cover = "leather_aged" if worn else "armchair_fabric"
+    _upholstered_seat(asm, 0.9, 0.88, cover, 1, arm_half=0.07)
+    return place(ctx, asm, room, "armchair", x, y, yaw, z)
+
+
+# --- legado: ainda não refeito (será substituído) ---
+from .kit import MeshBuilder  # noqa: E402
+from .placement import flush_center  # noqa: E402
 
 
 def make_coffee_table(ctx, room, x, y, yaw, *, z=None):
