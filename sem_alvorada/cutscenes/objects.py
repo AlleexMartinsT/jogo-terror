@@ -64,6 +64,7 @@ def parent_to_car(obj, ctx):
     """Se o módulo props já criou o `Car`, a luz anda com ele (mantendo a posição de mundo atual)."""
     car_obj = bpy.data.objects.get(C.OBJ_CAR)
     if car_obj is not None:
+        bpy.context.view_layer.update()      # sem isso matrix_world do carro ainda é a identidade
         obj.parent = car_obj
         obj.matrix_parent_inverse = car_obj.matrix_world.inverted()
 
@@ -77,7 +78,7 @@ def create_lights(ctx):
     _light(ctx, sc.DAWN_LIGHT, "AREA", (0.55, 0.68, 0.95), (window[0], window[1] + 0.9, window[2]),
            target=(window[0], window[1] - 3.0, window[2] - 0.6), area=(2.6, 1.6))
     _light(ctx, sc.DRIVEWAY_LIGHT, "SPOT", (0.62, 0.72, 1.0), (10.5, -6.5, 4.8), target=(car.x, -2.0, 0.8), size=0.5)
-    cabin = _light(ctx, sc.CAR_CABIN, "POINT", (0.75, 0.82, 1.0), (car.x + 0.25, car.y + 0.30, 1.30), size=0.1)
+    cabin = _light(ctx, sc.CAR_CABIN, "POINT", (0.75, 0.82, 1.0), (car.x + 0.45, car.y + 1.10, 1.35), size=0.1)
     parent_to_car(cabin, ctx)
     road = layout.ENTITY_ROAD_POS
     _light(ctx, sc.ROAD_LIGHT, "SPOT", (0.85, 0.9, 1.0), (road[0], road[1] + 6.0, 3.4),

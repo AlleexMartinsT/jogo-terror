@@ -43,6 +43,7 @@ class PlaySession:
         self._pre_warp = None
         self._quality = quality
         self._skip_intro = skip_intro
+        self._advance_grain = None
 
     # ---- ciclo de vida ----
     def start(self, window, area):
@@ -66,6 +67,7 @@ class PlaySession:
             return
         try:
             quality.apply(self.scene, self._quality)
+            self._advance_grain = quality.set_grain_phase
         except Exception as error:      # noqa: BLE001 - qualidade é opcional; o jogo precisa abrir
             print(f"[engine] world.quality.apply falhou ({error})", flush=True)
 
@@ -165,6 +167,9 @@ class PlaySession:
         finally:
             self.controls.inp.clear_edges()
         self.model = self.game.hud_model()
+        if self._advance_grain:
+            # Sem avançar a fase a granulação do compositor congela e vira uma textura suja parada na tela.
+            self._advance_grain(self.scene, now % 1000.0)
         self.view.sync_size()
         self.view.area.tag_redraw()
 

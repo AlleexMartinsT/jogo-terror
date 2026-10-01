@@ -206,7 +206,7 @@ def make_kids_bed(ctx, room, x, y, yaw, *, anchor=None, z=None):
         m.soft_box(0, -0.60, 0.40, 0.50, 0.30, 0.10, "linen_sheet", radius=0.06, edge=0.04, corner_points=3)
         parts.rabbit(m, 0.03, -0.6, 0.50, 0.9, sitting_yaw=math.radians(8))
     return place(ctx, m, room, "kids_bed", x, y, yaw, z, name="kids_bed", anchor=anchor,
-                 collision=[(-0.44, cy - 0.84, 0, 0.44, cy + 0.84, 0.46)])
+                 collision=[(-0.44, cy - 0.84, 0, 0.44, cy + 0.84, 0.40)])      # abaixo da coberta, onde fica o desenho
 
 
 def make_toy_shelf(ctx, room, wall, along, *, width=1.05, depth=0.34, height=0.5):
@@ -224,7 +224,7 @@ def make_toy_shelf(ctx, room, wall, along, *, width=1.05, depth=0.34, height=0.5
     parts.teddy(m, -0.25, 0.0, 0.265, 0.55, "plush_yellow")
     m.box(0.26, 0.0, 0.265, 0.3, 0.2, 0.09, "toy_green")
     parts.rabbit(m, 0.25, 0.04, 0.355, 0.6)
-    return place(ctx, m, room, "toy_shelf", x, y, yaw)
+    return place(ctx, m, room, "toy_shelf", x, y, yaw, collision_top=height)
 
 
 def make_toy_chest(ctx, room, wall, along, *, z=None):

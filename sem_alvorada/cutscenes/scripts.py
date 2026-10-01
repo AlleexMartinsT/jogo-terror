@@ -309,6 +309,7 @@ def build_death():
     shots = (
         Shot(0.75, View(eye, player_ahead, 68.0), View(eye, entity_head_now, 58.0), ease="out", handheld=0.5,
              cues=(Cue(0.0, act.entity_eyes(1.0)), Cue(0.0, act.entity_anim("attack")),
+                   Cue(0.45, act.flashlight(False)),
                    Cue(0.05, act.sound("ent_scream", None, 1.0)), Cue(0.05, act.silence(6.0))),
              shake=((0.0, 0.35), (0.75, 0.6))),
         Shot(0.7, View(eye, entity_head_now, 58.0), View(eye, face, 46.0), ease="in", handheld=0.6,
@@ -334,9 +335,8 @@ def build_ending():
     car = layout.ANCHORS["car"]
     car_home = (car.x, car.y, car.z)
     driver_eye = anchor("car_driver_eye")
-    eye_offset = tuple(d - c for d, c in zip(driver_eye, car_home))
     road = layout.ENTITY_ROAD_POS
-    car_stop = (car.x, road[1] + 6.4, car.z)
+    car_stop = (car.x, road[1] + 6.0, car.z)
     rollup = layout.OPENINGS["garage_rollup"]
     rollup_mid = (rollup.mid[0], rollup.pos, 1.1)
     lift = 2.3
@@ -348,70 +348,66 @@ def build_ending():
     sitting_eye = (bed.x - 0.35, bed.y + 0.15, bed.z + 1.35)
     window_eye = window_vantage("w_master_n")
 
-    ignition = add(driver_eye, (-0.05, -0.55, -0.42))
-    dashboard = add(driver_eye, (-0.45, -1.4, -0.2))
-    road_horizon = (car.x, road[1] - 12.0, driver_eye[2] - 0.05)
+    ignition = add(driver_eye, (-0.05, -0.55, -0.42))        # a chave, embaixo do volante
+    chest = (road[0], road[1], road[2] + 1.5)
     entity_head = (road[0], road[1], road[2] + 2.48)
+    hood_eye = (car_stop[0] + 0.1, car_stop[1] - 2.3, 1.35)   # na ponta do capô, com os faróis acesos à frente
     exterior_eye = (car.x - 5.5, -4.6, 1.25)
-    entity_yaw = ROAD_FACING
 
-    def in_car(view_target, fov):
-        return View(driver_eye, view_target, fov)
+    def in_car(target, fov):
+        return View(driver_eye, target, fov)
 
-    shots = (
-        Shot(7.0, in_car(ignition, 56.0), in_car(dashboard, 60.0), handheld=0.16,
-             fade=((0.0, 1.0), (1.4, 0.0)), letterbox=((0.0, 0.0), (1.5, 1.0)),
-             lines=(say("ending", 0, 1.8, 6.4),),
-             cues=(Cue(0.4, act.sound("car_door", driver_eye, 0.9)),
-                   Cue(1.7, act.sound("key_jingle", driver_eye, 0.7)),
-                   Cue(3.0, act.sound("car_start", driver_eye, 1.0)),
-                   Cue(0.0, act.cut_light(CAR_CABIN, 2.2)),
-                   Cue(3.6, act.loop("engine", "car_idle", 0.7)),
-                   Cue(3.6, act.headlights(True)))),
-        Shot(5.5, in_car(dashboard, 60.0), in_car(rollup_mid, 62.0), ease="smoother", handheld=0.2,
-             cues=(Cue(0.4, act.sound("garage_rollup", rollup_mid, 1.0)),
-                   Cue(3.4, act.cut_light(ROAD_LIGHT, 160.0)))),
-        Shot(5.0, View(exterior_eye, (car.x, 0.8, 1.0), 62.0), View(exterior_eye, (car.x, -5.5, 1.0), 56.0),
-             handheld=0.14, ease="smooth",
-             lines=(say("ending", 1, 0.6, 4.6),),
-             cues=(Cue(0.0, act.entity_place(road, entity_yaw, "stare", 0.0, erect=True)),
-                   Cue(0.0, act.cut_light(DRIVEWAY_LIGHT, 260.0)),
-                   Cue(5.0, act.cut_light(DRIVEWAY_LIGHT, 0.0)))),
-        Shot(5.0, in_car(road_horizon, 62.0), in_car(entity_head, 58.0), follow="Car", handheld=0.2, ease="smooth"),
-        Shot(8.5, in_car(entity_head, 58.0), in_car(entity_head, 40.0), follow="Car", handheld=0.32,
-             lines=(say("ending", 2, 1.4, 6.6),),
-             cues=(Cue(0.2, act.sound("ent_stinger", road, 0.9)),
-                   Cue(6.9, act.sound("ent_static_burst", None, 1.0))),
-             tracks=(Track(0.0, 1.8, act.eyes_ramp(0.0, 1.0), "smooth"),),
-             shake=((0.0, 0.1), (6.6, 0.5), (8.5, 0.9)),
-             flash=((6.9, 0.0), (7.5, 1.0))),
-        Shot(4.0, View(near_clock_eye, clock, 34.0), View(close_clock_eye, clock, 32.0), handheld=0.10,
-             lines=(say("ending", 3, 0.9, 2.5),),
-             flash=((0.0, 1.0), (0.7, 1.0), (2.8, 0.0)),
-             cues=(Cue(0.0, act.stop_loop("engine")), Cue(0.0, act.entity_hide()),
-                   Cue(0.0, act.headlights(False)), Cue(0.0, act.cut_light(ROAD_LIGHT, 0.0)),
-                   Cue(0.0, act.hide_matching(anchor("nightstand_clock", dz=0.45), 0.55, CLOCK_NAMES)),
-                   Cue(0.0, act.show(END_CLOCK)),
-                   Cue(0.0, act.cut_light(CLOCK_GLOW, 4.0)))),
-        Shot(5.0, View(close_clock_eye, clock, 32.0), View(sitting_eye, toward_sun(sitting_eye), 52.0),
-             ease="smoother", handheld=0.2, lines=(say("ending", 4, 0.5, 3.0),)),
-        Shot(6.5, View(sitting_eye, toward_sun(sitting_eye), 52.0), View(window_eye, toward_sun(window_eye), 40.0),
-             handheld=0.24),
-        Shot(8.0, View(window_eye, toward_sun(window_eye), 40.0), View(window_eye, toward_sun(window_eye), 38.0),
-             handheld=0.2, fade=((0.0, 0.0), (2.4, 1.0)), card=((2.4, 0.0), (3.6, 1.0)),
-             letterbox=((5.5, 1.0), (7.0, 0.0))),
+    labelled = (
+        ("ignition", Shot(4.0, in_car(ignition, 52.0), in_car(ignition, 44.0), handheld=0.16,
+                          fade=((0.0, 1.0), (1.2, 0.0)), letterbox=((0.0, 0.0), (1.5, 1.0)),
+                          lines=(say("ending", 0, 1.2, 3.9),),
+                          cues=(Cue(0.0, act.cut_light(CAR_CABIN, 4.0)),
+                                Cue(0.4, act.sound("car_door", driver_eye, 0.9)),
+                                Cue(1.5, act.sound("key_jingle", driver_eye, 0.7)),
+                                Cue(2.6, act.sound("car_start", driver_eye, 1.0)),
+                                Cue(3.2, act.loop("engine", "car_idle", 0.7)),
+                                Cue(3.2, act.headlights(True))))),
+        ("windshield", Shot(3.0, in_car(ignition, 44.0), in_car(rollup_mid, 62.0), ease="smoother", handheld=0.2)),
+        ("rollup", Shot(5.5, in_car(rollup_mid, 62.0), handheld=0.2,
+                        cues=(Cue(0.4, act.sound("garage_rollup", rollup_mid, 1.0)),))),
+        ("exterior", Shot(5.0, View(exterior_eye, (car.x, 0.8, 1.0), 62.0), View(exterior_eye, (car.x, -5.5, 1.0), 56.0),
+                          handheld=0.14, lines=(say("ending", 1, 0.6, 4.6),),
+                          cues=(Cue(0.0, act.entity_place(road, ROAD_FACING, "stare", 0.0, erect=True)),
+                                Cue(0.0, act.cut_light(DRIVEWAY_LIGHT, 2500.0)),
+                                Cue(5.0, act.cut_light(DRIVEWAY_LIGHT, 0.0))))),
+        ("drive", Shot(5.0, in_car((car.x, road[1] - 12.0, driver_eye[2] - 0.05), 62.0), in_car(chest, 58.0),
+                       follow="Car", handheld=0.2, cues=(Cue(0.0, act.cut_light(ROAD_LIGHT, 1800.0)),))),
+        ("road", Shot(8.5, View(hood_eye, entity_head, 46.0), View(hood_eye, entity_head, 30.0), handheld=0.32,
+                      lines=(say("ending", 2, 1.4, 6.6),),
+                      cues=(Cue(0.2, act.sound("ent_stinger", road, 0.9)),
+                            Cue(6.9, act.sound("ent_static_burst", None, 1.0))),
+                      tracks=(Track(0.0, 1.8, act.eyes_ramp(0.0, 1.0), "smooth"),),
+                      shake=((0.0, 0.1), (6.6, 0.5), (8.5, 0.9)), flash=((6.9, 0.0), (7.5, 1.0)))),
+        ("clock", Shot(4.0, View(near_clock_eye, clock, 34.0), View(close_clock_eye, clock, 32.0), handheld=0.10,
+                       lines=(say("ending", 3, 0.9, 2.5),), flash=((0.0, 1.0), (0.7, 1.0), (2.8, 0.0)),
+                       cues=(Cue(0.0, act.stop_loop("engine")), Cue(0.0, act.entity_hide()),
+                             Cue(0.0, act.headlights(False)), Cue(0.0, act.cut_light(ROAD_LIGHT, 0.0)),
+                             Cue(0.0, act.cut_light(CAR_CABIN, 0.0)),
+                             Cue(0.0, act.hide_matching(anchor("nightstand_clock", dz=0.45), 0.55, CLOCK_NAMES)),
+                             Cue(0.0, act.show(END_CLOCK)), Cue(0.0, act.cut_light(CLOCK_GLOW, 4.0))))),
+        ("bed", Shot(5.0, View(close_clock_eye, clock, 32.0), View(sitting_eye, toward_sun(sitting_eye), 52.0),
+                     ease="smoother", handheld=0.2, lines=(say("ending", 4, 0.5, 3.0),))),
+        ("window", Shot(6.5, View(sitting_eye, toward_sun(sitting_eye), 52.0),
+                        View(window_eye, toward_sun(window_eye), 40.0), handheld=0.24)),
+        ("card", Shot(8.0, View(window_eye, toward_sun(window_eye), 40.0), View(window_eye, toward_sun(window_eye), 38.0),
+                      handheld=0.2, fade=((0.0, 0.0), (2.4, 1.0)), card=((2.4, 0.0), (3.6, 1.0)),
+                      letterbox=((5.5, 1.0), (7.0, 0.0)))),
     )
-    starts = {}
-    t = 0.0
-    for index, shot in enumerate(shots):
-        starts[index] = t
+    shots = tuple(shot for _, shot in labelled)
+    start, t = {}, 0.0
+    for label, shot in labelled:
+        start[label] = t
         t += shot.duration
-    dawn_start = starts[5]
     tracks = (
-        Track(starts[1] + 0.6, starts[1] + 4.6, act.lift_object(C.OBJ_GARAGE_ROLLUP, 0.0, lift), "smooth"),
-        Track(starts[1] + 3.2, starts[4] - 1.5, act.move_object(C.OBJ_CAR, car_home, car_stop), "smooth"),
-        Track(dawn_start, dawn_start + 20.0, act.light_ramp(DAWN_LIGHT, 0.0, 90.0), "linear"),
-        Track(dawn_start + 4.0, dawn_start + 18.0, act.dawn_ramp(0.0, 1.0), "smooth"),
+        Track(start["rollup"] + 0.6, start["rollup"] + 4.6, act.lift_object(C.OBJ_GARAGE_ROLLUP, 0.0, lift), "smooth"),
+        Track(start["rollup"] + 3.2, start["road"] - 0.2, act.move_object(C.OBJ_CAR, car_home, car_stop), "smooth"),
+        Track(start["clock"], start["clock"] + 20.0, act.light_ramp(DAWN_LIGHT, 0.0, 90.0), "linear"),
+        Track(start["clock"] + 4.0, start["clock"] + 18.0, act.dawn_ramp(0.0, 1.0), "smooth"),
     )
     return Cutscene("ending", "ending_done", shots, card=story.ENDING_CARD, initial={"fade": 1.0}, tracks=tracks)
 

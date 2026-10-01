@@ -36,7 +36,7 @@ VIEWS = {
     "kids": [("a", (4.6, 4.6, 1.6), (1.0, 2.6, 0.5)), ("b", (2.5, 0.5, 1.6), (2.2, 4.6, 0.7)),
              ("c", (0.4, 1.0, 1.6), (4.4, 3.2, 0.5))],
     "bath": [("a", (8.4, 1.4, 1.6), (11.2, 2.4, 0.6)), ("b", (11.5, 4.5, 1.6), (9.0, 1.0, 0.7)),
-             ("c", (10.0, 0.5, 1.6), (9.2, 4.9, 1.1))],
+             ("c", (10.0, 0.5, 1.6), (9.2, 4.9, 1.1)), ("d", (9.4, 2.6, 1.9), (11.5, 1.0, 0.4))],
     "study": [("a", (8.6, 5.4, 1.6), (11.0, 9.3, 0.7)), ("b", (11.6, 9.4, 1.6), (8.4, 6.0, 0.7))],
     "hall_u": [("a", (6.6, 0.5, 1.6), (6.8, 9.0, 0.8)), ("b", (6.8, 9.6, 1.6), (6.6, 1.0, 0.8))],
     "hall_g": [("a", (6.6, 0.6, 1.6), (6.9, 6.0, 0.9)), ("b", (7.2, 9.6, 1.6), (5.3, 1.5, 0.9)),
@@ -145,14 +145,14 @@ def viewmodel_views(scene):
 def render_room_views(scene, rooms, args):
     if "items" in rooms or "viewmodel" in rooms:
         extra = item_views(scene) if "items" in rooms else viewmodel_views(scene)
-        preview.render_views(scene, extra, os.path.join(OUT_DIR, "v"), "cycles", tuple(args.res), args.samples,
+        preview.render_views(scene, extra, os.path.join(OUT_DIR, "v"), args.engine, tuple(args.res), args.samples,
                              0.002 if args.flash else args.fill, args.exposure, args.fov)
         rooms = [r for r in rooms if r not in ("items", "viewmodel")]
     for room in rooms:
         floor = layout.LEVEL_Z[layout.ROOMS[room].level] if room in layout.ROOMS else 0.0
         set_room_fill(scene, "garage" if room == "car" else room, 0.0 if args.flash else args.room_light)
         views = [look_at_view(f"{room}_{suffix}", cam, tgt, floor) for suffix, cam, tgt in VIEWS[room]]
-        preview.render_views(scene, views, os.path.join(OUT_DIR, "v"), "cycles", tuple(args.res),
+        preview.render_views(scene, views, os.path.join(OUT_DIR, "v"), args.engine, tuple(args.res),
                              args.samples, 0.002 if args.flash else args.fill, args.exposure, 72.0)
 
 
@@ -166,6 +166,7 @@ def main(argv=None):
     ap.add_argument("--exposure", type=float, default=0.0)
     ap.add_argument("--res", default="640x360")
     ap.add_argument("--fov", type=float, default=72.0, help="campo de visão; use ~28 nas vistas de itens")
+    ap.add_argument("--engine", default="cycles", choices=["cycles", "eevee", "workbench"])
     ap.add_argument("--no-render", action="store_true")
     ap.add_argument("--save", default="")
     args = ap.parse_args(argv)

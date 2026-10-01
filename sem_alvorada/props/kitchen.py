@@ -102,7 +102,8 @@ def make_mini_fridge(ctx, room, wall, along, *, width=0.62, depth=MINI_FRIDGE_DE
     m.box(0, depth / 2 + MINI_FRIDGE_FRONT_PLATE / 2, 0.04, width - 0.04, MINI_FRIDGE_FRONT_PLATE, 0.78, "plastic_beige")
     m.box(width / 2 - 0.07, depth / 2 + 0.03, 0.42, 0.025, 0.03, 0.26, "chrome")
     m.box(0, 0.02, 0.86, width + 0.02, depth + 0.02, 0.04, "laminate")
-    return place(ctx, m, room, "mini_fridge", x, y, yaw)
+    front = depth / 2 + MINI_FRIDGE_FRONT_PLATE         # o puxador fica de fora: o post-it não pode cair dentro
+    return place(ctx, m, room, "mini_fridge", x, y, yaw, collision=[(-width / 2, -depth / 2, 0.0, width / 2, front, 0.90)])
 
 
 def make_stove(ctx, room, wall, along):

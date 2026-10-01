@@ -432,7 +432,7 @@ def test_ending_moves_car_and_shows_card():
         seen["fade_end"] = ov.fade
     host, _, _ = run_to_end("ending", constant(1 / 30), on_frame=watch)
     car = host.objects["Car"].location
-    stop_y = layout.ENTITY_ROAD_POS[1] + 6.4
+    stop_y = layout.ENTITY_ROAD_POS[1] + 6.0
     assert abs(car[1] - stop_y) < 1e-6 and abs(car[0] - layout.ANCHORS["car"].x) < 1e-6, tuple(car)
     assert host.objects["GarageRollup"].location.z == 2.3
     assert seen["lights"] > 0, "os faróis precisam acender durante a saída"

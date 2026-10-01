@@ -154,11 +154,12 @@ def move_object(name, start: Vec, end: Vec):
 
 
 def lift_object(name, start_z, end_z):
-    """Sobe/desce só o Z de um objeto (portão da garagem)."""
+    """Sobe/desce só o Z de um objeto (portão da garagem). `sa_open_lift` do objeto, se existir, manda no destino."""
     def apply(stage, f):
         obj = stage.obj(name)
         if obj is not None:
-            obj.location.z = start_z + (end_z - start_z) * f
+            target = obj.get("sa_open_lift", end_z) if end_z > start_z else end_z
+            obj.location.z = start_z + (target - start_z) * f
     return apply
 
 

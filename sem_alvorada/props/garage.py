@@ -8,6 +8,7 @@ from .placement import against_wall, flush_center, floor_z, place
 BENCH_TOP = 0.90
 SHELF_TIERS = (0.30, 0.65, 1.00, 1.35, 1.70)
 NOTE_TIER = 1.00                                   # o degrau de 1 m recebe o guia do reboque
+NOTE_TIER_LIMIT = 0.55
 
 
 def make_workbench(ctx, room, x, y, yaw, *, anchor=None, z=None):
@@ -35,7 +36,7 @@ def make_workbench(ctx, room, x, y, yaw, *, anchor=None, z=None):
         m.soft_box(-0.85, 0.0, BENCH_TOP, 0.26, 0.15, 0.16, "plastic_gray", radius=0.02, edge=0.01)     # rádio
         m.box(-0.85, 0.076, BENCH_TOP + 0.08, 0.14, 0.004, 0.06, "black")
         parts.paper_sheet(m, 0.05, 0.16, BENCH_TOP, 0.30, 0.10, "coat_dark", 0.4, 0.02)                 # pano de graxa
-    return place(ctx, m, room, "workbench", x, y, yaw, z, name="workbench", anchor=anchor)
+    return place(ctx, m, room, "workbench", x, y, yaw, z, name="workbench", anchor=anchor, collision_top=BENCH_TOP)
 
 
 def make_tool_panel(ctx, room, wall, along, z_center, *, width=1.7, height=0.9):
@@ -54,6 +55,23 @@ def make_tool_panel(ctx, room, wall, along, z_center, *, width=1.7, height=0.9):
     return place(ctx, m, room, "tool_panel", x, y, yaw, floor_z(room) + z_center + height / 2, mode="wall")
 
 
+def _stock_shelf(m, rng, tier, first, limit, depth):
+    """Enche uma prateleira de `first` a `limit` (coordenadas locais) com caixas, latas e potes, sem passar do fim."""
+    cursor = first
+    while cursor < limit - 0.12:
+        span = min(rng.uniform(0.18, 0.4), limit - cursor)
+        kind = rng.random()
+        if kind < 0.4:
+            m.box(cursor + span / 2, 0.0, tier + 0.005, span, depth - 0.08, rng.uniform(0.16, 0.28), "cardboard",
+                  mats={"front": "cardboard_toys" if rng.random() < 0.3 else "cardboard"}, uv=1.6)
+        elif kind < 0.75:
+            for k in range(max(1, int((span - 0.06) / 0.13))):
+                m.cylinder(cursor + 0.07 + k * 0.13, 0.0, tier + 0.005, 0.06, rng.uniform(0.14, 0.2), "can_labels", seg=8)
+        else:
+            m.cylinder(cursor + span / 2, 0.0, tier + 0.005, 0.07, 0.2, "glass_clear", seg=8)
+        cursor += span + rng.uniform(0.02, 0.08)
+
+
 def make_garage_shelves(ctx, room, wall, along, *, width=2.5, depth=0.4, height=1.85):
     """Estante de aço com caixas, latas de tinta e potes; o degrau de 1 m fica livre para o guia do reboque."""
     x, y, yaw = against_wall(room, wall, along, depth)
@@ -63,25 +81,13 @@ def make_garage_shelves(ctx, room, wall, along, *, width=2.5, depth=0.4, height=
             m.box(sx, sy, 0, 0.04, 0.04, height, "steel_dark")
     for tier in SHELF_TIERS:
         m.box(0, 0, tier - 0.02, width, depth, 0.025, "wood_mid")
-    rng = ctx.rng
     for tier in SHELF_TIERS:
-        cursor = -width / 2 + 0.1
-        last_free = width / 2 - 0.25
-        if tier == NOTE_TIER:
-            last_free = 0.55       # a estante gira 180 graus: o trecho do guia (x ~ 15.2) fica no lado +X local
-        while cursor < last_free:
-            kind = rng.random()
-            span = rng.uniform(0.18, 0.4)
-            if kind < 0.4:
-                m.box(cursor + span / 2, 0.0, tier + 0.005, span, depth - 0.08, rng.uniform(0.16, 0.28), "cardboard",
-                      mats={"front": "cardboard_toys" if rng.random() < 0.3 else "cardboard"}, uv=1.6)
-            elif kind < 0.75:
-                for k in range(int(span / 0.13) + 1):
-                    m.cylinder(cursor + 0.07 + k * 0.13, 0.0, tier + 0.005, 0.06, rng.uniform(0.14, 0.2), "can_labels", seg=8)
-            else:
-                m.cylinder(cursor + span / 2, 0.0, tier + 0.005, 0.07, 0.2, "glass_clear", seg=8)
-            cursor += span + rng.uniform(0.02, 0.08)
-    return place(ctx, m, room, "garage_shelves", x, y, yaw)
+        # a estante gira 180 graus: o trecho onde o guia repousa (x ~ 15.2) fica no lado +X local
+        limit = NOTE_TIER_LIMIT if tier == NOTE_TIER else width / 2 - 0.08
+        _stock_shelf(m, ctx.rng, tier, -width / 2 + 0.1, limit, depth)
+    # proxy só no fundo da estante: o jogador para na beira dela e o guia do reboque fica fora do volume
+    back_only = [(-width / 2, -depth / 2, 0.0, width / 2, -depth / 2 + 0.12, height)]
+    return place(ctx, m, room, "garage_shelves", x, y, yaw, collision=back_only)
 
 
 def make_chest_freezer(ctx, room, wall, along):

@@ -15,6 +15,7 @@ from .flashlight import build_item_mesh
 from .kit import MeshBuilder
 
 FLAT_NOTE_THICKNESS = 0.003
+REST_CLEARANCE = 0.012      # folga sob o item: o raio da interação não pode nascer dentro de uma malha
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +179,7 @@ def _create_item(ctx, item_id, builder, x, y, z, yaw_deg, mode):
     mesh_builder = builder()
     mesh_builder.name = C.N_ITEM + item_id
     if mode == "rest":
-        z -= mesh_builder.bounds()[0][2]
+        z += REST_CLEARANCE - mesh_builder.bounds()[0][2]
     obj = bpy.data.objects.new(C.N_ITEM + item_id, mesh_builder.to_mesh(C.N_ITEM + item_id))
     obj.location = (x, y, z)
     obj.rotation_euler = (0.0, 0.0, math.radians(yaw_deg))

@@ -10,7 +10,8 @@ from .. import layout, matapi
 from . import texts
 from .flashlight import LIGHT_OFFSET, VIEWMODEL_OFFSET, WARM
 
-PLAYER_FAR_CLIP = 200.0
+# O Sol Negro está a 140 m e o anel do horizonte a 155 m: com clip menor eles somem.
+PLAYER_FAR_CLIP = 300.0
 
 JOGAR_SCRIPT = '''"""Inicia SEM ALVORADA: rode este texto no editor de texto do Blender (Alt+P)."""
 import os

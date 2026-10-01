@@ -13,7 +13,7 @@ BODY_NAME = "Entity_Body"
 EYES_NAME = "Entity_Eyes"
 LIGHT_NAME = "Entity_EyeLight"
 
-EYE_LIGHT_ENERGY = 22.0          # W com os olhos no máximo
+EYE_LIGHT_ENERGY = 14.0          # W com os olhos no máximo
 EYE_LIGHT_COLOR = (0.86, 0.93, 1.0)
 EYE_LIGHT_OFFSET = Vector((0.0, 0.16, 2.535))
 

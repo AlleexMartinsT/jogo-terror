@@ -15,6 +15,11 @@ import bmesh  # noqa: E402  (precisa vir depois do bpy no módulo pip)
 from sem_alvorada.props import textures  # noqa: E402
 from sem_alvorada.props.kit import MeshBuilder  # noqa: E402
 
+def rotated_box(builder):
+    with builder.at(0.5, 0.2, 0.1, 10, 20, 30):
+        builder.box(0, 0, 0, 0.4, 0.2, 0.3, "metal")
+
+
 CLOSED_SHAPES = {
     "box": lambda m: m.box(0, 0, 0, 1, 1, 1, "metal"),
     "frustum": lambda m: m.frustum(0, 0, 0, 1, 1, 0.5, 0.5, 1, "metal"),
@@ -28,7 +33,7 @@ CLOSED_SHAPES = {
     "torus": lambda m: m.torus(0, 0, 0, 0.3, 0.05, "metal", rx=40),
     "sphere": lambda m: m.sphere(0, 0, 0.5, 0.3, "metal"),
     "extruded_l": lambda m: m.extrude([(0, 0), (1, 0), (1, 0.3), (0.3, 0.3), (0.3, 1), (0, 1)], "xy", 0, 0.4, "metal"),
-    "rotated_box": lambda m: [m.at(0.5, 0.2, 0.1, 10, 20, 30).__enter__(), m.box(0, 0, 0, 0.4, 0.2, 0.3, "metal")],
+    "rotated_box": lambda m: rotated_box(m),
 }
 
 

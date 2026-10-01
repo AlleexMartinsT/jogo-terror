@@ -12,12 +12,12 @@ def make_point_light(ctx, room, index, position, energy, color, kind="lamp", fli
                      radius=0.06, parent=None):
     """Cria `Light_<room>_p<index>` e a liga a SA_Props. Devolve o objeto."""
     name = f"{C.N_LIGHT}{room}_p{index}"
-    data = bpy.data.lights.new(name, "POINT")
-    data.energy = energy
-    data.color = color
-    data.shadow_soft_size = radius
-    data.use_shadow = False
-    light = bpy.data.objects.new(name, data)
+    light_data = bpy.data.lights.new(name, "POINT")
+    light_data.energy = energy
+    light_data.color = color
+    light_data.shadow_soft_size = radius
+    light_data.use_shadow = False
+    light = bpy.data.objects.new(name, light_data)
     light.location = position
     light[C.P_ROOM] = room
     light[C.P_LIGHT_ENERGY] = energy

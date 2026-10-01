@@ -4,12 +4,14 @@ Modos de colocação (`mode`):
 - "furniture": apoiado no chão; precisa caber no cômodo e fora das zonas reservadas;
   ganha proxy de colisão em caixa.
 - "flat":  tapetes e manchas rente ao chão; podem cruzar zonas reservadas, não colidem.
-- "wall":  quadros, espelhos, prateleiras suspensas; não colidem.
+- "wall":  quadros, espelhos, armários suspensos, cortina pendurada na vara; não colidem.
 - "decor": objetos pequenos sobre um móvel; não colidem.
 """
+import functools
 import math
 
 import bpy
+from mathutils import Euler, Matrix, Vector
 
 from .. import conventions as C
 from .. import layout
@@ -35,8 +37,9 @@ def _wall_half_thickness(level, axis, pos, span_lo, span_hi):
     return thickness / 2
 
 
+@functools.lru_cache(maxsize=None)
 def room_bounds(room_id):
-    """Retângulo livre de um cômodo: a planta menos meia espessura de parede em cada lado."""
+    """Retângulo livre de um cômodo: a planta menos meia espessura de parede em cada lado (a planta é estática)."""
     room = layout.ROOMS[room_id]
     rc, level = room.rect, room.level
     return layout.Rect(
@@ -118,6 +121,9 @@ def make_collision_box(ctx, name, x, y, z, yaw, lo, hi):
     proxy = bpy.data.objects.new(unique_name(C.N_COL + name), mesh)
     proxy.location = (x, y, z)
     proxy.rotation_euler = (0.0, 0.0, yaw)
+    # Objetos com hide_viewport não entram no depsgraph e ficariam com matrix_world = identidade;
+    # gravar a matriz aqui deixa o proxy correto para quem ler matrix_world (BVH de colisão, IA).
+    proxy.matrix_world = Matrix.Translation(Vector((x, y, z))) @ Euler((0.0, 0.0, yaw)).to_matrix().to_4x4()
     proxy[C.P_COL] = 1
     proxy.hide_render = True
     proxy.hide_viewport = True
@@ -126,11 +132,14 @@ def make_collision_box(ctx, name, x, y, z, yaw, lo, hi):
 
 
 def place(ctx, builder, room, kind, x, y, yaw=0.0, z=None, *, mode="furniture", name=None,
-          anchor=None, collision="bbox", tucked=False, props=None):
+          anchor=None, collision="bbox", collision_top=None, tucked=False, props=None):
     """Transforma o builder em objeto de `SA_Props` e devolve o objeto.
 
     - `collision`: "bbox" (caixa da malha inteira), None, ou lista de caixas locais
       `(x0, y0, z0, x1, y1, z1)` para peças em L ou com balanço que não deve bloquear.
+    - `collision_top`: com "bbox", corta a caixa nesta altura. Móveis com enfeites em cima e um item
+      coletável sobre o tampo precisam disso: o item não pode ficar dentro do volume do proxy, ou a
+      linha de visada da interação bate no proxy antes de chegar nele.
     - `tucked`: cadeira enfiada sob a mesa (a pegada pode sobrepor a da mesa).
     """
     assert mode in MODES, mode
@@ -154,7 +163,8 @@ def place(ctx, builder, room, kind, x, y, yaw=0.0, z=None, *, mode="furniture", 
         obj[key] = value
     ctx.link(obj, C.COL_PROPS)
     if mode == "furniture" and collision:
-        boxes = [(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2])] if collision == "bbox" else collision
+        top = hi[2] if collision_top is None else collision_top
+        boxes = [(lo[0], lo[1], lo[2], hi[0], hi[1], top)] if collision == "bbox" else collision
         for index, (x0, y0, z0, x1, y1, z1) in enumerate(boxes):
             suffix = "" if len(boxes) == 1 else f"_{index + 1}"
             make_collision_box(ctx, (anchor or obj_name) + suffix, x, y, base_z, yaw,

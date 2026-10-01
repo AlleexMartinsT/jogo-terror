@@ -41,7 +41,7 @@ def make_shower_curtain(ctx, room, x, rod_y0, rod_y1, hang_length, *, rod_z=1.85
         return (0.035 * math.sin(u * 20 + v * 0.6), rod_y1 - hang_length + u * hang_length, rod_z - 0.03 - v * drop)
 
     m.surface(fn, 16, 3, "shower_curtain", uv_size=(hang_length, drop))
-    return place(ctx, m, room, "shower_curtain", x, 0.0, 0.0, mode="decor")
+    return place(ctx, m, room, "shower_curtain", x, 0.0, 0.0, mode="wall")       # pendurada na vara, não apoiada
 
 
 def make_toilet(ctx, room, wall, along):
@@ -76,7 +76,7 @@ def make_vanity(ctx, room, x, y, yaw, *, anchor=None, z=None):
         for i, color in enumerate(("toy_blue", "toy_red")):
             m.bar((-0.36, -0.12, 0.92), (-0.36 + 0.02 * (i * 2 - 1), -0.12, 1.02), 0.008, color)
         m.cylinder(-0.14, 0.05, 0.90, 0.04, 0.02, "painted_white", seg=6)
-    return place(ctx, m, room, "vanity", x, y, yaw, z, name="bath_sink", anchor=anchor)
+    return place(ctx, m, room, "vanity", x, y, yaw, z, name="bath_sink", anchor=anchor, collision_top=0.90)
 
 
 def make_medicine_cabinet(ctx, room, wall, along, z_bottom, *, door_open_deg=28):

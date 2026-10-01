@@ -196,13 +196,13 @@ def _marker(ctx, name, world_position, parent, display="PLAIN_AXES", size=0.2):
 
 
 def _headlight(ctx, name, x, parent):
-    data = bpy.data.lights.new(name, "SPOT")
-    data.energy = 0.0
-    data.spot_size = math.radians(62)
-    data.spot_blend = 0.45
-    data.use_shadow = False
-    data.color = (1.0, 0.94, 0.78)
-    lamp = bpy.data.objects.new(name, data)
+    lamp_data = bpy.data.lights.new(name, "SPOT")
+    lamp_data.energy = 0.0
+    lamp_data.spot_size = math.radians(62)
+    lamp_data.spot_blend = 0.45
+    lamp_data.use_shadow = False
+    lamp_data.color = (1.0, 0.94, 0.78)
+    lamp = bpy.data.objects.new(name, lamp_data)
     lamp.location = (x, 2.34, 0.58)
     lamp.rotation_euler = (math.radians(86), 0.0, 0.0)
     lamp.parent = parent

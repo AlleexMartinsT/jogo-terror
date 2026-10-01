@@ -50,7 +50,7 @@ def make_coffee_table(ctx, room, x, y, yaw, *, z=None):
     parts.mug(m, -0.32, 0.08, 0.42, 0.04, 0.09, "ceramic_cream", handle_dir=1)
     m.box(0.15, -0.09, 0.42, 0.05, 0.16, 0.02, "plastic_gray")
     parts.paper_sheet(m, -0.05, 0.04, 0.42, 0.26, 0.36, "linen_dirty", 0.5)
-    return place(ctx, m, room, "coffee_table", x, y, yaw, z)
+    return place(ctx, m, room, "coffee_table", x, y, yaw, z, collision_top=0.42)
 
 
 def make_tv_console(ctx, room, x, y, yaw, *, anchor=None, z=None):
@@ -74,7 +74,11 @@ def make_tv_console(ctx, room, x, y, yaw, *, anchor=None, z=None):
         parts.knob(m, -0.4, depth / 2 + pulled + 0.01, 0.39, "brass")
         m.box(-0.4, depth / 2 + pulled / 2, 0.30, 0.34, pulled, 0.14, "wood_dark", skip=("top",))
         _crt_television(m, 0.55)
-    return place(ctx, m, room, "tv_console", x, y, yaw, z, name="tv_living", anchor=anchor)
+    # o proxy cobre o console e a TV, mas não a gaveta puxada (onde repousa a pilha)
+    body = (-0.62, cy - depth / 2, 0.0, 0.62, cy + depth / 2, 0.55)
+    television = (-0.34, cy - 0.24, 0.55, 0.26, cy + 0.20, 1.03)
+    return place(ctx, m, room, "tv_console", x, y, yaw, z, name="tv_living", anchor=anchor,
+                 collision=[body, television])
 
 
 def _crt_television(m, z0):

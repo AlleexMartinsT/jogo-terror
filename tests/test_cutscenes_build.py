@@ -15,7 +15,7 @@ sys.path.insert(0, ROOT)
 import bpy  # noqa: E402
 from mathutils import Vector  # noqa: E402
 
-from sem_alvorada import build, cutscenes, entity  # noqa: E402
+from sem_alvorada import build, cutscenes, entity, layout  # noqa: E402
 from sem_alvorada import conventions as C  # noqa: E402
 from sem_alvorada.buildctx import BuildContext  # noqa: E402
 from sem_alvorada.cutscenes import player as player_module  # noqa: E402
@@ -29,6 +29,10 @@ LIGHTS = (scripts.CLOCK_GLOW, scripts.BED_LAMP, scripts.DAWN_LIGHT, scripts.ROAD
 def fresh_scene():
     scene = build.fresh_scene()
     ctx = BuildContext(scene, verbose=False)
+    car = layout.ANCHORS["car"]                     # o módulo props cria o Car; aqui basta um Empty no mesmo lugar
+    car_root = bpy.data.objects.new(C.OBJ_CAR, None)
+    car_root.location, car_root.rotation_euler = (car.x, car.y, car.z), (0.0, 0.0, math.radians(car.yaw_deg))
+    scene.collection.objects.link(car_root)
     for stage, module in (("entity", entity), ("cutscenes", cutscenes)):
         ctx.stage = stage
         module.build(ctx)
@@ -50,6 +54,25 @@ def test_objects(scene):
     lights = [o for o in scene.objects if o.type == "LIGHT" and not o.hide_render]
     assert lights == [], "as luzes de cutscene nascem apagadas e ocultas"
     print("  objetos de cutscene criados, ocultos e apagados")
+
+
+def test_cabin_light_follows_the_car(scene):
+    """A luz da cabine nasce parentada ao Car sem sair do lugar, e anda junto com ele."""
+    cabin = scene.objects[scripts.CAR_CABIN]
+    car = scene.objects[C.OBJ_CAR]
+    anchor = layout.ANCHORS["car"]
+    cabin.hide_viewport = False                     # objetos ocultos não entram na avaliação do depsgraph
+    bpy.context.view_layer.update()
+    expected = Vector((anchor.x + 0.45, anchor.y + 1.10, 1.35))
+    assert cabin.parent == car
+    assert (cabin.matrix_world.translation - expected).length < 1e-4, tuple(cabin.matrix_world.translation)
+    car.location.y -= 5.0
+    bpy.context.view_layer.update()
+    assert abs(cabin.matrix_world.translation.y - (expected.y - 5.0)) < 1e-4
+    car.location.y += 5.0
+    cabin.hide_viewport = True
+    bpy.context.view_layer.update()
+    print("  luz da cabine acompanha o carro")
 
 
 def test_camera_convention(scene):
@@ -127,6 +150,7 @@ def test_skip_in_blender(scene):
 def main():
     scene = fresh_scene()
     test_objects(scene)
+    test_cabin_light_follows_the_car(scene)
     test_camera_convention(scene)
     test_look_angles_roundtrip()
     test_run_all_in_blender(scene)

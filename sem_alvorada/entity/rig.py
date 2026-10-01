@@ -21,7 +21,7 @@ from . import skeleton as S
 LOOK_TURN_RATE = 220.0          # graus/s com que a cabeça acompanha o alvo
 LOOK_FADE_RATE = 4.0            # 1/s para ligar e desligar o olhar
 LOOK_HOLD = 0.5                 # s que um look_at vale sem ser renovado
-EYE_LIGHT_FORWARD = 0.16
+EYE_LIGHT_FORWARD = 0.38       # longe do rosto: perto demais estoura a pele em branco
 
 
 def _wrap_degrees(angle):

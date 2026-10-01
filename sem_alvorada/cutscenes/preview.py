@@ -79,6 +79,7 @@ class PreviewHost:
         self._lights = [(o, o.get(C.P_LIGHT_ENERGY, o.data.energy)) for o in scene.objects
                         if o.type == "LIGHT" and o.name.startswith(C.N_LIGHT)]
         self._flashlight = self._make_flashlight()
+        self._aim_flashlight()
         self.set_power(start["power"])
         self.set_flashlight(start["flashlight"])
 
@@ -94,10 +95,13 @@ class PreviewHost:
         data.color = (1.0, 0.93, 0.8)
         obj = bpy.data.objects.new("PreviewFlashlight", data)
         self.scene.collection.objects.link(obj)
-        cam = self.scene.objects.get(C.OBJ_CUT_CAM)
-        if cam is not None:
-            obj.parent = cam
         return obj
+
+    def _aim_flashlight(self):
+        """A lanterna fica nos olhos do JOGADOR (não na câmera da cutscene), como no jogo."""
+        x, y, z, yaw = self.state
+        self._flashlight.location = (x, y, z + C.PLAYER_EYE_STAND)
+        self._flashlight.rotation_euler = (math.pi / 2, 0.0, yaw)
 
     def set_camera(self, obj):
         self.scene.camera = obj or self.scene.objects.get(C.OBJ_PLAYER_CAM) or self.scene.camera
@@ -111,6 +115,7 @@ class PreviewHost:
 
     def place_player(self, x, y, z, yaw):
         self.state = (x, y, z, yaw)
+        self._aim_flashlight()
 
     def set_power(self, on, flicker=0.0):
         factor = (0.55 if flicker else 1.0) if on else 0.0

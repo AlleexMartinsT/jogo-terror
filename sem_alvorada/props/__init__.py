@@ -3,6 +3,8 @@
 `build(ctx)` é idempotente: apaga o que uma execução anterior criou (objetos dos props, itens,
 proxies de colisão, âncoras, luzes de peças) antes de reconstruir.
 """
+import random
+
 import bpy
 
 from .. import conventions as C
@@ -23,6 +25,19 @@ def clear_previous_build():
 
 
 def build(ctx):
+    """Mobília, itens, carro, viewmodel e âncoras.
+
+    A bagunça usa um gerador próprio derivado da semente: o resultado não depende do que as outras
+    etapas sortearam antes, e reconstruir na mesma `ctx` devolve exatamente a mesma cena.
+    """
+    shared_rng, ctx.rng = ctx.rng, random.Random(f"props:{ctx.seed}")
+    try:
+        _build_all(ctx)
+    finally:
+        ctx.rng = shared_rng
+
+
+def _build_all(ctx):
     from . import anchors, flashlight, items, rooms_lower, rooms_upper
     clear_previous_build()
     rooms_upper.build_master(ctx)
