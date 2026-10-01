@@ -158,6 +158,30 @@ def _vignette(tree, image_socket, coords):
     return _mix(tree, "MULTIPLY", image_socket, gain)
 
 
+def _vignette_from_mask(tree, image_socket):
+    """Vinheta para compositores sem coordenadas: elipse clara desfocada multiplicada pela imagem."""
+    mask = tree.nodes.new("CompositorNodeEllipseMask")
+    mask.x, mask.y = 0.5, 0.5
+    mask.mask_width, mask.mask_height = 0.95, 0.95
+    blur = tree.nodes.new("CompositorNodeBlur")
+    blur.filter_type = "GAUSS"
+    blur.use_relative = True
+    blur.factor_x = blur.factor_y = 30
+    tree.links.new(mask.outputs["Mask"], blur.inputs["Image"])
+    floor = 1.0 - VIGNETTE_STRENGTH * 0.5
+    lift = tree.nodes.new("CompositorNodeMath")
+    lift.operation = "MULTIPLY_ADD"
+    tree.links.new(blur.outputs["Image"], lift.inputs[0])
+    lift.inputs[1].default_value = 1.0 - floor
+    lift.inputs[2].default_value = floor
+    mix = tree.nodes.new("CompositorNodeMixRGB")
+    mix.blend_type = "MULTIPLY"
+    mix.inputs["Fac"].default_value = 1.0
+    tree.links.new(image_socket, mix.inputs[1])
+    tree.links.new(lift.outputs["Value"], mix.inputs[2])
+    return mix.outputs["Image"]
+
+
 def _grain(tree, image_socket, coords, amount):
     noise = tree.nodes.new("ShaderNodeTexWhiteNoise")
     noise.noise_dimensions = "4D"
@@ -186,16 +210,28 @@ def _apply_post(scene, level, skipped):
     render = tree.nodes.new("CompositorNodeRLayers")
     output, output_socket = _output_node(tree, grouped)
     image = render.outputs["Image"]
-    coords = tree.nodes.new("CompositorNodeImageCoordinates")
-    tree.links.new(render.outputs["Image"], coords.inputs["Image"])
+
+    def image_coordinates():
+        node = tree.nodes.new("CompositorNodeImageCoordinates")     # só existe a partir do 5.0
+        tree.links.new(render.outputs["Image"], node.inputs["Image"])
+        return node
+
+    coords = _stage(skipped, "coordenadas", image_coordinates)
 
     def bloom():
         node = tree.nodes.new("CompositorNodeGlare")
-        node.inputs["Type"].default_value = "Bloom"
-        node.inputs["Quality"].default_value = "Medium" if level != "high" else "High"
-        node.inputs["Threshold"].default_value = 0.8
-        node.inputs["Strength"].default_value = BLOOM_STRENGTH
-        node.inputs["Size"].default_value = 0.4
+        if "Type" in node.inputs:
+            node.inputs["Type"].default_value = "Bloom"
+            node.inputs["Quality"].default_value = "Medium" if level != "high" else "High"
+            node.inputs["Threshold"].default_value = 0.8
+            node.inputs["Strength"].default_value = BLOOM_STRENGTH
+            node.inputs["Size"].default_value = 0.4
+        else:
+            node.glare_type = "BLOOM"
+            node.quality = "MEDIUM" if level != "high" else "HIGH"
+            node.threshold = 0.8
+            node.mix = -0.6          # -1 só a imagem original, +1 só o brilho
+            node.size = 6
         tree.links.new(image, node.inputs["Image"])
         return node.outputs["Image"]
 
@@ -220,9 +256,13 @@ def _apply_post(scene, level, skipped):
         if enabled:
             produced = _stage(skipped, description, build)
             image = produced or image
-    image = _stage(skipped, "vinheta", lambda: _vignette(tree, image, coords)) or image
-    if GRAIN_AMOUNT[level] > 0:
-        image = _stage(skipped, "granulação", lambda: _grain(tree, image, coords, GRAIN_AMOUNT[level])) or image
+    if coords is not None:
+        image = _stage(skipped, "vinheta", lambda: _vignette(tree, image, coords)) or image
+        if GRAIN_AMOUNT[level] > 0:
+            image = _stage(skipped, "granulação", lambda: _grain(tree, image, coords, GRAIN_AMOUNT[level])) or image
+    else:
+        # Compositor do 4.x: sem coordenadas de imagem nem ruído, só dá para uma vinheta por máscara.
+        image = _stage(skipped, "vinheta (máscara)", lambda: _vignette_from_mask(tree, image)) or image
     tree.links.new(image, output_socket)
 
 

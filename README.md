@@ -6,7 +6,9 @@ Domingo, 6:47, Harlan Ridge, Ohio. O sol devia ter nascido às 6:12 e a janela c
 
 ## Como jogar
 
-Precisa do Blender 4.2 LTS ou mais novo (testado no 5.0.1) e de uma GPU que rode EEVEE.
+Precisa do Blender 4.2 LTS ou mais novo (testado no 4.2.0 e no 5.0.1) e de uma GPU que rode EEVEE.
+
+O `SemAlvorada.blend` incluído foi salvo pelo Blender 5.0.1. Se o seu for anterior ao 5.0, reconstrua o arquivo antes de jogar, com a sua versão: `blender -b --python construir.py` (leva alguns segundos).
 
 ```
 ./jogar.sh                         # Linux e macOS
@@ -103,6 +105,7 @@ O Blender removeu o Game Engine na versão 2.80. Este jogo roda como um operador
 
 ## Limites conhecidos
 
+- No Blender 4.x o pós-processamento é mais simples: o compositor não tem os nós de coordenadas e de ruído, então a vinheta vira uma máscara desfocada e a granulação de filme não existe. O `Fast GI` do EEVEE também não existe nessa versão.
 - Tudo que exige janela e placa de vídeo reais (desenho do HUD com `gpu`, captura do mouse, compositor ao vivo, 30 fps no EEVEE, áudio em dispositivo real) foi escrito contra a API do Blender 5.0.1 e testado por introspecção, mas não foi executado numa GUI.
 - O timbre dos sons foi conferido por números e espectrogramas, não de ouvido.
 - O equilíbrio da dificuldade foi pouco exercitado: o robô de teste não se esconde.
