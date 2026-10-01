@@ -3,6 +3,7 @@
 `build(ctx)` é idempotente: apaga o que uma execução anterior criou (objetos dos props, itens,
 proxies de colisão, âncoras, luzes de peças) antes de reconstruir.
 """
+import os
 import random
 
 import bpy
@@ -39,18 +40,44 @@ def build(ctx):
         ctx.rng = shared_rng
 
 
+def _room_builders():
+    from . import rooms_lower, rooms_upper
+    return {
+        "master": rooms_upper.build_master, "kids": rooms_upper.build_kids, "bath": rooms_upper.build_bath,
+        "study": rooms_upper.build_study, "hall_u": rooms_upper.build_hall_upper,
+        "living": rooms_lower.build_living, "den": rooms_lower.build_den, "hall_g": rooms_lower.build_hall_ground,
+        "dining": rooms_lower.build_dining, "kitchen": rooms_lower.build_kitchen, "garage": rooms_lower.build_garage,
+    }
+
+
+def _selected(all_names):
+    """`SA_ROOMS=kitchen,garage` constrói só esses cômodos (mais 'items', 'viewmodel', 'anchors' se listados).
+
+    Serve para iterar num território sem depender do código em andamento de quem mexe nos outros.
+    Sem a variável, constrói tudo.
+    """
+    raw = os.environ.get("SA_ROOMS", "").strip()
+    if not raw:
+        return set(all_names)
+    wanted = {name.strip() for name in raw.split(",") if name.strip()}
+    unknown = wanted - set(all_names)
+    if unknown:
+        raise ValueError(f"SA_ROOMS desconhecido: {sorted(unknown)}; válidos: {sorted(all_names)}")
+    return wanted
+
+
 def _build_all(ctx):
-    from . import anchors, flashlight, items, rooms_lower, rooms_upper
+    from . import anchors, flashlight, items
     clear_previous_build()
-    rooms_upper.build_master(ctx)
-    rooms_upper.build_kids(ctx)
-    rooms_upper.build_bath(ctx)
-    rooms_upper.build_study(ctx)
-    rooms_upper.build_hall_upper(ctx)
-    for build_room in (rooms_lower.build_living, rooms_lower.build_den, rooms_lower.build_hall_ground,
-                       rooms_lower.build_dining, rooms_lower.build_kitchen, rooms_lower.build_garage):
-        build_room(ctx)
-    items.make_items(ctx)
-    flashlight.make_viewmodel(ctx)
-    anchors.make_anchors(ctx)
-    ctx.log(f"{sum(1 for o in bpy.data.objects if 'sa_prop_mode' in o)} props, {len(bpy.data.collections[C.COL_ITEMS].objects)} itens")
+    rooms = _room_builders()
+    chosen = _selected([*rooms, "items", "viewmodel", "anchors"])
+    for room_id, build_room in rooms.items():
+        if room_id in chosen:
+            build_room(ctx)
+    if "items" in chosen:
+        items.make_items(ctx)
+    if "viewmodel" in chosen:
+        flashlight.make_viewmodel(ctx)
+    if "anchors" in chosen:
+        anchors.make_anchors(ctx)
+    ctx.log(f"{sum(1 for o in bpy.data.objects if 'sa_prop_mode' in o)} props, {len(getattr(bpy.data.collections.get(C.COL_ITEMS), 'objects', ()))} itens")
