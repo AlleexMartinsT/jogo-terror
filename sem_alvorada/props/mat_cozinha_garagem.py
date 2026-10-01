@@ -73,6 +73,18 @@ SURFACES = {
 }
 
 
+# nome -> (cor sRGB, rugosidade, metálico) para peças pequenas que dispensam textura
+FLATS = {
+    "kg_brass": ((0.50, 0.36, 0.14), 0.38, 0.85),
+    "kg_copper": ((0.60, 0.30, 0.15), 0.34, 0.9),
+    "kg_toe": ((0.10, 0.075, 0.055), 0.85, 0.0),
+    "kg_gasket": ((0.035, 0.035, 0.035), 0.7, 0.0),
+    "kg_sponge_yellow": ((0.62, 0.54, 0.17), 0.95, 0.0),
+    "kg_sponge_green": ((0.20, 0.34, 0.16), 0.95, 0.0),
+    "kg_detergent": ((0.30, 0.56, 0.28), 0.3, 0.0),
+}
+
+
 def _mix_node(nodes, blend):
     node = nodes.new("ShaderNodeMix")
     node.data_type = "RGBA"
@@ -153,6 +165,14 @@ def _build_decal(name, texture, roughness):
     return mat
 
 
+def _build_flat(name, color, roughness, metallic):
+    mat = compat.new_material(name)
+    compat.set_bsdf(compat.bsdf_of(mat), base_color=(*color, 1.0), roughness=roughness, metallic=metallic,
+                    specular=0.5 if metallic else 0.3)
+    mat.diffuse_color = (*color, 1.0)
+    return mat
+
+
 DECALS = {
     "kg_oil_stain": ("kg_oil_stain", 0.25),
     "kg_cobweb": ("kg_cobweb", 0.9),
@@ -165,6 +185,8 @@ def register():
     tex_cozinha_garagem.register()
     for name, spec in SURFACES.items():
         materials.register_builder(name, partial(_build_surface, name, spec))
+    for name, (color, roughness, metallic) in FLATS.items():
+        materials.register_builder(name, partial(_build_flat, name, color, roughness, metallic))
     for name, (texture, roughness) in DECALS.items():
         materials.register_builder(name, partial(_build_decal, name, texture, roughness))
 

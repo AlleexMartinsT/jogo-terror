@@ -20,7 +20,7 @@ import numpy as np
 from mathutils import Vector
 
 from .. import craft
-from . import kit
+from . import kit, mat_cozinha_garagem  # noqa: F401  (o import registra os materiais kg_*)
 
 ROUND = craft.Finish(bevel=0.0, smooth_angle=52.0)
 HARD = craft.Finish(bevel=0.004, bevel_segments=2, smooth_angle=44.0)
