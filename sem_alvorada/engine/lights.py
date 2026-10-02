@@ -68,6 +68,14 @@ class LightManager:
         self.power_flicker = 0.0
         self.active_rooms = set()
         self.clock = 0.0
+        self.gains = {}                      # nome da luz -> multiplicador (cutscenes: queda em cascata, lâmpada que estoura)
+
+    def set_gain(self, name, gain):
+        """Multiplica a energia de uma luz por `gain` (1 volta ao normal). Só as cutscenes usam."""
+        if abs(gain - 1.0) < 1e-6:
+            self.gains.pop(name, None)
+        else:
+            self.gains[name] = max(0.0, gain)
 
     def set_power(self, on, flicker=0.0):
         """Liga/desliga a energia da casa. `flicker` (0..1) acrescenta tremor a todas as luzes."""
@@ -92,7 +100,8 @@ class LightManager:
     def energy_target(self, light):
         keep = 1.0 if self.power_on else POWER_OFF_KEEP.get(light.kind, 0.0)
         amount = min(1.0, light.flicker + self.power_flicker)
-        return light.base_energy * keep * flicker_gain(self.clock, amount, light.seed)
+        gain = self.gains.get(light.obj.name, 1.0) if self.gains else 1.0
+        return light.base_energy * keep * gain * flicker_gain(self.clock, amount, light.seed)
 
     def _show(self, light, visible):
         if light.visible == visible:

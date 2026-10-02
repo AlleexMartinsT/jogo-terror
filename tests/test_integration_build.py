@@ -54,8 +54,20 @@ def check_scene_contract(scene):
             need(f"{C.N_LIGHT}{room}_c{n}")
     for name in (C.OBJ_PLAYER_CAM, C.OBJ_FLASHLIGHT, C.OBJ_VIEW_FLASH, C.OBJ_ENTITY, C.OBJ_CUT_CAM,
                  C.OBJ_CAR, C.OBJ_GARAGE_ROLLUP, "Entity_Rig", "Entity_Body", "Entity_Eyes",
-                 "Car_DriverEye", "Car_Interact", "Stairs_Main"):
+                 "Car_DriverEye", "Car_Interact", "Stairs_Main", C.OBJ_BODY, C.OBJ_BODY_RIG):
         need(name)
+
+    for name in (C.OBJ_BODY, C.OBJ_BODY_RIG):           # o corpo do jogador nunca vira colisão nem alvo de interação
+        body_part = scene.objects.get(name)
+        if body_part is None:
+            continue
+        if body_part.get(C.P_COL) or C.P_INTERACT in body_part or name.startswith(C.N_COL):
+            problems.append(f"{name} não pode ter colisão nem interação")
+        if [c.name for c in body_part.users_collection] != [C.COL_PLAYER]:
+            problems.append(f"{name} deveria estar só em {C.COL_PLAYER}")
+    body_mesh = scene.objects.get(C.OBJ_BODY)
+    if body_mesh is not None and triangle_count([body_mesh]) > 30_000:
+        problems.append(f"corpo com {triangle_count([body_mesh])} triângulos (limite 30000)")
 
     for door in layout.doors():
         pivot = scene.objects.get(C.N_DOOR + door.id)

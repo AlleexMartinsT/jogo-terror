@@ -160,6 +160,27 @@ def _hand_offsets(hand, t, stress, step_phase, speed_gain):
             tuple(math.radians(v * k) for v in (yaw, pitch, roll)))
 
 
+HAND_CROSSFADE = 0.9           # s para trocar de um estilo de mão para outro (deitado -> sentado -> andando)
+
+
+def _hand_blend(hand, t, stress, step_phase, speed_gain):
+    """`hand` é uma `Hand` ou uma sequência `((t0, Hand), (t1, Hand), ...)`: na troca os estilos se misturam em vez de saltar."""
+    if isinstance(hand, Hand):
+        return _hand_offsets(hand, t, stress, step_phase, speed_gain)
+    index = 0
+    for k, (start, _) in enumerate(hand):
+        if t >= start:
+            index = k
+    current = _hand_offsets(hand[index][1], t, stress, step_phase, speed_gain)
+    since = t - hand[index][0]
+    if index == 0 or since >= HAND_CROSSFADE:
+        return current
+    before = _hand_offsets(hand[index - 1][1], t, stress, step_phase, speed_gain)
+    w = curves.ease("smooth", since / HAND_CROSSFADE)
+    return (tuple(a + (b - a) * w for a, b in zip(before[0], current[0])),
+            tuple(a + (b - a) * w for a, b in zip(before[1], current[1])))
+
+
 def _impact_offsets(impacts, t):
     """Soma das pancadas ativas: (direita, frente, cima) em metros e (guinada, inclinação, giro) em radianos."""
     pos = [0.0, 0.0, 0.0]
@@ -185,10 +206,40 @@ def _impact_offsets(impacts, t):
 # O plano
 # --------------------------------------------------------------------------
 @dataclass(frozen=True)
+class Aim:
+    """Olhar por ÂNGULOS (graus, yaw do Blender e inclinação) em vez de por um ponto-alvo.
+
+    Um alvo que passa perto dos olhos faz a câmera girar de um lado ao outro num instante; ângulos não têm esse
+    problema, então viradas de corpo (olhar a janela e dar meia-volta) usam `Aim`. `toward` converte alvos em
+    ângulos nos instantes das chaves, olhando de onde os olhos estão naquele momento.
+    """
+    yaw: Curve
+    pitch: Curve
+    distance: float = 3.0                   # para o foco automático
+
+    @classmethod
+    def toward(cls, eye, targets, distance=3.0):
+        """`eye`: `Path` estático; `targets`: lista de `(t, ponto)` ou `(t, ponto, hold)`."""
+        yaws, pitches, last = [], [], None
+        for key in targets:
+            t, point, hold = (key[0], key[1], key[2] if len(key) > 2 else False)
+            yaw, pitch = look_angles(eye.at(t), point)
+            yaw = yaw if last is None else curves.unwrap(last, yaw)
+            last = yaw
+            yaws.append(Key(t, math.degrees(yaw), hold))
+            pitches.append(Key(t, math.degrees(pitch), hold))
+        return cls(Curve(yaws), Curve(pitches), distance)
+
+    @property
+    def times(self):
+        return self.yaw.times
+
+
+@dataclass(frozen=True)
 class Rig:
-    """Um plano contínuo de câmera. Os pontos de `eye` e `look` são mundo, ou espaço do objeto `mount`."""
+    """Um plano contínuo de câmera. Os pontos de `eye` e o alvo `look` (ou ângulos, `Aim`) são mundo, ou espaço do `mount`."""
     eye: Path
-    look: Path
+    look: object                      # Path de pontos-alvo, ou Aim
     fov: Curve = field(default_factory=lambda: Curve.constant(62.0))
     roll: Curve = field(default_factory=lambda: Curve.constant(0.0))
     hand: Hand = field(default_factory=Hand)
@@ -208,7 +259,9 @@ class Rig:
 
     def step_phase(self, t, stage):
         """Fase de passos (cada 1.0 é um passo) e fator de velocidade (0 parado .. 1 passo normal)."""
-        style = STYLES[self.hand.style]
+        style = STYLES["walk"] if not isinstance(self.hand, Hand) else STYLES[self.hand.style]
+        if not isinstance(self.hand, Hand):
+            style = next((STYLES[h.style] for _, h in self.hand if STYLES[h.style].step_bob), style)
         if not style.step_bob:
             return None, 1.0
         if self._travel is None:
@@ -225,7 +278,7 @@ class Rig:
 
     @property
     def length(self):
-        return self.eye.times[-1]
+        return max(self.eye.times[-1], self.look.times[-1])
 
 
 @dataclass
@@ -247,13 +300,16 @@ def evaluate(rig, t, stage, stress=0.0, dof=None):
 
     `dof`: liga/desliga a profundidade de campo (None: o padrão do módulo, `DEPTH_OF_FIELD`).
     """
-    eye_resolved = rig.eye.resolve(stage)
-    look_resolved = rig.look.resolve(stage)
-    eye = rig.eye.at(t, stage, eye_resolved)
-    look = rig.look.at(t, stage, look_resolved)
-    yaw, pitch = look_angles(eye, look)
+    eye = rig.eye.at(t, stage)
+    if isinstance(rig.look, Aim):
+        yaw, pitch = math.radians(rig.look.yaw(t)), math.radians(rig.look.pitch(t))
+        distance = rig.look.distance
+    else:
+        look = rig.look.at(t, stage)
+        yaw, pitch = look_angles(eye, look)
+        distance = curves.dist3(eye, look)
     phase, gain = rig.step_phase(t, stage)
-    (right, forward, up), (dyaw, dpitch, droll) = _hand_offsets(rig.hand, t, stress, phase, gain)
+    (right, forward, up), (dyaw, dpitch, droll) = _hand_blend(rig.hand, t, stress, phase, gain)
     (ir, if_, iu), (iyaw, ipitch, iroll) = _impact_offsets(rig.impacts, t)
     right, forward, up = right + ir, forward + if_, up + iu
     cy, sy = math.cos(yaw), math.sin(yaw)
@@ -261,7 +317,6 @@ def evaluate(rig, t, stage, stress=0.0, dof=None):
     position = (eye[0] + right * cy + forward * fx, eye[1] + right * sy + forward * fy, eye[2] + up)
     fov = rig.fov(t)
     roll = math.radians(rig.roll(t)) + droll + iroll
-    distance = curves.dist3(eye, look)
     focus = None
     fstop = None
     if (DEPTH_OF_FIELD if dof is None else dof) and rig.focus is not None:

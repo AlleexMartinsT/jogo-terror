@@ -110,6 +110,7 @@ class CutscenePlayer:
         if run is None:
             return
         stage, timeline = run.stage, run.timeline
+        stage.skipping = True
         for index, (t0, t1, track) in enumerate(timeline.tracks):
             if not run.tracks_done[index]:
                 stage.safe(f"track {track.apply.__qualname__}", track.apply, stage, 1.0)

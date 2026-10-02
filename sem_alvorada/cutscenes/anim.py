@@ -271,7 +271,7 @@ class ClockGlitch(Actor):
 # --------------------------------------------------------------------------
 # O carro
 # --------------------------------------------------------------------------
-BUMPS = ((1.45, 0.55), (-1.45, 0.45))          # (y do eixo quando a roda passa na soleira da garagem, intensidade)
+SILL_CROSSINGS = ((1.45, 1.0), (-1.45, -0.8))      # (y do centro do carro quando o eixo passa na soleira, sentido do tranco)
 
 
 class CarMotion(Actor):
@@ -295,11 +295,9 @@ class CarMotion(Actor):
         self._roll = Spring(2.3, 0.28)
         self._heave = Spring(2.6, 0.35)
         self._prev_y = home[1]
-        self._bumped = set()
+        self._crossed = set()
         self._obj = None
         self._wheels = {}
-        self._last_s = 0.0
-        self._last_v = 0.0
 
     def start(self, stage):
         self._obj = stage.touch(stage.obj(self.name))
@@ -309,7 +307,7 @@ class CarMotion(Actor):
                 self._wheels[wheel] = obj
         stage.set_mount(self.name, self.home, (0.0, 0.0, self.yaw0))
 
-    # ---- trajetória
+    # ---- trajetória (analítica: velocidade e aceleração contínuas)
     def _travel(self, t):
         total = self.stop_point[1] - self.home[1]                 # negativo: o carro anda para -Y
         if t <= self.t0:
@@ -324,41 +322,42 @@ class CarMotion(Actor):
         return s, v, a
 
     def _engine(self, t):
-        """0 desligado; ruído irregular na partida; 1 em marcha lenta; sobe um pouco com a velocidade."""
-        if self.crank_start is None or t < self.crank_start:
+        """(nível 0..1, girando o motor de arranque). Contínuo: sobe na partida, irregular, firma no "pega"."""
+        if self.crank_start is None or t <= self.crank_start:
             return 0.0, False
-        if self.catch is not None and t < self.catch:
-            pulse = 0.5 + 0.5 * math.sin((t - self.crank_start) * 21.0)
-            return (0.35 + 0.4 * pulse) * (0.7 + 0.3 * noise(t * 9.0, 2.0)), True
-        return 1.0, False
+        crank_level = 0.4 + 0.3 * (0.5 + 0.5 * math.sin((t - self.crank_start) * 21.0)) + 0.1 * noise(t * 9.0, 2.0)
+        rise = clamp01((t - self.crank_start) / 0.25)
+        if self.catch is None or t < self.catch:
+            return crank_level * rise, True
+        settle = clamp01((t - self.catch) / 0.35)
+        return crank_level * (1.0 - settle) + (1.0 + 0.25 * (1.0 - settle)) * settle, False
 
     def update(self, stage, dt):
         t = stage.t
         s, v, a_long = self._travel(t)
-        x, y = self.home[0], self.home[1] + s
-        # o carro balança de leve para os lados ao descer a rampa (a mão que corrige o volante)
-        sway = self.wander * math.sin(2.1 * s) * min(1.0, abs(s) / 2.0)
-        slope = math.atan(0.054 / 5.0)                            # a entrada de carros desce 5,4 cm até a rua
-        yaw_extra = math.atan(self.wander * 2.1 * math.cos(2.1 * s)) * min(1.0, abs(s) / 2.0) if v else 0.0
-        x += sway
+        total = self.stop_point[1] - self.home[1]
+        fade_in = min(1.0, abs(s) / 2.0)
+        x = self.home[0] + self.wander * math.sin(2.1 * s) * fade_in               # a mão corrige o volante na rampa
+        yaw_extra = math.atan(self.wander * 2.1 * math.cos(2.1 * s) * fade_in) if s else 0.0
+        y = self.home[1] + s
         engine, cranking = self._engine(t)
-        # pancadas: cada soleira empurra a mola quando o eixo passa
-        for index, (axle_y, power) in enumerate(BUMPS):
-            if index not in self._bumped and y <= axle_y - 1.45 + 1.45 * 0 and self._prev_y > axle_y:
-                self._bumped.add(index)
-                self._pitch.v += power * 0.55 * (1 if index == 0 else -1)
-                self._heave.v += power * 0.35
+        for index, (threshold, direction) in enumerate(SILL_CROSSINGS):
+            if index not in self._crossed and y <= threshold < self._prev_y:
+                self._crossed.add(index)
+                self._pitch.v += 0.30 * direction
+                self._heave.v += 0.20
         self._prev_y = y
-        lat = v * v * (yaw_extra * 0.9)
-        pitch = self._pitch.advance(dt, target=0.0105 * a_long, force=0.0)
-        roll = self._roll.advance(dt, target=-0.004 * lat + (0.0012 * engine if self.catch and t < (self.catch or 0) + 0.3 else 0.0))
+        lateral = v * v * yaw_extra
+        grade = math.atan(0.054 / abs(total or 1.0)) * clamp01(-s / 2.0)         # a entrada de carros desce até a rua
+        pitch = self._pitch.advance(dt, target=0.0105 * a_long)
+        roll = self._roll.advance(dt, target=-0.004 * lateral + 0.003 * clamp01(1.0 - abs(t - (self.catch or -9.0)) / 0.3))
         heave = self._heave.advance(dt, target=0.0)
-        shudder = engine * (0.0007 * noise(t * 150.0, 1.0) + 0.0004 * math.sin(t * 2 * math.pi * 11.0))
-        if cranking:
-            shudder *= 3.2
-        z = self.home[2] - 0.054 * clamp01(-s / max(abs(self.stop_point[1] - self.home[1]), 1e-3)) + heave * 0.02 + shudder
-        pitch_total = pitch - slope * clamp01(-s / 3.0 + 0.0) * 0.0 + 0.0009 * engine * noise(t * 70.0, 5.0)
-        euler = (pitch_total, roll + 0.0007 * engine * noise(t * 83.0, 6.0), self.yaw0 + yaw_extra)
+        shudder = engine * (0.0004 * noise(t * 150.0, 1.0) + 0.0003 * math.sin(t * 2 * math.pi * 11.0))
+        shudder *= 3.0 if cranking else 1.0
+        z = self.home[2] - 0.054 * clamp01(-s / max(abs(total), 1e-3)) + heave * 0.02 + shudder
+        pitch_total = pitch - grade + 0.0006 * engine * noise(t * 70.0, 5.0)
+        roll_total = roll + 0.0005 * engine * noise(t * 83.0, 6.0)
+        euler = (pitch_total, roll_total, self.yaw0 + yaw_extra)
         origin = (x, y, z)
         stage.set_mount(self.name, origin, euler)
         if self._obj is not None:
@@ -368,30 +367,90 @@ class CarMotion(Actor):
         steer = clamp(yaw_extra * 2.4, -0.45, 0.45)
         for wheel, obj in self._wheels.items():
             obj.rotation_euler = (spin, 0.0, steer if wheel.startswith("F") else 0.0)
-        stage.signals["car"] = {"accel": a_long, "lateral": lat, "speed": v, "engine": engine, "cranking": cranking,
-                                "steer": steer, "pitch": pitch_total, "roll": roll, "travel": s}
+        stage.signals["car"] = {"accel": a_long, "lateral": lateral, "speed": v, "engine": engine,
+                                "cranking": cranking, "steer": steer, "pitch": pitch_total, "roll": roll_total,
+                                "travel": s}
         self._drive_headlights(stage, t, cranking)
 
     def _drive_headlights(self, stage, t, cranking):
-        if self.lights_on is None:
-            return
-        if t < self.lights_on:
+        """Os faróis oscilam com a bateria enquanto o motor de arranque gira e firmam quando o motor pega."""
+        if self.lights_on is None or t < self.lights_on:
             return
         level = 1.0
-        if self.catch is not None and t < self.catch + 0.25:
-            level = 0.45 + 0.4 * (0.5 + 0.5 * math.sin((t - self.lights_on) * 26.0)) if cranking else 1.15
-        stage.headlight_level(level)
+        if self.catch is not None and t < self.catch + 0.3:
+            sag = 0.5 + 0.2 * math.sin((t - self.lights_on) * 26.0)
+            settle = clamp01((t - self.catch) / 0.3)
+            level = sag * (1.0 - settle) + 1.0 * settle
+        stage.headlight_level(level * clamp01((t - self.lights_on) / 0.1))
 
     def stop(self, stage):
         self._obj = None
         self._wheels.clear()
 
 
-class CharmPendulum(Actor):
-    """Coelhinho do retrovisor (ou chaveiro): pêndulo em dois eixos, movido pela aceleração do carro e pelo motor."""
+class PropPath(Actor):
+    """Leva um objeto por um caminho no tempo absoluto da cutscene (a chave, a mão que a segura).
 
-    def __init__(self, object_name="Cut_Bunny", length=0.22, damping=0.55, mount="Car", base_roll=0.0):
-        self.object_name, self.mount = object_name, mount
+    `position`: `Path` com chaves em tempo absoluto (pontos podem depender do palco); `rotation(t, stage)`:
+    quaternion (w, x, y, z) ou None para manter a rotação. O objeto só aparece entre `show_from` e `show_to`.
+    Publica `stage.signals["prop:<nome>"]` com a aceleração no mundo, que um `CharmPendulum` pode ler.
+    """
+
+    def __init__(self, object_name, position, rotation=None, show_from=0.0, show_to=1e9, also=(), mount=""):
+        self.object_name, self.position, self.rotation = object_name, position, rotation
+        self.mount = mount                      # se houver, posição e rotação estão no espaço desse objeto (o carro)
+        self.show_from, self.show_to = show_from, show_to
+        self.also = tuple(also)                 # filhos que precisam aparecer e sumir junto (esconder o pai não esconde os filhos)
+        self._obj = None
+        self._extra = []
+        self._history = []
+
+    def start(self, stage):
+        self._obj = stage.touch(stage.obj(self.object_name))
+        self._extra = [o for o in (stage.obj(n) for n in self.also) if o is not None]
+        if self._obj is not None:
+            self._obj.rotation_mode = "QUATERNION"
+            for obj in [self._obj, *self._extra]:
+                stage.set_hidden(obj, True)
+
+    def update(self, stage, dt):
+        if self._obj is None:
+            return
+        t = stage.t
+        shown = self.show_from <= t <= self.show_to
+        if self._obj.hide_render == shown:
+            for obj in [self._obj, *self._extra]:
+                stage.set_hidden(obj, not shown)
+        point = self.position.at(clamp(t, self.position.times[0], self.position.times[-1]), stage)
+        q = self.rotation(t, stage) if self.rotation is not None else None
+        if self.mount:
+            point = stage.to_world(self.mount, point)
+            if q is not None:
+                q = camera.qmul(stage.mount_quaternion(self.mount), q)
+        self._obj.location = point
+        if q is not None:
+            self._obj.rotation_quaternion = q
+        self._history = (self._history + [(t, point)])[-3:]
+        accel = (0.0, 0.0, 0.0)
+        if len(self._history) == 3:
+            (t0, p0), (t1, p1), (t2, p2) = self._history
+            h = (t2 - t0) / 2.0
+            if h > 1e-4:
+                accel = tuple((p2[i] - 2.0 * p1[i] + p0[i]) / (h * h) for i in range(3))
+        stage.signals[f"prop:{self.object_name}"] = accel
+
+    def stop(self, stage):
+        self._obj = None
+
+
+class CharmPendulum(Actor):
+    """Coelhinho do retrovisor (ou chaveiro): pêndulo em dois eixos, movido pela aceleração do suporte e pelo motor.
+
+    `source`: "car" lê `stage.signals["car"]`; "prop:<objeto>" lê a aceleração publicada por um `PropPath`.
+    """
+
+    def __init__(self, object_name="Cut_Bunny", length=0.22, damping=0.55, source="car", pivot_axis_sign=1.0):
+        self.object_name, self.source = object_name, source
         self._x = Pendulum(length, damping)
         self._y = Pendulum(length, damping)
         self._obj = None
@@ -403,29 +462,36 @@ class CharmPendulum(Actor):
     def start(self, stage):
         self._obj = stage.touch(stage.obj(self.object_name))
 
+    def _support(self, stage):
+        if self.source == "car":
+            car = stage.signals.get("car")
+            if not car:
+                return 0.0, 0.0, 0.0, 0.0, 0.0
+            return car["accel"], car["lateral"], car["engine"], car["pitch"], car["roll"]
+        ax, ay, _ = stage.signals.get(self.source, (0.0, 0.0, 0.0))
+        return clamp(ay, -12.0, 12.0), clamp(-ax, -12.0, 12.0), 0.0, 0.0, 0.0
+
     def update(self, stage, dt):
-        car = stage.signals.get("car")
-        a_long = car["accel"] if car else 0.0
-        a_side = car["lateral"] if car else 0.0
-        engine = car["engine"] if car else 0.0
-        pitch = car["pitch"] if car else 0.0
-        roll = car["roll"] if car else 0.0
+        a_long, a_side, engine, pitch, roll = self._support(stage)
         t = stage.t
         shake = engine * (0.9 * noise(t * 11.0, 7.0) + 0.5 * math.sin(t * 2 * math.pi * 12.5))
-        # na ponta de um pêndulo, o carro inclinado muda a vertical: o ângulo é relativo ao carro
-        ax = self._x.advance(dt, a_long + 0.25 * shake - GRAVITY * math.sin(pitch) * 0.0)
+        ax = self._x.advance(dt, a_long + 0.25 * shake)
         ay = self._y.advance(dt, -a_side + 0.2 * shake)
         if self._obj is not None:
             self._obj.rotation_euler = (ax - pitch * 0.35, -(ay + roll * 0.35), 0.0)
-        stage.signals["charm"] = (ax, ay)
+        stage.signals[f"charm:{self.object_name}"] = (ax, ay)
 
     def stop(self, stage):
         self._obj = None
 
 
 class SteeringWheel(Actor):
-    """Volante: gira com a direção do carro (relação ~12:1) e treme com o motor. Eixo inclinado como na modelagem."""
-    TILT = math.radians(65.0)
+    """Volante: gira com a direção do carro (relação ~12:1) e treme com o motor, em torno do eixo inclinado da modelagem.
+
+    A malha (`Cut_Wheel`) guarda a inclinação (rx = 65 graus) nos vértices; o giro é um quaternion em torno
+    do eixo que essa inclinação deu ao eixo Z do aro.
+    """
+    AXIS = (0.0, -math.sin(math.radians(65.0)), math.cos(math.radians(65.0)))
 
     def __init__(self, object_name="Cut_Wheel"):
         self.object_name = object_name
@@ -444,10 +510,10 @@ class SteeringWheel(Actor):
         car = stage.signals.get("car")
         engine = car["engine"] if car else 0.0
         steer = car["steer"] if car else 0.0
-        t = stage.t
-        spin = self.angle - steer * 9.0 + 0.004 * engine * noise(t * 41.0, 8.0)
+        spin = self.angle - steer * 9.0 + 0.004 * engine * noise(stage.t * 41.0, 8.0)
         if self._obj is not None:
-            self._obj.rotation_quaternion = camera.qmul(camera.axis_rotation("x", self.TILT), camera.axis_rotation("z", spin))
+            s, c = math.sin(spin / 2.0), math.cos(spin / 2.0)
+            self._obj.rotation_quaternion = (c, self.AXIS[0] * s, self.AXIS[1] * s, self.AXIS[2] * s)
 
     def stop(self, stage):
         self._obj = None

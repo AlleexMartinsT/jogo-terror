@@ -1,14 +1,18 @@
 """Lanterna: bateria, falhas, troca de pilha e o atraso da luz em relação à câmera.
 
-A lógica (bateria, estado ligado) fica em `GameState`; esta classe cuida do tempo e escreve
-o resultado no SPOT `Flashlight` e no `ViewModel_Flashlight`, se existirem.
+A lógica (bateria, estado ligado) fica em `GameState`; esta classe cuida do tempo e escreve o resultado no
+SPOT `Flashlight`. Quem posiciona a lanterna na mão é `Hands`: ela entrega a pose do viewmodel em
+`lantern_matrix` e a luz sai da lente onde a mão a pôs. Nenhuma falha aqui vira fala: a dica de interação
+e o ícone da bateria dizem o estado (ver `hudmodel`).
 """
 import math
 import random
 
+import bpy  # noqa: F401 - `mathutils` só existe depois deste import
+from mathutils import Matrix, Vector
+
 from .. import conventions as C
-from .. import story
-from . import angles, texts
+from . import angles
 
 # Espaço da câmera: x direita, y cima, z para trás. O SPOT nasce na lente (à frente do corpo da lanterna,
 # que assim fica fora do cone e não estoura de tão perto) e recua quando há parede: lanterna colada na parede.
@@ -24,14 +28,29 @@ FULL_POWER_DISTANCE = 4.0
 CLOSE_GAIN_EXPONENT = 1.6
 CLOSE_GAIN_FLOOR = 0.12
 LIGHT_OFFSET = (LIGHT_XY[0], LIGHT_XY[1], -LIGHT_FORWARD_MAX)
-SWAP_SECONDS = 1.1
-SWAP_DIP = 0.22                           # quanto a lanterna desce na mão durante a troca
+LIGHT_FROM_GRIP = (LIGHT_XY[0] - VIEWMODEL_OFFSET[0], LIGHT_XY[1] - VIEWMODEL_OFFSET[1],
+                   -LIGHT_FORWARD_MAX - VIEWMODEL_OFFSET[2])     # onde a luz nasce, a partir do punho da lanterna
+HOLD_MATRIX = Matrix.Translation(VIEWMODEL_OFFSET)
 BATTERY_FULL_ENOUGH = 0.9
+BURST_LOW = 0.07                          # brilho no fundo de uma piscada
+BURST_SURGE = 1.10                        # e o tranco de volta quando o contato fecha
 SWAY_FOLLOW = 9.0                         # 1/s: rapidez com que a luz alcança a câmera
 MAX_LAG = math.radians(7.0)
 IDLE_SWAY = math.radians(0.35)
 WARM = (1.0, 0.93, 0.78)
 WEAK = (1.0, 0.80, 0.55)
+
+
+def burst_curve(u):
+    """Multiplicador de brilho ao longo de uma piscada (u de 0 a 1): cai, fica no fundo e volta com um tranco."""
+    if u < 0.18:
+        return 1.0 - (1.0 - BURST_LOW) * (u / 0.18)
+    if u < 0.52:
+        return BURST_LOW + 0.05 * math.sin((u - 0.18) * 38.0) ** 2
+    if u < 0.74:
+        k = (u - 0.52) / 0.22
+        return BURST_LOW + (BURST_SURGE - BURST_LOW) * k * k * (3.0 - 2.0 * k)
+    return BURST_SURGE + (1.0 - BURST_SURGE) * min(1.0, (u - 0.74) / 0.26)
 
 
 def low_battery_gain(level):
@@ -53,6 +72,8 @@ class Flashlight:
         self._dropout_left = 0.0
         self._dropout_gain = 1.0
         self._strobe_left = 0.0
+        self._bursts = []
+        self.lantern_matrix = None         # pose do viewmodel no espaço da câmera, entregue pelas mãos
         self._lag_yaw = 0.0
         self._lag_pitch = 0.0
         self._clock = 0.0
@@ -61,20 +82,25 @@ class Flashlight:
         self.wall_distance = FULL_POWER_DISTANCE
 
     # ---- comandos ----
-    def toggle(self):
+    def switch(self, on):
+        """Liga ou desliga com som e ruído. Devolve True se o estado mudou. Sem carga a lanterna só estala."""
         state = self.state
-        if not state.has_flashlight or self.swap_left > 0:
-            return
+        if not state.has_flashlight or self.swap_left > 0 or on == state.flashlight_on:
+            return False
         pos = self.game.player.feet
-        if state.flashlight_on:
+        if not on:
             state.flashlight_on = False
-            self.game.make_noise("flash_click", pos, C.NOISE_PLAYER["flash_click"], sound="flash_off")
-        elif state.battery <= 0:
-            self.game.say(story.FLASHLIGHT_DEAD)
-            self.game.sound("flash_off")
-        else:
-            state.flashlight_on = True
-            self.game.make_noise("flash_click", pos, C.NOISE_PLAYER["flash_click"], sound="flash_on")
+            self.game.make_noise("flash_click", pos, C.NOISE_PLAYER["flash_click"], sound="flash_click_off")
+            return True
+        if state.battery <= 0:
+            self.game.sound("flash_click_off", None, 0.5)
+            return False
+        state.flashlight_on = True
+        self.game.make_noise("flash_click", pos, C.NOISE_PLAYER["flash_click"], sound="flash_click_on")
+        return True
+
+    def toggle(self):
+        return self.switch(not self.state.flashlight_on)
 
     def set_on(self, on):
         """Liga ou desliga sem som nem ruído (cutscenes)."""
@@ -84,42 +110,48 @@ class Flashlight:
     def strobe(self, seconds):
         self._strobe_left = max(self._strobe_left, seconds)
 
-    def reload(self):
+    def burst(self, seconds):
+        """Uma piscada da carga fraca: cai, fica no fundo e volta com um tranco."""
+        self._bursts.append([0.0, seconds])
+
+    def reload_blocker(self):
+        """Por que a troca de pilha não pode acontecer agora: 'no_spare', 'still_good' ou None (pode)."""
         state = self.state
         if not state.has_flashlight or self.swap_left > 0:
-            return
+            return "busy"
         if state.spare_batteries <= 0:
-            self.game.say(story.NO_SPARE)
-            return
+            return "no_spare"
         if state.battery > BATTERY_FULL_ENOUGH:
-            self.game.say(texts.MSG_BATTERY_GOOD)
-            return
-        self.swap_left = SWAP_SECONDS
-        state.flashlight_on = False
+            return "still_good"
+        return None
+
+    def begin_swap(self, seconds):
+        """A mão abriu a lanterna: a luz se apaga até a troca terminar."""
+        self.swap_left = seconds
+        self.state.flashlight_on = False
+        self._bursts.clear()
         self.game.make_noise("battery_swap", self.game.player.feet, C.NOISE_PLAYER["battery_swap"],
-                             sound="battery_insert")
+                             sound="battery_clack")
+
+    def finish_swap(self):
+        """A pilha nova entrou: carga cheia, uma reserva a menos."""
+        self.state.battery = C.BATTERY_MAX
+        self.state.spare_batteries -= 1
+
+    def end_swap(self):
+        self.swap_left = 0.0
 
     # ---- quadro a quadro ----
     def update(self, dt, cam_yaw, cam_pitch, bob=(0.0, 0.0), show_viewmodel=True):
+        """`bob` fica na assinatura por compatibilidade: o balanço do viewmodel agora é das mãos."""
         self._clock += dt
-        self._tick_swap(dt)
         self._drain(dt)
         self.intensity = self._effective_intensity(dt)
         self._follow_camera(dt, cam_yaw, cam_pitch)
         self._retract_from_walls(dt)
         self._write_light()
-        self._write_viewmodel(bob, show_viewmodel and self.state.has_flashlight)
-
-    def _tick_swap(self, dt):
-        if self.swap_left <= 0:
-            return
-        self.swap_left -= dt
-        if self.swap_left <= 0:
-            self.swap_left = 0.0
-            self.state.battery = C.BATTERY_MAX
-            self.state.spare_batteries -= 1
-            self.state.flashlight_on = True
-            self.game.say(story.BATTERY_SWAPPED)
+        if not show_viewmodel:
+            self.game.hands.suspend()
 
     def _drain(self, dt):
         state = self.state
@@ -128,7 +160,6 @@ class Flashlight:
         state.battery = max(0.0, state.battery - C.BATTERY_DRAIN_PER_SEC * dt)
         if state.battery <= 0:
             state.flashlight_on = False
-            self.game.say(story.FLASHLIGHT_DEAD)
             self.game.sound("flash_off")
 
     def _effective_intensity(self, dt):
@@ -139,6 +170,14 @@ class Flashlight:
         if self._strobe_left > 0:
             self._strobe_left -= dt
             gain *= 0.0 if int(self._clock * 22) % 2 else 1.0
+        return gain * self._burst_gain(dt)
+
+    def _burst_gain(self, dt):
+        gain = 1.0
+        for burst in self._bursts:
+            burst[0] += dt
+            gain = min(gain, burst_curve(burst[0] / burst[1]))
+        self._bursts = [b for b in self._bursts if b[0] < b[1]]
         return gain
 
     def _dropout(self, dt):
@@ -182,7 +221,8 @@ class Flashlight:
         self.offset = (0.0, 0.0)
 
     def restore_scene(self):
-        """Devolve a lanterna e o viewmodel ao estado do arquivo (ao sair do jogo)."""
+        """Devolve a lanterna e as mãos ao estado do arquivo (ao sair do jogo)."""
+        self.lantern_matrix = None
         if self.light is not None:
             self.light.data.energy = C.FLASH_ENERGY
             self.light.data.spot_size = math.radians(C.FLASH_SPOT_DEG)
@@ -192,6 +232,7 @@ class Flashlight:
             self.viewmodel.hide_viewport = self.viewmodel.hide_render = True
             self.viewmodel.location = VIEWMODEL_OFFSET
             self.viewmodel.rotation_euler = (0.0, 0.0, 0.0)
+        self.game.hands.restore_scene()
 
     def _close_range_gain(self):
         ratio = min(1.0, self.wall_distance / FULL_POWER_DISTANCE)
@@ -211,20 +252,8 @@ class Flashlight:
             spot.use_custom_distance = True
             spot.cutoff_distance = 30.0 * (0.45 + 0.55 * battery_gain)
         pitch, yaw = self.offset
-        light.location = (LIGHT_XY[0], LIGHT_XY[1], -self.forward_offset)
-        light.rotation_euler = (pitch, yaw, 0.0)
-
-    def _write_viewmodel(self, bob, visible):
-        model = self.viewmodel
-        if model is None:
-            return
-        model.hide_viewport = model.hide_render = not visible
-        if not visible:
-            return
-        dip = 0.0
-        if self.swap_left > 0:
-            dip = SWAP_DIP * math.sin(math.pi * (1.0 - self.swap_left / SWAP_SECONDS))
-        x, y, z = VIEWMODEL_OFFSET
-        model.location = (x + bob[0], y + bob[1] - dip, z)
-        pitch, yaw = self.offset
-        model.rotation_euler = (pitch * 1.4 + dip * 1.5, yaw * 1.4, 0.0)
+        grip = self.lantern_matrix if self.lantern_matrix is not None else HOLD_MATRIX
+        slide = LIGHT_FORWARD_MAX - self.forward_offset                 # recuo perto da parede, ao longo do cano
+        light.location = grip @ Vector((LIGHT_FROM_GRIP[0], LIGHT_FROM_GRIP[1], LIGHT_FROM_GRIP[2] + slide))
+        tilt = grip.to_euler("XYZ")
+        light.rotation_euler = (tilt.x + pitch, tilt.y + yaw, tilt.z)

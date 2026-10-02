@@ -508,8 +508,14 @@ def collect_item(bot, ref, label=None):
 def after_pickup(bot, ref):
     game = bot.game
     if ref == "FLASHLIGHT":
-        bot.press(flashlight=True)
-        bot.tick()
+        # a mão acende a lanterna no fim do gesto de pegar (e ela pisca); só depois disso o F vale
+        for _ in range(int(4.0 / DT)):
+            if game.state.flashlight_on and not game.hands.busy:
+                break
+            bot.tick()
+        if not game.state.flashlight_on:
+            bot.press(flashlight=True)
+            bot.tick()
         assert game.state.flashlight_on, "não conseguiu ligar a lanterna"
     while game.phase == "cutscene":
         bot.handle_meta_phase()

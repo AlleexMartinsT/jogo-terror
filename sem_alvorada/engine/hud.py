@@ -17,6 +17,8 @@ from .. import conventions as C
 from . import texts
 from .canvas import INK, PAPER, PAPER_DIM, SHADE, WARNING, with_alpha
 
+WARNING_BRIGHT = (0.80, 0.30, 0.22, 1.0)       # o vermelho dos avisos, claro o bastante para aparecer sobre parede iluminada
+
 MARGIN = 28
 METER_LABEL_W = 84
 METER_BAR_W = 176
@@ -101,7 +103,7 @@ def draw_flashlight(canvas, model):
     _draw_battery_bars(canvas, right, y, battery, model["time"], alpha)
     canvas.text(right, y + 22 * u, texts.HUD_FLASHLIGHT, 10 * u, with_alpha(PAPER_DIM, alpha), "right")
     if battery["dead"]:
-        _draw_dead_hint(canvas, right, y + 40 * u, battery, model["time"])
+        _draw_dead_hint(canvas, right, y + 58 * u, battery, model["time"])
 
 
 def _draw_battery_bars(canvas, right, y, battery, clock, alpha):
@@ -151,8 +153,9 @@ def draw_crosshair(canvas, model):
     u = canvas.scale
     cx, cy = canvas.width / 2, canvas.height / 2
     prompt = model["prompt"]
+    canvas.disc(cx, cy, 3.6 * u, with_alpha(SHADE, 0.4), 14)          # halo escuro: a mira não some sobre parede iluminada
     if prompt is None:
-        canvas.disc(cx, cy, 1.7 * u, with_alpha(PAPER, 0.42), 12)
+        canvas.disc(cx, cy, 1.7 * u, with_alpha(PAPER, 0.55), 12)
         return
     canvas.disc(cx, cy, 2.5 * u, with_alpha(PAPER, 0.92), 12)
     canvas.ring(cx, cy, 8 * u, max(1.0, 0.9 * u), with_alpha(PAPER, 0.45), 28)
@@ -165,9 +168,9 @@ def _draw_prompt(canvas, cx, y, prompt, blocked):
     width = canvas.text_width(prompt, 16 * u)
     lead = 14 * u if blocked else 0.0
     left = cx - (width + lead) / 2
-    canvas.rect(left - 12 * u, y - 6 * u, width + lead + 24 * u, 26 * u, with_alpha(SHADE, 0.62))
+    canvas.rect(left - 12 * u, y - 6 * u, width + lead + 24 * u, 26 * u, with_alpha(SHADE, 0.78))
     if blocked:
-        canvas.rect(left, y - 1 * u, 2 * u, 15 * u, with_alpha(WARNING, 0.95))
+        canvas.rect(left, y - 2 * u, 3 * u, 17 * u, WARNING_BRIGHT)
     canvas.text(left + lead, y, prompt, 16 * u, with_alpha(PAPER, 0.74) if blocked else PAPER)
 
 
@@ -196,8 +199,8 @@ def draw_wheel(canvas, wheel):
     cx, cy = canvas.width / 2, canvas.height / 2
     count = len(wheel["slots"])
     centers = [wheel_center(cx, cy, index, count, WHEEL_RADIUS * u) for index in range(count)]
-    for step in range(8):             # sombra que some nas bordas: camadas finas empilhadas em vez de um disco chapado
-        canvas.disc(cx, cy, (270 - step * 16) * u, with_alpha(SHADE, 0.075), 56)
+    for layer in range(20):           # sombra que some nas bordas: camadas finas empilhadas em vez de um disco chapado
+        canvas.disc(cx, cy, (285 - layer * 11) * u, with_alpha(SHADE, 0.075), 56)
     for slot, (tx, ty) in zip(wheel["slots"], centers):
         bright = slot["selected"]
         canvas.line(cx, cy, tx, ty, (2.0 if bright else 1.2) * u, with_alpha(PAPER, 0.6 if bright else 0.10))
@@ -207,7 +210,7 @@ def draw_wheel(canvas, wheel):
     for slot, (tx, ty) in zip(wheel["slots"], centers):
         _draw_wheel_tile(canvas, slot, tx, ty)
     caption_y = cy - 58 * u
-    canvas.text(cx, caption_y, wheel["caption"], 10 * u, with_alpha(PAPER_DIM, 0.95), "center")
+    canvas.text(cx, caption_y, wheel["caption"], 11 * u, with_alpha(PAPER, 0.8), "center")
     canvas.text(cx, caption_y - 20 * u, wheel["name"], 17 * u, PAPER, "center")
 
 

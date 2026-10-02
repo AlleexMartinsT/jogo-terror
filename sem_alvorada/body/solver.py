@@ -28,10 +28,12 @@ _LENGTH = [b.length for b in S.BONES]
 
 class ArmGoal:
     """Onde o pulso deve chegar (espaço do corpo), a orientação absoluta da mão e o polo do cotovelo."""
-    __slots__ = ("wrist", "hand_q", "pole", "weight")
+    __slots__ = ("wrist", "hand_q", "pole", "weight", "palm", "palm_offset")
 
-    def __init__(self, wrist, hand_q, pole, weight=1.0):
+    def __init__(self, wrist, hand_q, pole, weight=1.0, palm=None, palm_offset=None):
         self.wrist, self.hand_q, self.pole, self.weight = wrist, hand_q, pole, weight
+        # com `palm` (alvo do centro da palma) o solver corrige o pulso quando o limite de flexão muda a orientação
+        self.palm, self.palm_offset = palm, palm_offset
 
 
 class LegGoal:
@@ -138,20 +140,27 @@ def _solve_arm(upper_name, origin, parent_world, goal, rot):
     upper_i, lower_i = _INDEX[upper_name], _INDEX[lower_name]
     arm_len = _LENGTH[upper_i]
     fore_len = _LENGTH[lower_i] + _LENGTH[_INDEX[roll_name]]
-    joint, end = two_bone_joint(origin, goal.wrist, arm_len, fore_len, goal.pole)
-    upper_q, fore_q = _chain_frames(upper_name, origin, joint, end)
-
-    rel = fore_q.inverted() @ goal.hand_q
-    twist, swing = _twist_swing(rel, _REST_DIR[_INDEX[lower_name]])
-    swing = _limit(swing, MAX_WRIST_SWING)
     fore_axis = _REST_DIR[_INDEX[lower_name]]
+    wrist = goal.wrist
+    for _attempt in range(3):
+        joint, end = two_bone_joint(origin, wrist, arm_len, fore_len, goal.pole)
+        upper_q, fore_q = _chain_frames(upper_name, origin, joint, end)
+        rel = fore_q.inverted() @ goal.hand_q
+        twist, swing = _twist_swing(rel, fore_axis)
+        swing = _limit(swing, MAX_WRIST_SWING)
+        hand_q = fore_q @ twist @ swing
+        if goal.palm is None:
+            break
+        corrected = goal.palm - hand_q @ goal.palm_offset
+        if (corrected - wrist).length < 2e-4:
+            break
+        wrist = corrected
     signed = 2.0 * math.atan2(twist.x * fore_axis.x + twist.y * fore_axis.y + twist.z * fore_axis.z, twist.w)
     if signed > math.pi:
         signed -= 2.0 * math.pi
     elif signed < -math.pi:
         signed += 2.0 * math.pi
     roll_q = fore_q @ Quaternion(fore_axis, signed * ROLL_SHARE)
-    hand_q = fore_q @ twist @ swing
 
     local = {
         upper_name: _blend_local(rot.get(upper_name, IDENTITY), parent_world.inverted() @ upper_q, goal.weight),
@@ -159,6 +168,8 @@ def _solve_arm(upper_name, origin, parent_world, goal, rot):
         roll_name: _blend_local(rot.get(roll_name, IDENTITY), fore_q.inverted() @ roll_q, goal.weight),
         hand_name: _blend_local(rot.get(hand_name, IDENTITY), roll_q.inverted() @ hand_q, goal.weight),
     }
+    if goal.palm is not None:
+        return local, (end + hand_q @ goal.palm_offset - goal.palm).length
     return local, (end - goal.wrist).length
 
 

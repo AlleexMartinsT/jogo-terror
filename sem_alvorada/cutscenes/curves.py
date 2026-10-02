@@ -210,6 +210,9 @@ class Path:
                 out.append((0.0, 0.0, 0.0))
                 continue
             lo, hi = max(i - 1, 0), min(i + 1, n - 1)
+            if points[i] == points[lo] or points[i] == points[hi]:       # duas chaves iguais seguidas: parada, sem laço
+                out.append((0.0, 0.0, 0.0))
+                continue
             span = times[hi] - times[lo]
             out.append(tuple(self.tension * (points[hi][c] - points[lo][c]) / span for c in range(3)))
         return out

@@ -54,6 +54,8 @@ OBJ_ENTITY = "Entity"                  # Empty raiz da entidade (pés na origem,
 OBJ_CUT_CAM = "CutsceneCam"
 OBJ_CAR = "Car"
 OBJ_GARAGE_ROLLUP = "GarageRollup"
+OBJ_BODY = "PlayerBody"               # malha do corpo do jogador (primeira pessoa), na coleção do jogador
+OBJ_BODY_RIG = "PlayerBody_Rig"        # armadura do corpo
 
 # --------------------------------------------------------------------------
 # Itens e objetivo

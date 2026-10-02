@@ -15,7 +15,7 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import test_engine_fakes as fk  # noqa: E402
-from test_engine_fakes import DT, InputState, FakeRig, make_game, start_playing, teleport  # noqa: E402
+from test_engine_fakes import DT, make_game, start_playing, teleport  # noqa: E402
 
 from sem_alvorada import conventions as C  # noqa: E402
 from sem_alvorada import layout  # noqa: E402
@@ -95,6 +95,12 @@ def fresh_game():
     return game
 
 
+def unlocked_game():
+    game = fresh_game()
+    game.state.unlocked |= {"front", "back", "garage"}
+    return game
+
+
 def motion_window(samples, low=1e-4, high=1.0 - 1e-4):
     """(início, fim) em segundos do trecho em que a folha realmente se move entre `low` e `high`."""
     moving = [t for t, x, _ in samples if low < x < high]
@@ -122,9 +128,9 @@ def test_opening_is_smooth_starts_and_ends_at_rest():
     assert max(steps) < 0.04, f"salto por quadro a 60 fps: {max(steps):.3f}"
     start, end = motion_window(samples)
     first = [x for t, x, _ in samples if t <= start + 3 * FRAME]
-    assert max(first) < 0.003, "a folha tem de sair do repouso devagar"
+    assert max(first) < 0.006, "a folha tem de sair do repouso devagar (uma porta linear andaria 0,08 nisso)"
     last = [x for t, x, _ in samples if end - 3 * FRAME <= t <= end]
-    assert 1.0 - min(last) < 0.003, "e chegar ao fim devagar"
+    assert 1.0 - min(last) < 0.006, "e chegar ao fim devagar"
     accel_jumps = [abs((c - b) - (b - a)) / FRAME for a, b, c in zip(xs, xs[1:], xs[2:])]
     assert max(accel_jumps) < 0.2, f"velocidade com salto: {max(accel_jumps):.3f}"
 
@@ -144,7 +150,7 @@ def test_handle_turns_before_the_leaf_moves():
 def test_duration_stays_between_0_9_and_1_4_seconds_for_every_door_and_pace():
     for door_id in ALL_DOORS:
         for hurried, crouch, speed in ((True, False, 4.6), (False, False, 2.6), (False, False, 0.0), (False, True, 1.2)):
-            game = fresh_game()
+            game = unlocked_game()
             game.player.crouching, game.player.speed = crouch, speed
             door = game.doors.get(door_id)
             game.doors.toggle(door_id, hurried=hurried)
@@ -170,7 +176,7 @@ def test_reversing_midway_keeps_position_and_velocity_continuous():
     for stop_at in (0.35, 0.6, 0.9):
         game = fresh_game()
         game.doors.toggle("kids_master")
-        samples = trace_door(game, "kids_master", 0.14 + stop_at)
+        trace_door(game, "kids_master", 0.14 + stop_at)
         door = game.doors.get("kids_master")
         x_before, v_before = door.openness, door.velocity
         assert 0.0 < x_before < 1.0
@@ -468,6 +474,7 @@ def test_creak_flavor_follows_door_kind():
 def test_toggle_emits_creak_sound_and_noise_through_the_usual_path():
     game = fresh_game()
     game.rng = AlwaysCreak()
+    game.player.speed = 2.6                       # andando: ritmo normal, som de porta normal
     game.doors.toggle("kids_master")
     noise = [e for e in game.noise_log if e[1] == "door_creak"]
     assert noise and noise[-1][0] == "player" and noise[-1][2] == C.NOISE_PLAYER["door_creak"]

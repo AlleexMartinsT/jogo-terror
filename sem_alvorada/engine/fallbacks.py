@@ -167,6 +167,9 @@ class NullBody:
     def place(self, x, y, z, yaw):
         pass
 
+    def attach_view(self, camera_obj):
+        pass
+
     def pose(self, name, seconds=0.0):
         pass
 

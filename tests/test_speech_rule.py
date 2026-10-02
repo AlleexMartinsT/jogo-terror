@@ -108,12 +108,14 @@ def test_the_character_speaks_when_the_game_starts_and_when_picking_main_items_o
     step(game, InputState(flashlight=True))                           # F sem carga
     state.spare_batteries = 0
     step(game, InputState(reload=True))                               # R sem pilha reserva
+    run_for(game, 1.6)                                                # a mão termina o gesto de recusa
     state.spare_batteries, state.battery = 2, 0.95
     step(game, InputState(reload=True))                               # R com a pilha ainda boa
+    run_for(game, 1.6)
     state.battery = 0.1
     step(game, InputState(reload=True))                               # R de verdade: troca
-    run_for(game, 3.0)
-    assert state.battery > 0.99 and state.flashlight_on
+    run_for(game, 4.0)
+    assert state.battery > 0.95 and state.flashlight_on and state.spare_batteries == 1
     game.interact.use(Interactable("look", "window_x", position=(0.0, 0.0, 1.5)))
     for door_id, door in game.doors.doors.items():
         if door.lock == "front":

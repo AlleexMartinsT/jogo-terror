@@ -1,11 +1,14 @@
 """Ferramenta de desenvolvimento: renderiza quadros de uma cutscene num .blend real.
 
-    python -m sem_alvorada.cutscenes.preview --blend out/cutscenes/full.blend --cutscene intro \
-        --exposure 1.5 --samples 32
+    python -m sem_alvorada.cutscenes.preview --blend out/f3_4/base.blend --cutscene intro \
+        --times 2,8,20 --res 640x360 --samples 12 --out out/f3_4/intro
 
 Um `PreviewHost` simples faz o papel do engine (luzes, portas, lanterna, entidade). O player roda de
 verdade, a câmera `CutsceneCam` é renderizada com Cycles e o overlay (fade, letterbox, legenda, flash,
-cartão) é composto por cima em numpy. Saída: out/cutscenes/<nome>_<n>.png e <nome>_sheet.png.
+cartão) é composto por cima em numpy. Saída: <out>/<nome>_<n>.png e <nome>_sheet.png.
+
+`--rebuild` recria câmera, luzes, pálpebras, poeira, chave e as peças do carro sobre um .blend já montado,
+sem refazer o build de 2 minutos.
 """
 import argparse
 import math
@@ -25,16 +28,19 @@ from sem_alvorada import conventions as C  # noqa: E402
 from sem_alvorada import layout  # noqa: E402
 from sem_alvorada.cutscenes import scripts, timeline  # noqa: E402
 from sem_alvorada.cutscenes.player import CutscenePlayer  # noqa: E402
+from sem_alvorada.engine.fallbacks import NullBody  # noqa: E402
 
 OUT_DIR = os.path.join(ROOT, "out", "cutscenes")
+DEFAULT_BLEND = os.path.join(ROOT, "out", "f3_4", "base.blend")
 FLASHLIGHT_ENERGY = C.FLASH_ENERGY
+STEP = 1 / 30
 
 # estado do mundo no INÍCIO de cada cutscene (o engine decide isso no jogo de verdade)
 START_STATE = {
     "intro": {"power": False, "flashlight": False, "player": (*layout.PLAYER_START[:3], 0.0)},
-    "blackout": {"power": True, "flashlight": True, "player": (5.6, 8.65, 2.8, math.radians(-90))},
+    "blackout": {"power": True, "flashlight": True, "player": (5.6, 3.4, 2.8, math.radians(0))},
     "garage_unlock": {"power": False, "flashlight": True, "player": (11.1, 5.85, 0.0, math.radians(-90)),
-                      "aim": (12.0, 6.2, 1.0)},         # o jogador olha para o trinco ao interagir
+                      "pitch": math.radians(-4)},
     "death": {"power": False, "flashlight": True, "player": (6.6, 5.2, 2.8, 0.0)},
     "ending": {"power": False, "flashlight": False, "player": (16.5, 3.6, 0.0, math.radians(90))},
 }
@@ -55,17 +61,39 @@ class RecordingAudio:
 
 
 class PreviewDoors:
+    """Portas de mentira: `set_openness` anima com a mesma curva mínima-sacudida (quíntica) das portas do jogo."""
+
     def __init__(self, scene):
         self.scene = scene
+        self.glides = {}                    # id -> [início, destino, duração, decorrido]
 
-    def snap(self, door_id, openness):
+    def _write(self, door_id, openness):
         pivot = self.scene.objects.get(C.N_DOOR + door_id)
         if pivot is None:
             return
         closed, opened = pivot[C.P_DOOR_CLOSED], pivot[C.P_DOOR_OPEN]
         pivot.rotation_euler.z = closed + (opened - closed) * openness
 
-    set_openness = snap
+    def snap(self, door_id, openness):
+        self.glides.pop(door_id, None)
+        self._write(door_id, openness)
+
+    def set_openness(self, door_id, fraction, speed=None):
+        pivot = self.scene.objects.get(C.N_DOOR + door_id)
+        if pivot is None:
+            return
+        closed, opened = pivot[C.P_DOOR_CLOSED], pivot[C.P_DOOR_OPEN]
+        now = (pivot.rotation_euler.z - closed) / ((opened - closed) or 1.0)
+        seconds = abs(fraction - now) / speed if speed else 1.3
+        self.glides[door_id] = [now, fraction, max(seconds, 0.2), 0.0]
+
+    def update(self, dt):
+        for door_id, glide in list(self.glides.items()):
+            glide[3] = min(glide[3] + dt, glide[2])
+            u = glide[3] / glide[2]
+            self._write(door_id, glide[0] + (glide[1] - glide[0]) * (u ** 3 * (u * (u * 6 - 15) + 10)))
+            if glide[3] >= glide[2]:
+                del self.glides[door_id]
 
 
 class PreviewHost:
@@ -76,15 +104,20 @@ class PreviewHost:
         self.audio = RecordingAudio()
         self.doors = PreviewDoors(scene)
         self.entity = self._entity()
+        self.body = NullBody()
         self.state = start["player"]
-        self._aim = start.get("aim")
+        self._pitch = start.get("pitch", 0.0)
         self.finished = []
+        self.power = start["power"]
+        self.gains = {}
         self._lights = [(o, o.get(C.P_LIGHT_ENERGY, o.data.energy)) for o in scene.objects
                         if o.type == "LIGHT" and o.name.startswith(C.N_LIGHT)]
-        self._flashlight = self._make_flashlight()
+        self._flashlight = scene.objects.get(C.OBJ_FLASHLIGHT) or self._make_flashlight()
+        self._player_cam = scene.objects.get(C.OBJ_PLAYER_CAM)
         self._aim_flashlight()
         self.set_power(start["power"])
         self.set_flashlight(start["flashlight"])
+        self.brain_calls = []
 
     def _entity(self):
         from sem_alvorada.entity.rig import EntityRig
@@ -101,14 +134,12 @@ class PreviewHost:
         return obj
 
     def _aim_flashlight(self):
-        """A lanterna fica nos olhos do JOGADOR (não na câmera da cutscene), como no jogo."""
+        """A PlayerCam (pai da lanterna) fica nos olhos do jogador, como no jogo."""
         x, y, z, yaw = self.state
-        eye = Vector((x, y, z + C.PLAYER_EYE_STAND))
-        self._flashlight.location = eye
-        if self._aim is not None:
-            self._flashlight.rotation_euler = (Vector(self._aim) - eye).to_track_quat("-Z", "Y").to_euler()
-        else:
-            self._flashlight.rotation_euler = (math.pi / 2, 0.0, yaw)
+        if self._player_cam is not None:
+            self._player_cam.rotation_mode = "XYZ"
+            self._player_cam.location = (x, y, z + C.PLAYER_EYE_STAND)
+            self._player_cam.rotation_euler = (math.pi / 2 + self._pitch, 0.0, yaw)
 
     def set_camera(self, obj):
         self.scene.camera = obj or self.scene.objects.get(C.OBJ_PLAYER_CAM) or self.scene.camera
@@ -120,15 +151,32 @@ class PreviewHost:
         x, y, z, yaw = self.state
         return (x, y, z, yaw, z + C.PLAYER_EYE_STAND)
 
+    def player_pitch(self):
+        return self._pitch
+
     def place_player(self, x, y, z, yaw):
         self.state = (x, y, z, yaw)
-        self._aim = None
+        self._pitch = 0.0
         self._aim_flashlight()
 
     def set_power(self, on, flicker=0.0):
-        factor = (0.55 if flicker else 1.0) if on else 0.0
+        self.power = on
+        self._apply_lights(0.55 if (on and flicker) else 1.0)
+
+    def set_light_gain(self, name, gain):
+        if abs(gain - 1.0) < 1e-6:
+            self.gains.pop(name, None)
+        else:
+            self.gains[name] = gain
+        self._apply_lights(1.0)
+
+    def _apply_lights(self, flicker_factor):
         for obj, base in self._lights:
-            obj.data.energy = base * factor
+            keep = flicker_factor if self.power else 0.0
+            obj.data.energy = base * keep * self.gains.get(obj.name, 1.0)
+        for obj in self.scene.objects:
+            if obj.name.startswith("Fixture_"):
+                obj.hide_viewport = obj.hide_render = not self.power
 
     def flash_light(self, seconds):
         pass
@@ -139,7 +187,13 @@ class PreviewHost:
     def noise_silence(self, seconds):
         pass
 
-    def entity_brain_activate(self):
+    def entity_brain_activate(self, pos=None):
+        self.brain_calls.append(pos)
+
+    def tick(self, dt):
+        self.doors.update(dt)
+
+    def show_body(self, visible):
         pass
 
     def finish(self, reason):
@@ -219,8 +273,18 @@ def default_times(name):
     return [t0 + (t1 - t0) * fraction for t0, t1, _ in tl.shots for fraction in (0.5,)]
 
 
+def _prepare_death(host):
+    """No jogo a entidade já está colada no jogador quando mata."""
+    px, py, pz, pyaw = host.state
+    dx, dy = C.yaw_dir(pyaw)
+    host.entity.set_visible(True)
+    host.entity.set_transform(px + dx * 1.1, py + dy * 1.1, pz, pyaw + math.pi)
+    host.entity.set_anim("attack")
+    host.entity.eyes(0.6)
+
+
 def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, out_dir=OUT_DIR, fill=0.0,
-                  prefix=None):
+                  prefix=None, columns=3):
     from sem_alvorada.entity import sheet
     os.makedirs(out_dir, exist_ok=True)
     prefix = prefix or name
@@ -229,19 +293,16 @@ def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, 
         from tools import preview as tools_preview
         tools_preview._apply_fill(scene, fill)
     host = PreviewHost(scene, START_STATE[name])
-    if name == "death":                    # no jogo a entidade já está colada no jogador quando mata
-        px, py, pz, pyaw = host.state
-        dx, dy = C.yaw_dir(pyaw)
-        host.entity.set_visible(True)
-        host.entity.set_transform(px + dx * 1.1, py + dy * 1.1, pz, pyaw + math.pi)
-        host.entity.set_anim("attack")
-        host.entity.eyes(0.6)
+    if name == "death":
+        _prepare_death(host)
     player = CutscenePlayer(host)
     player.play(name)
     tiles, labels = [], []
     for index, target in enumerate(sorted(times)):
         while player.active and player.time < target - 1e-6:
-            player.update(min(1 / 30, target - player.time))
+            step = min(STEP, target - player.time)
+            host.tick(step)
+            player.update(step)
         if not player.active:
             break
         overlay = player.overlay()
@@ -254,27 +315,32 @@ def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, 
         labels.append(f"{name} {player.time:5.1f}S")
         print(f"[cutscene] {path} (t={player.time:.1f}s, fade={overlay.fade:.2f}) erros={player.errors}", flush=True)
     if tiles:
-        columns = 3
         sheet.save_png(os.path.join(out_dir, f"{prefix}_sheet.png"), sheet.contact_sheet(tiles, columns, labels))
     return host
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--blend", default=os.path.join(OUT_DIR, "full.blend"))
+    ap.add_argument("--blend", default=DEFAULT_BLEND)
     ap.add_argument("--cutscene", required=True, choices=scripts.NAMES)
     ap.add_argument("--times", default="", help="segundos separados por vírgula (padrão: meio de cada plano)")
     ap.add_argument("--res", default="640x360")
     ap.add_argument("--samples", type=int, default=32)
     ap.add_argument("--exposure", type=float, default=0.0)
     ap.add_argument("--tag", default="", help="sufixo do nome dos arquivos (para não sobrescrever a folha completa)")
+    ap.add_argument("--out", default=OUT_DIR, help="pasta de saída (a padrão é compartilhada com o orquestrador)")
     ap.add_argument("--fill", type=float, default=0.0, help="luz de mundo para depuração (0 = escuro de verdade)")
+    ap.add_argument("--columns", type=int, default=3)
+    ap.add_argument("--rebuild", action="store_true", help="recria os objetos de cutscene sobre o .blend antes de renderizar")
     args = ap.parse_args(argv)
     bpy.ops.wm.open_mainfile(filepath=os.path.abspath(args.blend))
+    if args.rebuild:
+        from sem_alvorada.cutscenes import objects
+        objects.rebuild(bpy.context.scene)
     times = [float(t) for t in args.times.split(",")] if args.times else default_times(args.cutscene)
     res = tuple(int(v) for v in args.res.lower().split("x"))
-    render_frames(bpy.context.scene, args.cutscene, times, res, args.samples, args.exposure, fill=args.fill,
-                  prefix=f"{args.cutscene}_{args.tag}" if args.tag else None)
+    render_frames(bpy.context.scene, args.cutscene, times, res, args.samples, args.exposure, out_dir=args.out,
+                  fill=args.fill, prefix=f"{args.cutscene}_{args.tag}" if args.tag else None, columns=args.columns)
 
 
 if __name__ == "__main__":

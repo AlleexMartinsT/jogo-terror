@@ -42,7 +42,6 @@ class Clip:
     tracks: dict                                  # canal -> Track
     events: list = field(default_factory=list)    # [Event] (o executor soma o `done` final)
     interruptible: bool = False                   # pode ser substituído por outro sem terminar
-    hold: tuple = None                            # (t, segundos_max): o relógio espera em t até `release_hold`
     meta: dict = field(default_factory=dict)      # o que o dono do clipe precisa saber (item, mão, âncora)
 
     def __post_init__(self):
@@ -148,29 +147,17 @@ class ClipPlayer:
         self.serial = 0
         self._channels = {}
         self._next_event = 0
-        self._holding = False
-        self._hold_left = 0.0
-        self._hold_released = False
 
     # ---- controle ----
     @property
     def active(self):
         return self.clip is not None
 
-    @property
-    def holding(self):
-        return self._holding
-
     def start(self, clip):
         self.serial += 1
         self.clip = clip
         self.time = 0.0
         self._next_event = 0
-        self._holding = False
-        self._hold_released = False
-
-    def release_hold(self):
-        self._hold_released = True
 
     def rebase(self):
         """A base mudou de repente (outro item na mão): o próximo quadro emenda em vez de pular."""
@@ -182,13 +169,11 @@ class ClipPlayer:
         clip = self.clip
         if clip is None:
             return []
-        fired = []
-        for event in clip.events[self._next_event:]:
-            if event.essential:
-                fire(event)
-                fired.append(event)
-        self.clip = None
-        return fired
+        self.clip = None                    # antes dos eventos: um deles pode começar outro clipe
+        pending = [event for event in clip.events[self._next_event:] if event.essential]
+        for event in pending:
+            fire(event)
+        return pending
 
     # ---- quadro a quadro ----
     def update(self, dt, base_fn, anchors, fire):
@@ -214,31 +199,17 @@ class ClipPlayer:
     def _advance(self, dt, fire):
         clip = self.clip
         target = self.time + dt
-        if clip.hold is not None and not self._hold_released:
-            hold_at, hold_max = clip.hold
-            if self._holding:
-                self._hold_left -= dt
-                if self._hold_left > 0:
-                    return
-                self._holding = False
-                self._hold_released = True
-                target = self.time + dt
-            elif self.time < hold_at <= target:
-                target = hold_at
-                self._holding = True
-                self._hold_left = hold_max
-        elif self._holding:
-            self._holding = False
+        finishing = target >= clip.duration
+        if finishing:
+            self.clip = None                # os eventos finais já rodam com o clipe encerrado
+        self.time = min(target, clip.duration)
         events = clip.events
         while self._next_event < len(events) and events[self._next_event].t <= target + 1e-9:
             event = events[self._next_event]
             self._next_event += 1
             fire(event)
-            if self.clip is not clip:           # um evento trocou ou encerrou o clipe: o novo cuida do resto
-                return
-        self.time = target
-        if self.time >= clip.duration:
-            self.clip = None
+            if self.clip is not (None if finishing else clip):
+                return                      # um evento começou outro clipe: ele cuida do resto
 
     def _settle(self, name, source, dt):
         value, source_velocity, kind = source

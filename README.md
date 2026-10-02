@@ -48,11 +48,16 @@ Alternativa sem linha de comando: abra `SemAlvorada.blend`, abra o texto `jogar.
 | F | ligar e desligar a lanterna |
 | R | trocar as pilhas da lanterna |
 | E | interagir (pegar, abrir, ler, entrar no carro) |
-| Esc | pausar; Esc de novo sai e devolve a interface do Blender |
+| Q ou Tab (segurar) | roda de itens: mova o mouse na direção do setor e solte |
+| Esc | pausar (objetivo, lista de coleta, medidor completo e controles); Esc de novo sai e devolve a interface do Blender |
+
+**Roda de itens.** Cinco setores fixos, em sentido horário a partir do topo: lanterna, pilhas, chave, mapa e anotações. A lanterna fica sempre na mão direita; a roda escolhe o que vai na mão esquerda. Setor apagado é item que você ainda não tem. Soltar a tecla sem mover o mouse mantém o que já está na mão. O mundo não pausa e a câmera não gira enquanto a roda está aberta.
+
+**Tela.** Em jogo só aparecem a mira (com a dica de interação quando há alvo), a barra de som, a bateria da lanterna por alguns segundos depois de usá-la (e sempre que está abaixo de 25%) e o fôlego quando está acabando. O personagem só fala ao começar a partida e ao pegar um item principal.
 
 ## O que importa no jogo: o som
 
-O medidor no canto inferior esquerdo mostra três barras:
+O medidor no canto inferior esquerdo mostra, em jogo, a barra **VOCÊ** (quase transparente em silêncio) e a **ENTIDADE** enquanto dá para ouvi-la. No menu de pausa ele aparece completo, com as três barras:
 
 - **VOCÊ**: o barulho que seu corpo faz agora.
 - **AMBIENTE**: o ruído de fundo do cômodo, que te esconde.
@@ -64,9 +69,12 @@ O medidor no canto inferior esquerdo mostra três barras:
 | agachado, andando | 0,08 |
 | andando | 0,30 |
 | correndo | 0,75 |
+| porta que range | 0,55 |
 | bater uma porta | 0,90 |
 
 O piso muda o valor: carpete abafa (×0,55), azulejo ecoa (×1,15), a escada range (×1,35). O som não anda em linha reta: ele viaja pelos cômodos, perde força a cada metro, perde mais quando passa por porta fechada ou por outro andar, e é diminuído pelo ruído de fundo de onde a entidade está. Por isso a cozinha, com o zumbido da geladeira, é um bom esconderijo.
+
+As portas abrem e fecham com aceleração e desaceleração (de 0,9 a 1,4 s), e a dobradiça pode ranger: mais se você está correndo e na primeira vez que uma porta velha é aberta, menos se você está agachado ou parado. O ranger se ouve a uns 9 m em linha livre (um cômodo e meio) e quase não passa por porta fechada. A tabela de chances está no topo de `sem_alvorada/engine/doors.py`.
 
 A entidade segue regras que dá para aprender:
 

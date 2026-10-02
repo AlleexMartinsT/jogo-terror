@@ -93,8 +93,23 @@ class CutsceneHost:
     def noise_silence(self, seconds):
         self.game.silence_noise(seconds)
 
-    def entity_brain_activate(self):
-        self.game.entity.activate()
+    def entity_brain_activate(self, pos=None):
+        """Acorda o cérebro; `pos` (opcional) é onde a cutscene deixou a entidade, para ela seguir dali sem salto."""
+        self.game.entity.activate(pos)
+
+    def player_pitch(self):
+        """Inclinação da cabeça do jogador: a primeira vista da cutscene é exatamente a do jogo."""
+        return self.game.player.pitch
+
+    def set_light_gain(self, name, gain):
+        """Realça ou escurece uma luz da casa por nome (a queda de luz em cascata do apagão)."""
+        self.game.lights.set_gain(name, gain)
+
+    def body_tick(self, dt):
+        """Avança o corpo do jogador durante a cutscene (poses e braços), se ele estiver visível."""
+        body = self.game.body
+        if getattr(body, "visible", False):
+            body.update(dt, self.game.player, (0.0, 0.0))
 
     def finish(self, reason):
         self.game.director.on_cutscene_finished(reason)

@@ -38,6 +38,9 @@ class FakeHands:
         self.held = None
         self.busy = False
 
+    def suspend(self):
+        pass
+
     def update(self, dt, bob):
         pass
 
@@ -409,6 +412,30 @@ def test_game_freezes_the_camera_while_the_wheel_is_open_and_selects_through_con
     ctl.mouse(100, 0)
     game.tick(DT, ctl.inp)
     assert game.player.yaw != yaw, "a câmera volta a girar depois da roda"
+
+
+def test_wheel_drives_the_real_hands_and_a_busy_swap_defers_the_choice():
+    game = start_playing(make_game(world=True))
+    state = game.state
+    state.has_flashlight, state.has_key, state.has_map, state.spare_batteries = True, True, True, 1
+    state.battery = 0.2
+    game.inventory.reset()
+    assert game.inventory.held == FLASHLIGHT, "lanterna na direita, esquerda livre"
+    hold(game)
+    hold(game, *vector(144, 0.2))
+    release(game)
+    fk.run_for(game, 3.0)
+    assert game.hands.held == KEY and not game.hands.busy
+    step(game, InputState(reload=True))                   # a troca de pilha ocupa as duas mãos
+    fk.run_for(game, 0.4)
+    assert game.hands.busy
+    hold(game)
+    hold(game, *vector(216, 0.2))
+    release(game)
+    assert game.inventory.hud_block()["pending"] == MAP and game.hands.held != MAP
+    fk.run_for(game, 4.0)
+    assert game.hands.held == MAP and game.inventory.hud_block()["pending"] is None
+    assert state.spare_batteries == 0 and state.battery > 0.9, "a troca terminou antes do mapa chegar à mão"
 
 
 def test_hud_block_is_stable_without_the_wheel():

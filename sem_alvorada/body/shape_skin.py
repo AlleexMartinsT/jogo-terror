@@ -11,6 +11,7 @@ import numpy as np
 
 from . import meshkit as K
 from . import skeleton as S
+from . import tex
 
 SKIN, NAIL = "skin", "nail"
 MAX_SIDES = 20            # lados da seção do antebraço e da palma
@@ -64,7 +65,7 @@ def _arm_features(d, rx, ry):
 
     def radial(theta):
         fac = np.ones_like(theta)
-        fac += 0.30 * _g(d, 0.030, 0.022) * np.exp(-(_angle_gap(theta, 0.95) / 0.60) ** 2)            # tênar
+        fac += 0.42 * _g(d, 0.030, 0.024) * np.exp(-(_angle_gap(theta, 0.85) / 0.70) ** 2)            # tênar
         fac += 0.12 * _g(d, 0.048, 0.026) * np.exp(-(_angle_gap(theta, 2.20) / 0.55) ** 2)            # hipotênar
         window = K.smoothstep(d, 0.012, 0.040) * (1.0 - K.smoothstep(d, 0.090, 0.100))
         for angle, finger in zip(tendon_t, S.FINGERS):
@@ -77,7 +78,7 @@ def _arm_features(d, rx, ry):
     return radial
 
 
-def build_arm_skin(side="R", material=SKIN, uv_rect=(0.0, 0.0, 0.3, 1.0), tile=0.12):
+def build_arm_skin(side="R", material=SKIN, uv_rect=tex.ARM_ATLAS["R"], tile=0.12):
     mesh = K.Mesh()
     curve, fore_len = arm_path()
     f, p, _t = S.hand_frame("R")
@@ -91,7 +92,7 @@ def build_arm_skin(side="R", material=SKIN, uv_rect=(0.0, 0.0, 0.3, 1.0), tile=0
         shift = (0.0019 * float(K.smoothstep(d, 0.0, 0.03)), 0.0)
         rings.append(K.Ring(pos, lateral, normal, rx, ry, n=2.5, radial=_arm_features(d, rx, ry),
                             weights=forearm_weights(d, "R"), shift=shift))
-    mesh.sweep(rings, MAX_SIDES, material, phase=0.0, region="skin_arm", uv0_rect=uv_rect, uv_tile=tile,
+    mesh.sweep(rings, MAX_SIDES, material, phase=math.pi, region="skin_arm", uv0_rect=uv_rect, uv_tile=tile,
                closed_end=True)
     return mesh
 
@@ -114,8 +115,9 @@ def finger_profile(finger):
     ]
 
 
-def build_finger(finger, side="R", material=SKIN, uv_rect=(0.3, 0.0, 0.34, 0.45), tile=0.12):
+def build_finger(finger, side="R", material=SKIN, uv_rect=None, tile=0.12):
     mesh = K.Mesh()
+    uv_rect = uv_rect or tex.finger_rect("R", S.FINGERS.index(finger))
     f, p, t = (np.array(v) for v in S.hand_frame("R"))
     wrist = np.array(S.BONE_MAP["Hand.R"].head)
     knuckle = wrist + f * S.MCP_FORWARD[finger] + t * S.MCP_LATERAL[finger]
@@ -137,7 +139,7 @@ def build_finger(finger, side="R", material=SKIN, uv_rect=(0.3, 0.0, 0.34, 0.45)
             return 1.0 + 0.0 * theta
         rings.append(K.Ring(center, t, p, rx, ry, n=2.4, weights=w))
     rings.append(_apex_ring(knuckle + f * (l1 + l2 + l3 + 0.0006), t, p, radius * 0.22, radius * 0.18, bones[2]))
-    mesh.sweep(rings, FINGER_SIDES, material, phase=0.0, region=f"finger_{finger}", uv0_rect=uv_rect, uv_tile=tile,
+    mesh.sweep(rings, FINGER_SIDES, material, phase=math.pi, region=f"finger_{finger}", uv0_rect=uv_rect, uv_tile=tile,
                closed_end=True)
     return mesh
 
@@ -153,8 +155,9 @@ def thumb_path():
     return pts
 
 
-def build_thumb(side="R", material=SKIN, uv_rect=(0.34, 0.0, 0.38, 0.45), tile=0.12):
+def build_thumb(side="R", material=SKIN, uv_rect=None, tile=0.12):
     mesh = K.Mesh()
+    uv_rect = uv_rect or tex.finger_rect("R", 4)
     f, p, _t = (np.array(v) for v in S.hand_frame("R"))
     pts = thumb_path()
     bones = [f"Thumb{i}.{side}" for i in range(3)]
@@ -163,25 +166,25 @@ def build_thumb(side="R", material=SKIN, uv_rect=(0.34, 0.0, 0.38, 0.45), tile=0
     total = curve.length
     edges = np.cumsum([0.0] + lengths)
     # (distância ao CMC, raio lateral, espessura): o polegar é mais largo que um dedo e achatado
-    profile = [(-0.006, 0.0150, 0.0125), (0.000, 0.0148, 0.0122), (0.020, 0.0132, 0.0112), (0.044, 0.0124, 0.0108),
-               (edges[1] - 0.006, 0.0118, 0.0103), (edges[1], 0.0124, 0.0108), (edges[1] + 0.006, 0.0116, 0.0101),
-               (edges[1] + 0.020, 0.0111, 0.0097), (edges[2] - 0.005, 0.0108, 0.0094), (edges[2], 0.0114, 0.0099),
-               (edges[2] + 0.005, 0.0107, 0.0092), (edges[2] + 0.018, 0.0100, 0.0087), (total - 0.004, 0.0084, 0.0076),
-               (total - 0.0012, 0.0060, 0.0056)]
+    profile = [(-0.022, 0.0178, 0.0150), (-0.010, 0.0184, 0.0150), (0.000, 0.0178, 0.0142), (0.014, 0.0156, 0.0126),
+               (0.032, 0.0134, 0.0114), (edges[1] - 0.006, 0.0120, 0.0105), (edges[1], 0.0126, 0.0110),
+               (edges[1] + 0.006, 0.0118, 0.0102), (edges[1] + 0.020, 0.0112, 0.0098), (edges[2] - 0.005, 0.0108, 0.0094),
+               (edges[2], 0.0114, 0.0099), (edges[2] + 0.005, 0.0107, 0.0092), (edges[2] + 0.018, 0.0100, 0.0087),
+               (total - 0.004, 0.0084, 0.0076), (total - 0.0012, 0.0060, 0.0056)]
     rings = []
     for d, rx, ry in profile:
         pos, tan = curve(max(d, 0.0) / total) if d >= 0 else (curve(0.0)[0] + curve(0.0)[1] * d, curve(0.0)[1])
         normal, _ = K.perpendicular_frame(tan, p)
         lateral = np.cross(tan, normal)
         w = K.blend_chain(bones, [edges[1], edges[2]], d, 0.006)
-        if d < 0.012:
-            share = K.ramp(d, -0.006, 0.012)
+        if d < 0.02:
+            share = K.ramp(d, -0.012, 0.020)
             w = K.normalize({**{k: v * share for k, v in w.items()}, f"Hand.{side}": 1.0 - share})
         rings.append(K.Ring(pos, lateral, normal, rx, ry, n=2.4, weights=w))
     pos_end, tan_end = curve(1.0)
     normal, _ = K.perpendicular_frame(tan_end, p)
     rings.append(_apex_ring(pos_end + tan_end * 0.0006, np.cross(tan_end, normal), normal, 0.0020, 0.0016, bones[2]))
-    mesh.sweep(rings, FINGER_SIDES, material, phase=0.0, region="thumb", uv0_rect=uv_rect, uv_tile=tile, closed_end=True)
+    mesh.sweep(rings, FINGER_SIDES, material, phase=math.pi, region="thumb", uv0_rect=uv_rect, uv_tile=tile, closed_end=True)
     return mesh
 
 
@@ -255,5 +258,6 @@ def build_hand_skin(side="R"):
 
 
 def mirror_arm(mesh):
-    """Do lado direito para o esquerdo: espelha em X e troca os sufixos dos ossos."""
-    return mesh.transform(np.diag([-1.0, 1.0, 1.0]), rename=lambda name: name.replace(".R", ".L"))
+    """Do lado direito para o esquerdo: espelha em X, troca os sufixos dos ossos e usa a metade esquerda do atlas da pele."""
+    mesh.transform(np.diag([-1.0, 1.0, 1.0]), rename=lambda name: name.replace(".R", ".L"))
+    return mesh.shift_uv0(0.5, 0.0, materials=(SKIN,))

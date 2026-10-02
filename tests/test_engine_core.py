@@ -199,6 +199,16 @@ def tick_seconds(game, seconds, inp=None):
         inp.clear_edges()
 
 
+def run_until(game, condition, seconds=5.0, what="a condição"):
+    """Roda quadros até `condition()` ser verdadeira. Pegar, ler e trocar pilha são gestos animados das mãos:
+    o efeito no jogo chega no instante do contato, não no quadro do [E]."""
+    for _ in range(int(seconds / DT)):
+        if condition():
+            return
+        step(game)
+    raise AssertionError(f"{what} não aconteceu em {seconds} s")
+
+
 def test_flashlight_keeps_full_power_in_open_space():
     """Regressão: a adaptação à parede media com um raio curto demais e deixava a lanterna sempre no piso."""
     game = start_playing(make_game(world=True))
@@ -269,23 +279,25 @@ def test_flashlight_battery_swap():
     game.state.has_flashlight = True
     step(game, InputState(reload=True))
     assert game.flashlight.swap_left == 0 and game.hud_model()["battery"]["alpha"] > 0, "sem pilha reserva: só mostra a bateria"
+    run_for(game, 1.6)                  # o gesto de recusa dura no máximo 1,4 s e trava a mão direita até acabar
     game.state.spare_batteries = 1
     game.state.battery = 0.95
     step(game, InputState(reload=True))
     assert game.flashlight.swap_left == 0 and game.state.spare_batteries == 1, "pilha ainda boa: não troca"
+    run_for(game, 1.6)                  # o gesto de recusa dura no máximo 1,4 s e trava a mão direita até acabar
     game.state.battery = 0.2
     step(game, InputState(reload=True))
+    run_until(game, lambda: game.state.spare_batteries == 0, what="a troca de pilha")
     assert kinds_logged(game, "battery_swap")[-1][2] == C.NOISE_PLAYER["battery_swap"]
-    assert game.flashlight.swap_left > 0
-    tick_seconds(game, 1.5)
-    assert game.state.battery > 0.99 and game.state.spare_batteries == 0
-    assert game.state.flashlight_on
+    run_until(game, lambda: game.state.flashlight_on, what="a lanterna acender de novo")
+    assert game.state.battery > 0.99
+    run_for(game, 2.0)                  # a mão ainda termina o gesto depois que a luz volta
     game.state.battery = 0.0
     game.state.flashlight_on = False
     game.state.spare_batteries = 1
     step(game, InputState(reload=True))
-    tick_seconds(game, 1.5)
-    assert game.state.flashlight_on and game.state.battery > 0.99, "lanterna morta não voltou a acender"
+    run_until(game, lambda: game.state.flashlight_on, what="a lanterna morta voltar a acender")
+    assert game.state.battery > 0.99 and game.state.spare_batteries == 0
 
 
 def test_flashlight_light_sits_at_the_lens_and_retracts_near_walls():
@@ -410,9 +422,10 @@ def test_pickup_item_inventory_and_prompt():
     assert game.interact.current is not None and game.interact.current.ref == "KEY"
     assert game.hud_model()["prompt"] == story.ITEM_PROMPTS["KEY"]
     step(game, InputState(interact=True))
-    assert game.state.has_key and "KEY" in game.state.collected
-    assert game.message_text == story.PICKED["KEY"]
+    run_until(game, lambda: "KEY" in game.state.collected, what="a mão tocar a chave")
+    assert game.state.has_key and game.message_text == story.PICKED["KEY"]
     assert kinds_logged(game, "pickup")[-1][2] == C.NOISE_PLAYER["pickup"]
+    run_until(game, lambda: not game.hands.busy, what="a mão voltar ao repouso")
     step(game)
     assert game.interact.current is None or game.interact.current.ref != "KEY"
     teleport(game, key[1] + 1.9, key[2] - 1.5, 0.0, 0)
@@ -497,7 +510,8 @@ def test_notes_pause_the_world_and_are_read_once():
     aim_at(game, (note[1], note[2], note[3] + 0.05))
     step(game)
     step(game, InputState(interact=True))
-    assert game.phase == "reading" and game.reader_note == "NOTE_2"
+    run_until(game, lambda: game.phase == "reading", what="o leitor abrir")
+    assert game.reader_note == "NOTE_2"
     model = game.hud_model()
     assert model["note"]["title"] == story.NOTES["NOTE_2"][0] and model["note"]["body"]
     clock = game.clock
@@ -519,7 +533,9 @@ def test_item_objects_hide_on_pickup_and_reappear_on_restore():
     aim_at(game, tuple(key_obj.location))
     step(game)
     step(game, InputState(interact=True))
-    assert key_obj.hide_viewport and key_obj.hide_render
+    run_until(game, lambda: key_obj.hide_viewport, what="a chave sumir da cena")
+    assert key_obj.hide_render
+    run_until(game, lambda: not game.hands.busy, what="a mão voltar ao repouso")
     saved = game.checkpoint["state"]
     game.state.restore(state.GameState().snapshot())
     game.interact.sync_scene()

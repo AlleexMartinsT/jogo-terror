@@ -72,10 +72,14 @@ def _prism(m, outline, z0, z1, mat, uv_scale=40.0):
 # ---------------------------------------------------------------------------
 # Chave do carro
 # ---------------------------------------------------------------------------
-def build_key():
+def build_key(detail=1.0):
     """Chave de carro: lâmina fresada com dentes, cabeça de borracha com miolo cromado, argola dupla,
-    três elos e o coelhinho de pelúcia da Emma. Um pouco maior que o real (1,3x) para ser mirada."""
+    três elos e o coelhinho de pelúcia da Emma. Um pouco maior que o real (1,3x) para ser mirada.
+
+    `detail` abaixo de 1 é a versão da mão (`props/handheld_key.py`): argolas sem chanfro e com menos
+    segmentos, que são o grosso dos triângulos."""
     k = 1.3
+    fine = detail >= 1.0
     item = Assembly("Item_KEY")
 
     blade = item.part(FINE_METAL)
@@ -94,7 +98,7 @@ def build_key():
 
     head = item.part(SMOOTH_ONLY)
     head.soft_box(0, 0.0345 * k, 0.0, 0.034 * k, 0.050 * k, 0.0105 * k, "black", radius=0.0115 * k,
-                  edge=0.0036 * k, corner_points=6, smooth=True)
+                  edge=0.0036 * k, corner_points=6 if fine else 3, smooth=True)
     head.cylinder(0, 0.0395 * k, 0.0105 * k, 0.0088 * k, 0.0009 * k, "chrome", seg=28, smooth=True)
     head.cylinder(0, 0.0395 * k, 0.0114 * k, 0.0046 * k, 0.0004 * k, "black", seg=20, smooth=True)
     head.soft_box(0, 0.0215 * k, 0.0105 * k, 0.0120 * k, 0.0070 * k, 0.0016 * k, "rubber", radius=0.0030 * k,
@@ -102,14 +106,15 @@ def build_key():
     head.soft_box(0, 0.0620 * k, 0.0105 * k, 0.0080 * k, 0.0060 * k, 0.0014 * k, "rubber", radius=0.0026 * k,
                   edge=0.0006 * k, corner_points=4, smooth=True)
 
-    rings = item.part(FINE_METAL)
-    rings.torus(0, 0.0660 * k, 0.0060 * k, 0.0046 * k, 0.0013 * k, "chrome", seg=20, seg_minor=6)
+    rings = item.part(FINE_METAL if fine else SMOOTH_ONLY)
+    ring_seg, loop_seg, link_seg, minor = (20, 36, 14, 5) if fine else (12, 18, 8, 4)
+    rings.torus(0, 0.0660 * k, 0.0060 * k, 0.0046 * k, 0.0013 * k, "chrome", seg=ring_seg, seg_minor=minor + 1)
     for turn, tilt in enumerate((12.0, 16.0)):
         rings.torus(0, 0.0840 * k + turn * 0.0010 * k, 0.0046 * k + turn * 0.0012 * k, 0.0125 * k, 0.00075 * k,
-                    "key_metal", seg=36, seg_minor=5, rx=tilt)
+                    "key_metal", seg=loop_seg, seg_minor=minor, rx=tilt)
     for link in range(3):
         y = 0.1060 * k + link * 0.0080 * k
-        rings.torus(0, y, 0.0036 * k, 0.0042 * k, 0.0010 * k, "chrome", seg=14, seg_minor=5,
+        rings.torus(0, y, 0.0036 * k, 0.0042 * k, 0.0010 * k, "chrome", seg=link_seg, seg_minor=minor,
                     rx=0.0 if link % 2 == 0 else 78.0)
 
     plush = item.part(craft.Finish(bevel=0.0, smooth_angle=70))
@@ -121,9 +126,8 @@ def build_key():
 # ---------------------------------------------------------------------------
 # Pilhas
 # ---------------------------------------------------------------------------
-def _cell(m, radius, length, label_mat="battery_label"):
+def _cell(m, radius, length, label_mat="battery_label", seg=28):
     """Uma pilha D deitada ao longo de +Z: base com anel, rótulo, selo de plástico, tampa e polo positivo."""
-    seg = 28
     can = [(0.0, 0.0), (radius * 0.55, 0.0), (radius * 0.78, 0.0008), (radius * 0.86, 0.0030),
            (radius * 0.86, 0.0075)]
     m.lathe(can, 0, 0, 0.0, "chrome", seg=seg, smooth=True, cap_top=False)

@@ -70,6 +70,8 @@ class Stage:
         self.entity_speed = 0.0           # m/s que a rig da entidade usa para o passo
         self.flash_hand = 0.0             # 0..1: tremor da lanterna na mão (a lanterna do jogo segue a câmera da cutscene)
         self.flashlight_follows = False
+        self._memo = {}
+        self.skipping = False             # True durante o skip: ações essenciais vão direto ao estado final
         self._loops = set()
         self._lit = set()                 # luzes CutLight_* que esta cutscene acendeu
         self._gains = set()               # luzes da casa que a cutscene escureceu/realçou
@@ -106,6 +108,12 @@ class Stage:
 
     def resolve(self, value):
         return value(self) if callable(value) else value
+
+    def memo(self, key, compute):
+        """Calcula `compute(stage)` na primeira vez e guarda: posições que a cutscene precisa fixar quando ela começa."""
+        if key not in self._memo:
+            self._memo[key] = compute(self)
+        return self._memo[key]
 
     # ---------------------------------------------------------------- objetos
     def obj(self, name):
@@ -157,11 +165,20 @@ class Stage:
         r = camera.rotate(q, local_point)
         return (origin[0] + r[0], origin[1] + r[1], origin[2] + r[2])
 
+    def to_local(self, mount, world_point):
+        """O inverso de `to_world`: um ponto do mundo no espaço do carregador (para a câmera presa ao carro olhar algo fora dele)."""
+        origin, q = self.mount_transform(mount)
+        w, x, y, z = q
+        r = camera.rotate((w, -x, -y, -z), (world_point[0] - origin[0], world_point[1] - origin[1], world_point[2] - origin[2]))
+        return r
+
     # ---------------------------------------------------------------- atores
     def start_actor(self, key, actor):
         self.stop_actor(key)
         self.actors[key] = actor
         self.safe(f"actor.start({key})", actor.start, self)
+        if self.errors and self.errors[-1].startswith(f"actor.start({key})"):
+            self.actors.pop(key, None)                  # não deu partida: não roda a cada quadro para falhar de novo
 
     def stop_actor(self, key):
         actor = self.actors.pop(key, None)

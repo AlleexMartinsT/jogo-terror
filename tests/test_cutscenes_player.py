@@ -22,9 +22,17 @@ PLAYER_STATE = (11.1, 5.9, 0.0, math.radians(-90), 1.65)          # cozinha, dia
 HALL_STATE = (5.6, 8.65, 2.8, math.radians(-90), 4.45)              # saindo do quarto do casal
 
 
+class FakeDof:
+    def __init__(self):
+        self.use_dof = False
+        self.focus_distance = 10.0
+        self.aperture_fstop = 2.8
+
+
 class FakeDatablock:
     def __init__(self, energy=None):
         self.angle = 1.0
+        self.dof = FakeDof()
         if energy is not None:
             self.energy = energy
 
@@ -34,7 +42,9 @@ class FakeObject:
         self.name = name
         self.location = _Location()
         self.rotation_mode = "XYZ"
+        self.rotation_euler = (0.0, 0.0, 0.0)
         self.rotation_quaternion = (1.0, 0.0, 0.0, 0.0)
+        self.scale = (1.0, 1.0, 1.0)
         self.hide_viewport = self.hide_render = light
         self.data = FakeDatablock(0.0 if light else None)
         self.props = {}
@@ -79,6 +89,7 @@ class FakeEntity:
         self.look_rate = 200.0
         self.head_limit = 2.42
         self.updates = 0
+        self.speeds = []
         self.death_amounts = []
         self.history = []
 
@@ -100,6 +111,7 @@ class FakeEntity:
 
     def update(self, dt, speed=None):
         self.updates += 1
+        self.speeds.append(speed)
 
     def head_position(self):
         x, y, z, _ = self.transform or (0, 0, 0, 0)
@@ -114,17 +126,22 @@ class FakeEntity:
 class FakeDoors:
     def __init__(self):
         self.snaps = []
+        self.glides = []
 
     def snap(self, door_id, value):
         self.snaps.append((door_id, value))
 
-    def set_openness(self, door_id, value):
-        self.snaps.append((door_id, value))
+    def set_openness(self, door_id, value, speed=None):
+        self.glides.append((door_id, value, speed))
 
 
 class FakeHost:
-    def __init__(self, state=PLAYER_STATE, missing=(), audio_fails=False):
+    def __init__(self, state=PLAYER_STATE, missing=(), audio_fails=False, pitch=0.0, body=None):
         self.audio = FakeAudio(audio_fails)
+        self.pitch = pitch
+        self.body = body
+        self.body_shown = []
+        self.gains = {}
         self.entity = FakeEntity()
         self.doors = FakeDoors()
         self.scene = _FakeScene()
@@ -133,10 +150,12 @@ class FakeHost:
         self.camera_calls = []
         self.finished = []
         self.power_calls, self.flashlight_calls, self.placed = [], [], []
-        self.silence_calls, self.brain_calls = [], 0
+        self.silence_calls, self.brain_calls, self.brain_pos = [], 0, None
         self.objects = {}
         for name in ("CutsceneCam", "Car", "GarageRollup", "Car_Headlight_L", "Car_Headlight_R",
-                     "Cut_EndClock", "Cut_DawnGlow"):
+                     "Cut_EndClock", "Cut_DawnGlow", "PlayerCam", "Car_Wheel_FL", "Car_Wheel_FR", "Car_Wheel_RL",
+                     "Car_Wheel_RR", "Cut_Bunny", "Cut_Wheel", "Cut_Key", "Cut_KeyCharm", "Cut_Dust", "Cut_Sparks",
+                     "Cut_LidTop", "Cut_LidBottom", "AlarmClock"):
             if name not in missing:
                 self.objects[name] = FakeObject(name, light="Headlight" in name)
         if "Cut_EndClock" in self.objects:
@@ -148,6 +167,15 @@ class FakeHost:
     def set_camera(self, obj):
         self.camera_calls.append(obj)
         self.camera = obj
+
+    def player_pitch(self):
+        return self.pitch
+
+    def set_light_gain(self, name, gain):
+        self.gains[name] = gain
+
+    def show_body(self, visible):
+        self.body_shown.append(bool(visible))
 
     def get_object(self, name):
         return self.objects.get(name)
@@ -171,8 +199,9 @@ class FakeHost:
     def noise_silence(self, seconds):
         self.silence_calls.append(seconds)
 
-    def entity_brain_activate(self):
+    def entity_brain_activate(self, pos=None):
         self.brain_calls += 1
+        self.brain_pos = pos
 
     def finish(self, reason):
         self.finished.append(reason)

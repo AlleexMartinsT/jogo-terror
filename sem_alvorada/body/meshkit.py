@@ -179,6 +179,13 @@ class Mesh:
             self.weights = [{rename(k): v for k, v in w.items()} for w in self.weights]
         return self
 
+    def shift_uv0(self, du, dv, materials=None):
+        """Desloca o atlas das faces (opcionalmente só as de certos materiais): a mão esquerda usa outra metade."""
+        for i, face in enumerate(self.uv0):
+            if materials is None or self.material[i] in materials:
+                self.uv0[i] = tuple((u + du, v + dv) for u, v in face)
+        return self
+
     def copy(self):
         clone = Mesh()
         clone.merge(self)

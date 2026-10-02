@@ -8,7 +8,6 @@ HUD_FLASHLIGHT = "LANTERNA [F]"
 HUD_NO_CHARGE = "SEM CARGA"
 HUD_SWAP_HINT = "[R] trocar a pilha"
 HUD_STAMINA = "FÔLEGO"
-MSG_BATTERY_GOOD = "A pilha ainda está boa."     # só o flashlight.py usa; sai quando ele parar de falar
 
 # Roda de itens (Q ou Tab): um nome por setor, na ordem de inventory.SLOTS.
 WHEEL_LABELS = {"FLASHLIGHT": "Lanterna", "BATTERY": "Pilhas", "KEY": "Chave", "MAP": "Mapa", "NOTE": "Anotações"}
@@ -50,15 +49,17 @@ README_LINES = [
     "   F            liga e desliga a lanterna",
     "   R            troca a pilha da lanterna",
     "   E            interagir (pegar, ler, abrir portas)",
+    "   Q ou Tab     roda de itens: segure, mova o mouse para o setor e solte",
     "   Enter        confirmar nos menus",
     "   Espaço       pular cena",
     "",
     "Objetivo: ache a chave do carro, o mapa da cidade e 3 pilhas reserva, destranque",
     "a porta da garagem (cozinha), entre no carro e fuja.",
     "",
-    "O Alto escuta melhor do que enxerga. O medidor SOM, no canto inferior esquerdo,",
-    "mostra o que você faz de barulho (VOCÊ), o ruído que esconde você (AMBIENTE)",
-    "e o que você ouve dele (ENTIDADE).",
+    "O Alto escuta melhor do que enxerga. A barra no canto inferior esquerdo mostra o",
+    "que você faz de barulho (VOCÊ) e, quando dá para ouvi-lo, a ENTIDADE. O objetivo,",
+    "a lista de coleta e o medidor completo (com o AMBIENTE, que esconde você) ficam",
+    "no menu de pausa (Esc).",
     "",
     "Opções de linha de comando (depois de '--'):",
     "   --quality low|medium|high   qualidade gráfica",

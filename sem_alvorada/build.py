@@ -23,8 +23,8 @@ from sem_alvorada import BLEND_PATH, compat  # noqa: E402
 from sem_alvorada import conventions as C  # noqa: E402
 from sem_alvorada.buildctx import BuildContext  # noqa: E402
 
-# ordem importa: world -> props -> entity -> cutscenes -> ai (lê colisões) -> audio -> engine
-STAGES = ["world", "props", "entity", "cutscenes", "ai", "audio", "engine"]
+# ordem importa: world -> props -> entity -> cutscenes -> ai (lê colisões) -> audio -> body -> engine
+STAGES = ["world", "props", "entity", "cutscenes", "ai", "audio", "body", "engine"]
 
 
 def fresh_scene():

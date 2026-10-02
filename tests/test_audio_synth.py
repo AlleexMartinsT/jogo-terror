@@ -182,6 +182,79 @@ def test_stalk_step_is_quiet_and_heavy_step_is_deep():
     assert np.abs(_sound("ent_step_stalk_1")[0]).max() < np.abs(heavy).max() * 0.5
 
 
+def _strongest_partial_in_windows(x, sr, band, parts=8):
+    """Parcial mais forte de `band` em `parts` janelas do trecho ativo do som."""
+    active = np.nonzero(np.abs(x) > 0.05 * np.abs(x).max())[0]
+    x = x[active[0]:active[-1]]
+    size = len(x) // parts
+    return [_strongest_partial(x[i * size:(i + 1) * size], sr, *band) for i in range(parts)]
+
+
+def _band_profile(x, sr, bands=32):
+    spectrum = np.abs(np.fft.rfft(x * np.hanning(len(x)), 16384)) ** 2
+    freqs = np.fft.rfftfreq(16384, 1.0 / sr)
+    edges = np.geomspace(60, 16000, bands + 1)
+    energy = np.array([spectrum[(freqs >= lo) & (freqs < hi)].sum() for lo, hi in zip(edges, edges[1:])])
+    return 10.0 * np.log10(energy / energy.sum() + 1e-12)
+
+
+def test_door_creaks_are_different_and_pitch_rises_then_falls():
+    names = [f"door_creak_{i}" for i in range(1, 5)]
+    profiles = {n: _band_profile(*_sound(n)) for n in names}
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            distance = float(np.sqrt(np.mean((profiles[a] - profiles[b]) ** 2)))
+            assert distance > 6.0, f"{a} e {b} soam parecidos ({distance:.1f} dB)"
+    for name, band in (("door_creak_2", (600, 3000)), ("door_creak_3", (400, 2000))):
+        x, sr = _sound(name)
+        contour = _strongest_partial_in_windows(x, sr, band)
+        peak = max(contour[2:6])
+        assert peak > 1.3 * contour[0] and peak > 1.3 * contour[-1], f"{name}: afinação sem corcova {contour}"
+    for name in names:
+        x, sr = _sound(name)
+        window = int(0.02 * sr)
+        rms = np.sqrt(np.mean(x[:len(x) // window * window].reshape(-1, window) ** 2, axis=1))
+        active = rms[rms > 0.05 * rms.max()]
+        assert active.std() / active.mean() > 0.4, f"{name}: volume constante demais, vira zumbido"
+        assert 0.9 <= len(x) / sr <= 2.0
+
+
+def test_door_motion_sounds_carry_no_creak_and_latch_is_a_click():
+    latch, sr = _sound("door_latch")
+    assert analysis.attack_ms(latch, sr) < 15.0 and _band_energy(latch, sr, 1500, 9000) > 0.35, "o trinco é um clique de metal"
+    handle, sr = _sound("door_handle")
+    assert len(handle) / sr < 1.0
+    for name in ("door_open", "door_open_soft", "door_close"):
+        x, sr = _sound(name)
+        assert _band_energy(x, sr, 0, 300) < 0.45, f"{name}: grave demais, parece gemido"
+        assert _band_energy(x, sr, 200, 2000) > 0.2, f"{name}: sem a madeira e o ar da folha"
+    soft, _ = _sound("door_open_soft")
+    normal, _ = _sound("door_open")
+    assert np.abs(soft).max() < np.abs(normal).max()
+
+
+def test_interaction_sounds_have_their_character():
+    for name in ("flash_click_on", "flash_click_off", "battery_clack", "ui_wheel_tick"):
+        x, sr = _sound(name)
+        assert analysis.attack_ms(x, sr) < 15.0, f"{name}: ataque lento"
+    for name in ("flash_click_on", "flash_click_off", "ui_wheel_open", "ui_wheel_close"):
+        assert len(_sound(name)[0]) / _sound(name)[1] < 0.5
+    assert len(_sound("ui_wheel_tick")[0]) / _sound("ui_wheel_tick")[1] < 0.2
+    on, sr = _sound("flash_click_on")
+    off, _ = _sound("flash_click_off")
+    assert analysis.spectral_centroid(on, sr) > analysis.spectral_centroid(off, sr), "ligar tem de soar mais seco que desligar"
+    assert _band_energy(_sound("battery_clack")[0], 44100, 0, 400) > 0.1
+    for name in ("map_fold", "paper_pick"):
+        x, sr = _sound(name)
+        assert analysis.spectral_centroid(x, sr) > 3500, f"{name}: papel é agudo e granulado"
+    for i in range(1, 4):
+        x, sr = _sound(f"cloth_rustle_{i}")
+        assert analysis.attack_ms(x, sr) > 20.0 and _band_energy(x, sr, 0, 250) < 0.1, f"cloth_rustle_{i}"
+    flicker, sr = _sound("flash_flicker_burst")
+    envelope = np.abs(flicker).reshape(-1, 441).max(axis=1)
+    assert np.count_nonzero(np.diff((envelope > 0.25 * envelope.max()).astype(int)) == 1) >= 3, "esperava ao menos 3 piscadas"
+
+
 def main():
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:

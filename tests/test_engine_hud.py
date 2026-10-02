@@ -300,12 +300,12 @@ def test_interaction_prompt_marks_blocked_states():
     blocked = Canvas(WIDTH, HEIGHT)
     hud.draw_crosshair(blocked, model)
     assert story.PROMPT_LOCKED["front"] in texts_of(blocked)
-    assert any(op[0] == "rect" and op[5][:3] == hud.WARNING[:3] for op in blocked.ops)
+    assert any(op[0] == "rect" and op[5][:3] == hud.WARNING_BRIGHT[:3] for op in blocked.ops)
     model["prompt"], model["prompt_blocked"] = story.PROMPT_OPEN, False
     normal = Canvas(WIDTH, HEIGHT)
     hud.draw_crosshair(normal, model)
     assert texts_of(normal) == [story.PROMPT_OPEN]
-    assert not any(op[0] == "rect" and op[5][:3] == hud.WARNING[:3] for op in normal.ops)
+    assert not any(op[0] == "rect" and op[5][:3] == hud.WARNING_BRIGHT[:3] for op in normal.ops)
 
 
 def tile_plates(canvas):
@@ -323,7 +323,6 @@ def test_wheel_draws_five_tiles_with_names_counts_and_the_selected_one_lighter()
     st = game.state
     st.has_map = True
     st.notes_read.add("NOTE_1")
-    game.hands.held = C.ITEM_FLASHLIGHT
     step(game, wheel_inputs(0.0, 0.0))
     step(game, wheel_inputs(0.18, 0.0))                           # mouse à direita: segundo setor depois do topo = chave
     wheel = game.hud_model()["wheel"]
@@ -417,7 +416,8 @@ def test_render_screenshots():
     game.phase, game.reader_note = "play", None
     game.state.has_map = True
     game.state.notes_read.add("NOTE_1")
-    game.hands.held = C.ITEM_BATTERY
+    game.hands.equip(C.ITEM_BATTERY)
+    run_for(game, 2.5)
     step(game, wheel_inputs())
     for name, (dx, dy) in {"wheel_pilhas": (0.2, 0.05), "wheel_chave": (0.1, -0.2)}.items():
         step(game, wheel_inputs(dx, dy))

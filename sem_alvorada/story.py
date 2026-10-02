@@ -52,9 +52,6 @@ PROMPT_LOOK = "Lá fora só existe o preto"
 
 # Falas do personagem: só estas e as de PICKED/COLLECT_DONE (a regra está em docs/FASE3.md).
 OPENING_LINE = "Sem sol, de novo. Preciso de luz. A lanterna, no criado-mudo."
-FLASHLIGHT_DEAD = "A lanterna apagou. [R] para trocar as pilhas."
-NO_SPARE = "Sem pilhas reserva."
-BATTERY_SWAPPED = "Pilhas trocadas."
 PICKED = {
     "FLASHLIGHT": "A lanterna. A pilha já não é nova.",
     "KEY": "A chave do carro. O chaveiro ainda tem o coelhinho dela.",

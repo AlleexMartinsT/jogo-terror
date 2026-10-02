@@ -1,11 +1,12 @@
 """Fábricas de ações (`Cue`) e de trilhas contínuas (`Track.apply`) usadas pelos roteiros.
 
 Convenção: ações que MUDAM O ESTADO DO JOGO (energia, porta, posição do jogador, entidade, cérebro)
-são `essential=True`: se o jogador pular a cutscene, elas rodam mesmo assim. Som, luz cosmética e
-câmera não são essenciais.
+são `essential=True`: se o jogador pular a cutscene, elas rodam mesmo assim. Som, luz cosmética, atores,
+corpo e câmera não são essenciais.
 """
 import math
 
+from .curves import Curve, Path, as_curve, clamp01, lerp3
 from .timeline import Action
 
 Vec = tuple
@@ -38,9 +39,28 @@ def flashlight(on):
     return Action(lambda st: st.safe("set_flashlight", st.host.set_flashlight, on), essential=True)
 
 
+def flashlight_follows(on=True):
+    """A lanterna do jogo passa a seguir a câmera da cutscene (com o tremor da mão); a PlayerCam volta no fim."""
+    def run(stage):
+        stage.flashlight_follows = on
+    return Action(run)
+
+
+def flash_hand(level):
+    """Quanto a lanterna treme na mão do Daniel (0..1)."""
+    def run(stage):
+        stage.flash_hand = level
+    return Action(run)
+
+
 def cut_light(name, energy):
     """Liga (energia > 0) ou apaga uma luz `CutLight_*`."""
     return Action(lambda st: st.set_light(name, energy))
+
+
+def house_light(name, gain):
+    """Realça ou escurece uma luz da casa (`Light_*`) por cima do que o LightManager decidiu."""
+    return Action(lambda st: st.house_light(name, gain))
 
 
 def headlights(on):
@@ -72,6 +92,18 @@ def hide_matching(anchor_pos, radius, needles, unless=("nightstand", "col_", "an
 
 
 # --------------------------------------------------------------------------
+# Atores (animação de objetos que dura vários quadros; ver anim.py)
+# --------------------------------------------------------------------------
+def actor(key, factory):
+    """Começa um ator. `factory(stage)` cria uma instância nova a cada execução (o ator tem estado) e pode olhar o palco."""
+    return Action(lambda st: st.start_actor(key, factory(st)))
+
+
+def stop_actor(key):
+    return Action(lambda st: st.stop_actor(key))
+
+
+# --------------------------------------------------------------------------
 # Jogador, portas e cérebro
 # --------------------------------------------------------------------------
 def place_player(x, y, z, yaw):
@@ -81,8 +113,34 @@ def place_player(x, y, z, yaw):
     return Action(run, essential=True)
 
 
-def activate_brain():
-    return Action(lambda st: st.safe("entity_brain_activate", st.host.entity_brain_activate), essential=True)
+def activate_brain(pos=None):
+    """Acorda o cérebro da entidade. `pos` (ponto ou função) diz onde a cutscene a deixou, para seguir dali."""
+    def run(stage):
+        where = stage.resolve(pos)
+        if where is None:
+            stage.safe("entity_brain_activate", stage.host.entity_brain_activate)
+            return
+        try:
+            stage.host.entity_brain_activate(where)
+        except TypeError:                          # host antigo, sem o argumento
+            stage.safe("entity_brain_activate", stage.host.entity_brain_activate)
+        except Exception as exc:                   # noqa: BLE001
+            stage.errors.append(f"entity_brain_activate: {exc!r}")
+    return Action(run, essential=True)
+
+
+def open_door(door_id, seconds=1.4):
+    """Abre a porta com o movimento do jogo (`doors.set_openness`, a mesma curva suave das portas).
+
+    Ao pular, a porta é posta aberta na hora (o Director cobraria isso de qualquer jeito).
+    """
+    def run(stage):
+        doors = stage.host.doors
+        if stage.skipping:
+            stage.safe("doors.snap", doors.snap, door_id, 1.0)
+        else:
+            stage.safe("doors.set_openness", doors.set_openness, door_id, 1.0, 1.0 / seconds)
+    return Action(run, essential=True)
 
 
 # --------------------------------------------------------------------------
@@ -130,39 +188,96 @@ def entity_hide():
     return Action(lambda st: st.entity.set_visible(False), essential=True)
 
 
+def entity_walk(start, end, yaw, anim="stalk"):
+    """Trilha: a entidade anda de `start` a `end` (passo constante) e a rig anima o passo no ritmo da velocidade.
+
+    Use com `Track(..., ease="linear")`: a velocidade é distância / duração, que a trilha não conhece, então
+    o roteiro passa a duração em `entity_walk_speed`. Aqui `f` só interpola a posição.
+    """
+    def apply(stage, f):
+        entity = stage.entity
+        x, y, z = lerp3(stage.resolve(start), stage.resolve(end), f)
+        entity.set_transform(x, y, z, stage.resolve(yaw))
+        if f < 1.0:
+            entity.set_anim(anim)
+    return apply
+
+
+def entity_speed(value):
+    """Velocidade (m/s) que o passo da entidade usa a partir daqui; 0 a faz parar no lugar."""
+    def run(stage):
+        stage.entity_speed = value
+    return Action(run, essential=True)
+
+
+def entity_stands(anim):
+    """Termina a caminhada: para o passo e põe a animação `anim`."""
+    def run(stage):
+        stage.entity_speed = 0.0
+        stage.entity.set_anim(anim)
+    return Action(run, essential=True)
+
+
+# --------------------------------------------------------------------------
+# Corpo do jogador (BodyRig; sem ele, NullBody e tudo isto vira nada)
+# --------------------------------------------------------------------------
+def body_show(on=True):
+    """Mostra o corpo do Daniel na cutscene e prende a referência dos braços à câmera da cutscene."""
+    def run(stage):
+        stage.show_body(on)
+        if on:
+            stage.body_call("attach_view", stage.obj("CutsceneCam"))
+    return Action(run)
+
+
+def body_pose(name, seconds=0.0):
+    return Action(lambda st: st.body_call("pose", name, seconds))
+
+
+def body_place(x, y, z, yaw):
+    def run(stage):
+        stage.body_call("place", *(stage.resolve(v) for v in (x, y, z, yaw)))
+    return Action(run)
+
+
+def arm_release(side, blend=0.6):
+    def run(stage):
+        arm = stage.arm(side)
+        if arm is not None:
+            stage.safe("arm.release", arm.release, blend)
+    return Action(run)
+
+
+class HandKey:
+    """Uma chave da mão: no espaço da câmera (X direita, Y cima, -Z frente, metros), rotação em graus, peso do IK, dedos."""
+    __slots__ = ("t", "pos", "rot", "weight", "curls", "spread")
+
+    def __init__(self, t, pos, rot=(0.0, 0.0, 0.0), weight=1.0, curls=(0.25,) * 5, spread=0.0):
+        self.t, self.pos, self.rot, self.weight, self.curls, self.spread = t, pos, rot, weight, curls, spread
+
+
+def hand_track(side, duration, keys):
+    """Trilha da mão `side` ("L"/"R"): percorre `keys` (tempos relativos ao começo da trilha, em segundos)."""
+    keys = sorted(keys, key=lambda k: k.t)
+    pos = Path([(k.t, k.pos) for k in keys], rest_ends=False)
+    rot = Path([(k.t, k.rot) for k in keys], rest_ends=False)
+    weight = Curve([(k.t, k.weight) for k in keys], rest_ends=False)
+    spread = Curve([(k.t, k.spread) for k in keys], rest_ends=False)
+    curls = [Curve([(k.t, k.curls[i]) for k in keys], rest_ends=False) for i in range(5)]
+
+    def apply(stage, f):
+        arm = stage.arm(side)
+        if arm is None:
+            return
+        t = f * duration
+        stage.safe("arm.set_target", arm.set_target, pos.at(t), rot.at(t), clamp01(weight(t)))
+        stage.safe("arm.set_fingers", arm.set_fingers, [clamp01(c(t)) for c in curls], spread(t))
+    return apply
+
+
 # --------------------------------------------------------------------------
 # Trilhas contínuas: recebem (stage, f) com f de 0 a 1
 # --------------------------------------------------------------------------
-def _lerp3(a, b, f):
-    return tuple(x + (y - x) * f for x, y in zip(a, b))
-
-
-def door_openness(door_id, start=0.0, end=1.0):
-    def apply(stage, f):
-        stage.safe("doors.snap", stage.host.doors.snap, door_id, start + (end - start) * f)
-    return apply
-
-
-def move_object(name, start: Vec, end: Vec):
-    """Move um objeto (se existir) e registra o deslocamento para câmeras que o acompanham."""
-    def apply(stage, f):
-        stage.moved[name] = tuple((e - s) * f for s, e in zip(start, end))
-        obj = stage.obj(name)
-        if obj is not None:
-            obj.location = _lerp3(start, end, f)
-    return apply
-
-
-def lift_object(name, start_z, end_z):
-    """Sobe/desce só o Z de um objeto (portão da garagem). `sa_open_lift` do objeto, se existir, manda no destino."""
-    def apply(stage, f):
-        obj = stage.obj(name)
-        if obj is not None:
-            target = obj.get("sa_open_lift", end_z) if end_z > start_z else end_z
-            obj.location.z = start_z + (target - start_z) * f
-    return apply
-
-
 def dawn_ramp(start, end):
     """O céu clareia de `start` a `end` (0 = noite, 1 = horizonte e halo bem mais claros)."""
     def apply(stage, f):
@@ -187,4 +302,14 @@ def entity_lunge(eye, amount_start=0.0, amount_end=1.0):
     """Leva a entidade até o agarrão sobre o rosto do jogador (`eye` fixa: posição dos olhos)."""
     def apply(stage, f):
         stage.entity.pose_for_death(stage.resolve(eye), amount_start + (amount_end - amount_start) * f)
+    return apply
+
+
+def curve_value(curve, setter):
+    """Trilha genérica: `setter(stage, valor)` com `curve(t_local)`; `f` vira o tempo da curva (0..duração da curva)."""
+    curve = as_curve(curve)
+    span = curve.times[-1]
+
+    def apply(stage, f):
+        setter(stage, curve(f * span))
     return apply

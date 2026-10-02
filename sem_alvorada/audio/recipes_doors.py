@@ -92,8 +92,10 @@ def door_latch(rng):
     """Trinco: a lingueta chanfrada raspa na contra-fechadura, estala no lugar e a folha assenta."""
     out = np.zeros(D.samples(0.45))
     D.mix_into(out, _burst(rng, D.samples(0.03), 2200, 9000, 0.008, attack=0.003), 0.0, gain=0.3)
-    D.mix_into(out, _latch(rng, 1.15), 0.014)
-    D.mix_into(out, _wood_stop(rng, 0.55), 0.014)
+    D.mix_into(out, _metal_tick(rng, 1.0, ring=0.014), 0.014)
+    D.mix_into(out, _metal_tick(rng, 0.6, ring=0.02), 0.017)
+    D.mix_into(out, D.thump(D.samples(0.15), 240, 130, 0.01, 0.025), 0.014, gain=0.22)
+    D.mix_into(out, _wood_stop(rng, 0.16), 0.016)
     D.mix_into(out, _metal_tick(rng, 0.3, ring=0.008), 0.095)       # a folha volta um fio e assenta
     D.mix_into(out, _burst(rng, D.samples(0.04), 500, 2200, 0.01), 0.095, gain=0.18)
     return D.reverb(rng, out, 0.28, wet=0.13)
@@ -182,7 +184,7 @@ def _creak_body(n, peak_at, floor=0.18):
 
 
 def _finish_creak(rng, x):
-    x = np.tanh(x / 2.2) * 2.2
+    x = np.tanh(x / 3.5) * 3.5
     return D.reverb(rng, D.lowpass(x, 9500), 0.32, wet=0.12)
 
 
@@ -195,11 +197,12 @@ def _creak_old_wood(rng):
     """1: madeira velha, grave e áspera. Gemido de 50 a 115 Hz com um fio de guincho por cima."""
     n = D.samples(1.3)
     peak_at = 0.48
-    groan = _groan(rng, n, _pitch_hump(n, 50, 116, 62, peak_at),
+    groan = _groan(rng, n, _pitch_hump(n, 46, 150, 58, peak_at),
                    [(170, 100, 1.0), (360, 180, 0.9), (820, 380, 0.45), (1500, 600, 0.15)])
-    pin = _squeal(rng, n, _pitch_hump(n, 410, 700, 470, peak_at), D.sawtooth_weights(7, 1.6),
+    pin = _squeal(rng, n, _pitch_hump(n, 360, 760, 420, peak_at), D.sawtooth_weights(7, 1.6),
                   [(900, 500, 1.0), (1700, 800, 0.4)])
-    out = groan * _grip(rng, n, 10, -0.5, 0.45, 0.12) + 0.2 * pin * _grip(rng, n, 7, 0.1, 0.4)
+    out = groan * _grip(rng, n, 5, -0.2, 0.4, 0.04) * (1.0 + 0.5 * D.smooth_noise(rng, n, 24)) \
+        + 0.5 * pin * _grip(rng, n, 4, 0.0, 0.35, 0.0)
     return _finish_creak(rng, out * _creak_body(n, peak_at))
 
 
@@ -220,11 +223,11 @@ def _creak_wood_and_pin(rng):
     """3: rangido médio, madeira e pino ao mesmo tempo. O mais parecido com uma porta de casa."""
     n = D.samples(1.15)
     peak_at = 0.5
-    groan = _groan(rng, n, _pitch_hump(n, 125, 330, 180, peak_at), [(300, 150, 1.0), (900, 400, 0.8), (1900, 700, 0.35)],
+    groan = _groan(rng, n, _pitch_hump(n, 120, 360, 170, peak_at), [(300, 150, 1.0), (900, 400, 0.8), (1900, 700, 0.35)],
                    jitter=0.1, amp_jitter=0.4)
-    pin = _squeal(rng, n, _pitch_hump(n, 520, 1180, 700, peak_at), D.sawtooth_weights(8, 1.35),
+    pin = _squeal(rng, n, _pitch_hump(n, 480, 1500, 650, peak_at), D.sawtooth_weights(8, 1.35),
                   [(1500, 700, 1.0), (2800, 1100, 0.4)])
-    out = groan * _grip(rng, n, 13, -0.35, 0.4, 0.15) + 0.5 * pin * _grip(rng, n, 9, 0.05, 0.35)
+    out = groan * _grip(rng, n, 7, -0.3, 0.4, 0.1) + 0.8 * pin * _grip(rng, n, 5, 0.1, 0.3)
     return _finish_creak(rng, out * _creak_body(n, peak_at))
 
 
