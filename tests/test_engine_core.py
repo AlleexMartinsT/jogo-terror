@@ -301,20 +301,33 @@ def test_flashlight_battery_swap():
 
 
 def test_flashlight_light_sits_at_the_lens_and_retracts_near_walls():
+    """A luz nasce à frente da lente da lanterna na mão (onde a mão a pôs) e recua ao longo do cano perto de parede."""
+    from mathutils import Vector
     for mode, game in each_mode():
         game.state.has_flashlight = game.state.flashlight_on = True
         beam = game.scene.objects[C.OBJ_FLASHLIGHT]
+        flash = game.flashlight
+
+        def at_the_lens():
+            """Posição da luz pela lanterna: ponto de saída da lente, recuado `slide` ao longo do cano."""
+            grip = flash.lantern_matrix
+            slide = flashlight_module.LIGHT_FORWARD_MAX - flash.forward_offset
+            return grip @ Vector((*flashlight_module.LIGHT_FROM_GRIP[:2], flashlight_module.LIGHT_FROM_GRIP[2] + slide))
+
         teleport(game, 6.5, 2.0, 0.0, 0)                       # hall comprido à frente
         run_for(game, 0.6)
-        assert abs(beam.location.z + flashlight_module.LIGHT_FORWARD_MAX) < 0.01, (mode, beam.location)
+        assert abs(flash.forward_offset - flashlight_module.LIGHT_FORWARD_MAX) < 0.01, (mode, flash.forward_offset)
+        assert (beam.location - at_the_lens()).length < 0.01, (mode, beam.location, at_the_lens())
+        assert beam.location.z < -0.35, "a luz tem de sair bem à frente da câmera"
         teleport(game, 7.5, 9.575, 0.0, 0)                     # encostado na parede norte (fora da janela do hall)
         run_for(game, 0.6)
-        assert -flashlight_module.LIGHT_FORWARD_MAX < beam.location.z <= -flashlight_module.LIGHT_FORWARD_MIN + 1e-6
+        assert flashlight_module.LIGHT_FORWARD_MIN - 1e-6 <= flash.forward_offset < flashlight_module.LIGHT_FORWARD_MAX
         distance_to_wall = 10.0 - 0.125 - game.player.y
-        assert -beam.location.z <= distance_to_wall - flashlight_module.WALL_GAP + 0.02, (mode, beam.location.z, distance_to_wall)
+        assert flash.forward_offset <= distance_to_wall - flashlight_module.WALL_GAP + 0.02, (mode, flash.forward_offset)
+        assert (beam.location - at_the_lens()).length < 0.01, (mode, beam.location, at_the_lens())
         teleport(game, 6.5, 2.0, 0.0, 0)
         run_for(game, 0.6)
-        assert abs(beam.location.z + flashlight_module.LIGHT_FORWARD_MAX) < 0.01, "a luz não voltou depois de afastar da parede"
+        assert abs(flash.forward_offset - flashlight_module.LIGHT_FORWARD_MAX) < 0.01, "a luz não voltou depois de afastar da parede"
 
 
 def test_flashlight_lags_behind_camera_and_viewmodel_follows_pickup():

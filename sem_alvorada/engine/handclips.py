@@ -1,12 +1,13 @@
 """Biblioteca de clipes das mãos: um gesto único para cada tipo de item, escrito como dados.
 
-Espaço da câmera (metros): X direita, Y cima, -Z frente. Rotações em graus, Euler XYZ, aplicadas a uma mão
-neutra com a palma para baixo e os dedos para a frente (-Z); o eixo Z da câmera é, portanto, o eixo dos dedos
-(rz = rolar a palma para cima ou para baixo).
+Espaço da câmera (metros): X direita, Y cima, -Z frente. Quem escreve os clipes dá as rotações em graus, Euler
+XYZ, aplicadas a uma mão neutra com a palma para baixo e os dedos para a frente (-Z); o eixo Z da câmera é,
+portanto, o eixo dos dedos (rz = rolar a palma para cima ou para baixo). Dentro das trilhas elas viram
+quaternions (`QuatTrack`), porque várias garras deixam a mão com os dedos na horizontal, onde o Euler trava.
 
 Trilhas de uma mão (`side` = "R" ou "L"): `pos`, `rot`, `curl` (5 dedos, 0 aberto .. 1 fechado), `w` (peso do
 IK: 0 solta o braço) e `attach` (0 o item ainda está no mundo, 1 está preso à mão). Extras `x.*` movem partes
-do item: tampa da lanterna, pilha entrando, dobras do mapa.
+do item: tampa da lanterna (`cap`), dobras do mapa (`fold1`, `fold2`) e o fechar do campo de visão (`zoom`).
 
 Depois do contato o que importa é onde o ITEM aparece na tela (legível no escuro, sem cobrir a mira): essas
 chaves são escritas como poses do item e convertidas para a mão pela garra de cada item (`GRIPS`). Antes do
@@ -18,21 +19,21 @@ import bpy  # noqa: F401 - `mathutils` só existe depois deste import
 from mathutils import Euler, Matrix, Vector
 
 from .. import conventions as C
-from .handtrack import Clip, Event, Key, Track, number
+from .handtrack import Clip, Event, Key, QuatTrack, Track, number
 
 SIDE_SIGN = {"R": 1.0, "L": -1.0}
 OFF_SCREEN = {"R": (0.36, -0.42, -0.14), "L": (-0.36, -0.42, -0.14)}
 REACH_LIMIT = 0.60                 # até onde a palma chega à frente do rosto (m)
 
-# Dedos do polegar ao mindinho
-OPEN = (0.10, 0.08, 0.08, 0.10, 0.12)
-RELAX = (0.30, 0.28, 0.30, 0.34, 0.38)
-FLASH_FIST = (0.30, 0.82, 0.88, 0.90, 0.88)       # o polegar fica livre sobre o botão
-FLASH_CLICK = (0.62, 0.82, 0.88, 0.90, 0.88)
-FLASH_GRAB = (0.62, 0.75, 0.78, 0.80, 0.78)
-PINCH = (0.58, 0.62, 0.28, 0.34, 0.40)
-CUP = (0.34, 0.40, 0.44, 0.48, 0.52)
-HOLD_SHEET = (0.55, 0.58, 0.20, 0.24, 0.30)
+# Dedos do polegar ao mindinho (valores na escala de `body.fingers.PRESETS`)
+OPEN = (0.35, 0.16, 0.18, 0.22, 0.28)            # mão que alcança: relaxada, o polegar não aponta para fora
+RELAX = (0.30, 0.22, 0.28, 0.34, 0.40)
+FLASH_FIST = (0.18, 0.62, 0.68, 0.72, 0.74)       # o polegar fica livre sobre o botão
+FLASH_CLICK = (0.60, 0.62, 0.68, 0.72, 0.74)
+FLASH_GRAB = (0.52, 0.60, 0.66, 0.70, 0.72)
+PINCH = (0.46, 0.50, 0.40, 0.48, 0.56)
+CUP = (0.18, 0.34, 0.40, 0.46, 0.52)
+HOLD_SHEET = (0.34, 0.36, 0.30, 0.40, 0.46)
 
 
 # ---------------------------------------------------------------------------
@@ -44,9 +45,14 @@ def pose_matrix(pos, rot_deg):
     return matrix
 
 
-def pose_parts(matrix, previous=None):
-    euler = matrix.to_euler("XYZ", previous) if previous is not None else matrix.to_euler("XYZ")
-    return tuple(matrix.translation), tuple(math.degrees(a) for a in euler), euler
+def euler_quaternion(rot_deg):
+    """Euler XYZ em graus -> quaternion (w, x, y, z), a forma das trilhas de rotação."""
+    return tuple(Euler(tuple(math.radians(a) for a in rot_deg), "XYZ").to_quaternion())
+
+
+def pose_parts(matrix):
+    """(posição, quaternion) de uma pose em matriz."""
+    return tuple(matrix.translation), tuple(matrix.to_quaternion())
 
 
 # Mão neutra no espaço da câmera: colunas (dedos, normal da palma, lado do polegar). Igual a
@@ -87,25 +93,25 @@ GRIPS = {
     C.ITEM_FLASHLIGHT: Grip((0.025, -0.018, 0.0), (-0.59, -0.81, 0.0), (-0.81, 0.59, 0.0)),
     C.ITEM_KEY: Grip((-0.020, -0.010, 0.065), (0.35, 0.30, -0.89), (0.75, -0.65, 0.0)),
     C.ITEM_MAP: Grip((-0.030, -0.025, -0.035), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
-    C.ITEM_BATTERY: Grip((0.0, -0.027, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+    C.ITEM_BATTERY: Grip((0.0, -0.027, 0.0), (0.0, 0.0, -1.0), (0.0, 1.0, 0.0)),
     C.ITEM_NOTE: Grip((0.0, -0.040, -0.012), (0.0, 0.8, -0.6), (-0.4, 0.0, -0.9)),
 }
 
 # Item parado na mão (pose do item no espaço da câmera): (posição, rotação)
 HOLD_ITEM = {
     ("R", C.ITEM_FLASHLIGHT): ((0.150, -0.100, -0.300), (8.0, 6.0, -8.0)),
-    ("L", C.ITEM_KEY): ((-0.215, -0.085, -0.40), (0.0, 0.0, 0.0)),
+    ("L", C.ITEM_KEY): ((-0.205, -0.015, -0.385), (0.0, 0.0, 0.0)),
     ("L", C.ITEM_MAP): ((-0.290, -0.115, -0.44), (-28.0, 14.0, 6.0)),
-    ("L", C.ITEM_BATTERY): ((-0.150, -0.130, -0.34), (-6.0, 90.0, 0.0)),
-    ("L", C.ITEM_NOTE): ((-0.170, -0.095, -0.40), (-22.0, 10.0, 4.0)),
+    ("L", C.ITEM_BATTERY): ((-0.130, -0.060, -0.33), (-6.0, 0.0, 0.0)),
+    ("L", C.ITEM_NOTE): ((-0.185, -0.150, -0.40), (-22.0, 10.0, 4.0)),
 }
 HOLD_CURL = {C.ITEM_FLASHLIGHT: FLASH_FIST, C.ITEM_KEY: PINCH, C.ITEM_MAP: PINCH, C.ITEM_BATTERY: CUP,
              C.ITEM_NOTE: HOLD_SHEET}
 EXTRAS = {"x.cap": 0.0, "x.fold1": 0.0, "x.fold2": 0.0, "x.zoom": 0.0}
 
 
-FACE_ITEM = {C.ITEM_NOTE: ((-0.010, -0.015, -0.255), (-4.0, 0.0, 0.0))}      # a folha diante do rosto
-NEAR_ITEM = {C.ITEM_MAP: ((-0.150, -0.012, -0.255), (-6.0, 6.0, 2.0))}        # o mapa aproximado do rosto
+FACE_ITEM = {C.ITEM_NOTE: ((-0.040, -0.100, -0.300), (-4.0, 0.0, 0.0))}      # a folha diante do rosto
+NEAR_ITEM = {C.ITEM_MAP: ((-0.130, -0.030, -0.300), (-6.0, 6.0, 2.0))}        # o mapa aproximado do rosto
 MODE_POSES = {"hold": HOLD_ITEM, "face": {("L", k): v for k, v in FACE_ITEM.items()},
               "near": {("L", k): v for k, v in NEAR_ITEM.items()}}
 
@@ -113,18 +119,24 @@ MODE_POSES = {"hold": HOLD_ITEM, "face": {("L", k): v for k, v in FACE_ITEM.item
 def hold_hand(side, kind, mode="hold"):
     """Pose da mão (posição, rotação) que segura `kind` parado."""
     item_pos, item_rot = MODE_POSES[mode].get((side, kind), HOLD_ITEM[(side, kind)])
-    pos, rot, _ = pose_parts(GRIPS[kind].hand_of(pose_matrix(item_pos, item_rot)))
-    return pos, rot
+    return pose_parts(GRIPS[kind].hand_of(pose_matrix(item_pos, item_rot)))
 
 
 def rest_channels(side, kind=None, mode="hold"):
     """Valores de repouso de todos os canais de uma mão: segurando `kind` ou solta, fora do quadro."""
     if kind is None or (side, kind) not in HOLD_ITEM:
-        pos, rot, curl, weight, attach = OFF_SCREEN[side], (0.0, 0.0, 0.0), RELAX, 0.0, 0.0
+        pos, rot, curl, weight, attach = OFF_SCREEN[side], euler_quaternion((0.0, 0.0, 0.0)), RELAX, 0.0, 0.0
     else:
         (pos, rot), curl, weight, attach = hold_hand(side, kind, mode), HOLD_CURL[kind], 1.0, 1.0
     return {f"{side}.pos": number(pos), f"{side}.rot": number(rot), f"{side}.curl": number(curl),
             f"{side}.w": number(weight), f"{side}.attach": number(attach)}
+
+
+def ready_channels(side):
+    """A mão esquerda se prepara enquanto a roda de itens está aberta: o antebraço aparece no canto, sem item."""
+    sign = SIDE_SIGN[side]
+    return {f"{side}.pos": number((0.27 * sign, -0.27, -0.24)), f"{side}.rot": number(euler_quaternion((-12.0, 10.0 * sign, 12.0 * sign))),
+            f"{side}.curl": number(RELAX), f"{side}.w": number(0.55), f"{side}.attach": number(0.0)}
 
 
 # Do referencial do modelo na mão para o do item de mesa (o objeto `Item_*`), para o item aparecer na mão
@@ -142,7 +154,7 @@ ITEM_TO_MODEL = {
     C.ITEM_FLASHLIGHT: _flashlight_to_model(),
     C.ITEM_KEY: pose_matrix(KEY_PIVOT, (0.0, 0.0, 180.0)),
     C.ITEM_MAP: pose_matrix((-0.177, 0.0, 0.0), (0.0, 0.0, 0.0)),
-    C.ITEM_BATTERY: pose_matrix((0.0193, 0.0, 0.0188), (-90.0, 0.0, 0.0)),
+    C.ITEM_BATTERY: pose_matrix((0.0193, 0.0, 0.0188), (-90.0, 0.0, 0.0)) @ pose_matrix((0, 0, 0), (0.0, -90.0, 0.0)),
     C.ITEM_NOTE: pose_matrix((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
 }
 WORLD_SCALE = {C.ITEM_KEY: 1.0 / KEY_HAND_SCALE}      # o chaveiro de mesa é maior que o da mão (para ser mirado)
@@ -156,7 +168,6 @@ class Path:
         self.side, self.kind = side, kind
         self.grip = GRIPS[kind]
         self.channels = {}
-        self._euler = None
 
     def _add(self, name, t, value, stop=False, space="cam"):
         self.channels.setdefault(name, []).append(Key(float(t), number(value), stop, space))
@@ -164,7 +175,7 @@ class Path:
     def hand(self, t, pos, rot, curl=None, w=None, stop=False, space="cam"):
         """Pose da mão. Em `space="grasp"` a posição é somada ao ponto de pegar (a rotação é sempre absoluta)."""
         self._add(f"{self.side}.pos", t, pos, stop, space)
-        self._add(f"{self.side}.rot", t, rot, stop)
+        self._add(f"{self.side}.rot", t, euler_quaternion(rot), stop)
         if curl is not None:
             self._add(f"{self.side}.curl", t, curl, stop)
         if w is not None:
@@ -173,8 +184,14 @@ class Path:
 
     def item(self, t, pos, rot, curl=None, w=None, stop=False):
         """Pose do item no espaço da câmera; a mão é derivada pela garra."""
-        hand_pos, hand_rot, self._euler = pose_parts(self.grip.hand_of(pose_matrix(pos, rot)), self._euler)
-        return self.hand(t, hand_pos, hand_rot, curl, w, stop)
+        hand_pos, hand_rot = pose_parts(self.grip.hand_of(pose_matrix(pos, rot)))
+        self._add(f"{self.side}.pos", t, hand_pos, stop)
+        self._add(f"{self.side}.rot", t, hand_rot, stop)
+        if curl is not None:
+            self._add(f"{self.side}.curl", t, curl, stop)
+        if w is not None:
+            self._add(f"{self.side}.w", t, w, stop)
+        return self
 
     def curl(self, t, values, stop=False):
         self._add(f"{self.side}.curl", t, values, stop)
@@ -193,7 +210,7 @@ class Path:
         return self
 
     def tracks(self):
-        return {name: Track(keys) for name, keys in self.channels.items()}
+        return {name: (QuatTrack if name.endswith(".rot") else Track)(keys) for name, keys in self.channels.items()}
 
 
 def merge(*paths):
@@ -207,16 +224,19 @@ def ev(t, name, arg=None, essential=False):
     return Event(float(t), name, arg, essential)
 
 
-REACH_PRE = 0.40           # a mão chega acima do item
-REACH_GRASP = 0.58         # e desce até ele: é o instante do contato
+REACH_PRE = 0.30           # a mão chega acima do item
+REACH_GRASP = 0.44         # e desce até ele: é o instante do contato
+GLIDE = 0.26               # depois do contato o item que a mão não alcançou vem até o punho (a mesa fica abaixo do
+                           # alcance do braço: o item sobe do lugar dele até a mão enquanto ela fecha)
+LIFT = 0.26                # e só então a mão levanta
 
 
-def reach(path, entry_rot, pre, pre_rot, grasp, grasp_rot, curl, pre_lead=0.0, side_sign=1.0):
+def reach(path, entry_rot, pre, pre_rot, grasp, grasp_rot, curl):
     """Mão entrando pelo canto até o ponto de pegar ao vivo (`space="grasp"`): peso do IK sobe nos primeiros
     quadros, a chegada é um arco único sem parada no meio e a descida final é lenta."""
     path.hand(0.00, OFF_SCREEN[path.side], entry_rot, curl, w=0.0)
     path.weight(0.16, 1.0)
-    path.hand(REACH_PRE + pre_lead, pre, pre_rot, curl, space="grasp")
+    path.hand(REACH_PRE, pre, pre_rot, curl, space="grasp")
     path.hand(REACH_GRASP, grasp, grasp_rot, curl, stop=True, space="grasp")
 
 
@@ -232,28 +252,30 @@ def lantern_first():
     """Estende a mão, pega a lanterna desligada, traz ao peito, o polegar clica, a luz pisca e a mão assume."""
     path = Path("R", C.ITEM_FLASHLIGHT)
     hold, hold_rot = HOLD_ITEM[("R", C.ITEM_FLASHLIGHT)]
-    chest, chest_rot = (0.075, -0.105, -0.345), (32.0, 11.0, -6.0)
-    lift, lift_rot = (0.145, -0.150, -0.370), (14.0, 4.0, 0.0)
+    chest, chest_rot = (0.045, -0.055, -0.330), (26.0, 10.0, -6.0)
+    lift, lift_rot = (0.120, -0.100, -0.360), (14.0, 4.0, 0.0)
     g = REACH_GRASP
-    click_at = g + 0.90
-    reach(path, (8.0, -12.0, -6.0), (0.0, 0.07, 0.05), (-4.0, 0.0, 0.0), (0.0, 0.018, 0.0), (-14.0, 0.0, 0.0), OPEN)
-    path.curl(g + 0.10, FLASH_GRAB)
-    path.item(g + 0.38, lift, lift_rot, FLASH_FIST)
-    path.item(g + 0.70, chest, chest_rot, FLASH_FIST, stop=True)
+    up = g + LIFT
+    click_at = up + 0.72
+    reach(path, (8.0, -12.0, -6.0), (0.0, 0.07, 0.05), (-28.0, 0.0, -6.0), (0.0, 0.018, 0.0), (-46.0, 0.0, -4.0), OPEN)
+    path.hand(up - 0.02, (0.0, 0.018, 0.0), (-46.0, 0.0, -4.0), stop=True, space="grasp")
+    path.curl(g + 0.06, FLASH_GRAB)
+    path.item(up + 0.30, lift, lift_rot, FLASH_FIST)
+    path.item(up + 0.52, chest, chest_rot, FLASH_FIST, stop=True)
     path.curl(click_at - 0.10, FLASH_FIST)
     path.curl(click_at, FLASH_CLICK, stop=True)
     path.curl(click_at + 0.13, FLASH_FIST)
     path.item(click_at - 0.02, chest, chest_rot, stop=True)
     path.item(click_at + 0.05, (chest[0], chest[1] - 0.006, chest[2]), chest_rot)
     path.item(click_at + 0.22, chest, chest_rot, stop=True)
-    path.item(click_at + 1.00, chest, chest_rot, stop=True)
-    path.item(click_at + 1.50, hold, hold_rot, FLASH_FIST, stop=True)
-    path.attach(g, 0.0, stop=True).attach(g + 0.40, 1.0, stop=True)
+    path.item(click_at + 0.98, chest, chest_rot, stop=True)
+    path.item(click_at + 1.42, hold, hold_rot, FLASH_FIST, stop=True)
+    path.attach(g, 0.0, stop=True).attach(g + GLIDE, 1.0, stop=True)
     events = [ev(0.05, "sound", "hand_reach"), ev(g, "contact", essential=True),
               ev(g, "show", ("R", C.ITEM_FLASHLIGHT), essential=True),
-              ev(g + 0.02, "sound", "flash_pickup"), ev(click_at, "light_on", essential=True)]
+              ev(click_at, "light_on", essential=True)]
     events += [ev(click_at + start, "burst", index) for index, (start, _) in enumerate(FLICKER_BURSTS)]
-    return Clip("lantern_first", click_at + 1.55, path.tracks(), events,
+    return Clip("lantern_first", click_at + 1.46, path.tracks(), events,
                 meta={"side": "R", "kind": C.ITEM_FLASHLIGHT, "grasp": "R", "world_item": True})
 
 
@@ -263,20 +285,23 @@ def lantern_first():
 def battery_pickup():
     path = Path("L", C.ITEM_BATTERY)
     g = REACH_GRASP
-    show, show_rot = (-0.105, -0.095, -0.315), (-14.0, 80.0, 4.0)
-    near, near_rot = (-0.115, -0.085, -0.290), (-20.0, 76.0, 8.0)
-    reach(path, (6.0, 14.0, 8.0), (0.0, 0.06, 0.04), (-6.0, 4.0, 2.0), (0.0, 0.016, 0.0), (-14.0, 2.0, 0.0), OPEN)
-    path.curl(g + 0.10, CUP)
-    path.item(g + 0.34, (-0.140, -0.125, -0.335), (-10.0, 88.0, 0.0), CUP)
-    path.item(g + 0.54, show, show_rot, CUP, stop=True)
-    path.item(g + 0.76, near, near_rot, CUP, stop=True)
-    path.item(g + 0.96, (-0.190, -0.300, -0.250), (-20.0, 80.0, 10.0), CUP)
-    path.weight(g + 0.82, 1.0).weight(g + 1.12, 0.0, stop=True)
-    path.attach(g, 0.0, stop=True).attach(g + 0.22, 1.0, stop=True)
+    up = g + LIFT
+    show, show_rot = (-0.100, -0.050, -0.335), (-14.0, -8.0, 4.0)
+    near, near_rot = (-0.110, -0.040, -0.305), (-20.0, -12.0, 8.0)
+    reach(path, (6.0, 14.0, 8.0), (0.0, 0.06, 0.04), (-30.0, 4.0, 6.0), (0.0, 0.016, 0.0), (-46.0, 2.0, 4.0), OPEN)
+    path.hand(up - 0.02, (0.0, 0.016, 0.0), (-46.0, 2.0, 4.0), stop=True, space="grasp")
+    path.curl(g + 0.06, CUP)
+    path.hand(up + 0.12, (-0.03, 0.05, 0.06), (-12.0, 0.0, 95.0), CUP, space="grasp")     # meio giro do pulso: palma de lado
+    path.item(up + 0.32, (-0.140, -0.125, -0.335), (-10.0, 0.0, 0.0), CUP)
+    path.item(up + 0.50, show, show_rot, CUP, stop=True)
+    path.item(up + 0.68, near, near_rot, CUP, stop=True)
+    path.item(up + 0.86, (-0.190, -0.300, -0.250), (-20.0, -10.0, 10.0), CUP)
+    path.weight(up + 0.72, 1.0).weight(up + 1.00, 0.0, stop=True)
+    path.attach(g, 0.0, stop=True).attach(g + GLIDE, 1.0, stop=True)
     events = [ev(0.04, "sound", "hand_reach"), ev(g + 0.02, "contact", essential=True),
               ev(g + 0.02, "show", ("L", C.ITEM_BATTERY), essential=True),
-              ev(g + 0.92, "hide", "L"), ev(g + 1.08, "sound", "cloth_rustle_1")]
-    return Clip("battery_pickup", g + 1.17, path.tracks(), events,
+              ev(up + 0.82, "hide", "L"), ev(up + 0.96, "sound", "cloth_rustle_1")]
+    return Clip("battery_pickup", up + 1.05, path.tracks(), events,
                 meta={"side": "L", "kind": C.ITEM_BATTERY, "grasp": "L", "world_item": True})
 
 
@@ -286,19 +311,22 @@ def battery_pickup():
 def key_pickup():
     path = Path("L", C.ITEM_KEY)
     g = REACH_GRASP
-    reach(path, (6.0, 14.0, 8.0), (0.0, 0.06, 0.04), (-6.0, 4.0, 2.0), (0.0, 0.015, 0.0), (-16.0, 2.0, 0.0), OPEN)
-    path.curl(g + 0.08, PINCH)
-    path.item(g + 0.36, (-0.200, -0.060, -0.360), (0.0, 0.0, 0.0), PINCH)
-    path.item(g + 0.54, (-0.150, -0.050, -0.375), (0.0, 0.0, 0.0), PINCH)        # o puxão que faz o chaveiro balançar
-    path.item(g + 0.64, (-0.236, -0.062, -0.370), (0.0, 0.0, 0.0), PINCH, stop=True)
-    path.item(g + 0.84, (-0.210, -0.075, -0.375), (0.0, 0.0, 0.0), PINCH, stop=True)
-    path.item(g + 1.24, (-0.300, -0.330, -0.250), (0.0, 0.0, 0.0), PINCH)
-    path.weight(g + 1.12, 1.0).weight(g + 1.42, 0.0, stop=True)
-    path.attach(g, 0.0, stop=True).attach(g + 0.20, 1.0, stop=True)
+    up = g + LIFT
+    hang, flick, swing = HOLD_ITEM[("L", C.ITEM_KEY)][0], (-0.150, -0.020, -0.390), (-0.236, -0.030, -0.385)
+    reach(path, (6.0, 14.0, 8.0), (0.0, 0.06, 0.04), (-30.0, 4.0, 6.0), (0.0, 0.015, 0.0), (-48.0, 2.0, 4.0), OPEN)
+    path.hand(up - 0.02, (0.0, 0.015, 0.0), (-48.0, 2.0, 4.0), stop=True, space="grasp")
+    path.curl(g + 0.05, PINCH)
+    path.item(up + 0.26, (-0.200, -0.040, -0.370), (0.0, 0.0, 0.0), PINCH)
+    path.item(up + 0.44, flick, (0.0, 0.0, 0.0), PINCH)                       # o puxão que faz o chaveiro balançar
+    path.item(up + 0.54, swing, (0.0, 0.0, 0.0), PINCH, stop=True)
+    path.item(up + 0.74, hang, (0.0, 0.0, 0.0), PINCH, stop=True)
+    path.item(up + 1.14, (-0.300, -0.330, -0.250), (0.0, 0.0, 0.0), PINCH)
+    path.weight(up + 1.02, 1.0).weight(up + 1.32, 0.0, stop=True)
+    path.attach(g, 0.0, stop=True).attach(g + GLIDE, 1.0, stop=True)
     events = [ev(0.04, "sound", "hand_reach"), ev(g + 0.02, "contact", essential=True),
-              ev(g + 0.02, "show", ("L", C.ITEM_KEY), essential=True), ev(g + 0.04, "sound", "key_pickup"),
-              ev(g + 0.61, "sound", "key_jingle"), ev(g + 1.22, "hide", "L")]
-    return Clip("key_pickup", g + 1.47, path.tracks(), events,
+              ev(g + 0.02, "show", ("L", C.ITEM_KEY), essential=True),
+              ev(up + 0.51, "sound", "key_jingle"), ev(up + 1.12, "hide", "L")]
+    return Clip("key_pickup", up + 1.37, path.tracks(), events,
                 meta={"side": "L", "kind": C.ITEM_KEY, "grasp": "L", "world_item": True})
 
 
@@ -311,24 +339,26 @@ FOLDED = 174.0          # graus em cada dobra do mapa fechado
 def map_pickup():
     path = Path("L", C.ITEM_MAP)
     g = REACH_GRASP
+    up = g + LIFT
     held, held_rot = (-0.205, -0.075, -0.380), (-18.0, 10.0, 4.0)
     shown, shown_rot = HOLD_ITEM[("L", C.ITEM_MAP)]
-    reach(path, (6.0, 14.0, 8.0), (0.0, 0.06, 0.04), (-6.0, 4.0, 2.0), (0.0, 0.016, 0.0), (-14.0, 2.0, 0.0), OPEN)
-    path.curl(g + 0.10, PINCH)
-    path.item(g + 0.42, held, held_rot, PINCH, stop=True)
-    path.item(g + 0.72, (held[0] + 0.012, held[1] + 0.006, held[2] + 0.010), (held_rot[0] - 4.0, 16.0, 8.0), PINCH)
-    path.item(g + 1.14, (shown[0] + 0.020, shown[1] + 0.014, shown[2] + 0.020), (shown_rot[0] + 4.0, 18.0, 8.0), PINCH)
-    path.item(g + 1.50, shown, shown_rot, PINCH, stop=True)
-    path.item(g + 1.90, (-0.300, -0.330, -0.300), (-30.0, 20.0, 10.0), PINCH)
-    path.weight(g + 1.70, 1.0).weight(g + 2.02, 0.0, stop=True)
-    path.attach(g, 0.0, stop=True).attach(g + 0.24, 1.0, stop=True)
+    reach(path, (6.0, 14.0, 8.0), (0.0, 0.06, 0.04), (-30.0, 4.0, 6.0), (0.0, 0.016, 0.0), (-46.0, 2.0, 4.0), OPEN)
+    path.hand(up - 0.02, (0.0, 0.016, 0.0), (-46.0, 2.0, 4.0), stop=True, space="grasp")
+    path.curl(g + 0.06, PINCH)
+    path.item(up + 0.34, held, held_rot, PINCH, stop=True)
+    path.item(up + 0.64, (held[0] + 0.012, held[1] + 0.006, held[2] + 0.010), (held_rot[0] - 4.0, 16.0, 8.0), PINCH)
+    path.item(up + 1.06, (shown[0] + 0.020, shown[1] + 0.014, shown[2] + 0.020), (shown_rot[0] + 4.0, 18.0, 8.0), PINCH)
+    path.item(up + 1.40, shown, shown_rot, PINCH, stop=True)
+    path.item(up + 1.78, (-0.300, -0.330, -0.300), (-30.0, 20.0, 10.0), PINCH)
+    path.weight(up + 1.58, 1.0).weight(up + 1.90, 0.0, stop=True)
+    path.attach(g, 0.0, stop=True).attach(g + GLIDE, 1.0, stop=True)
     path.extra("fold1", 0.0, FOLDED, stop=True).extra("fold2", 0.0, -FOLDED, stop=True)
-    path.extra("fold2", g + 0.44, -FOLDED, stop=True).extra("fold2", g + 0.80, 0.0, stop=True)
-    path.extra("fold1", g + 0.82, FOLDED, stop=True).extra("fold1", g + 1.18, 0.0, stop=True)
+    path.extra("fold2", up + 0.36, -FOLDED, stop=True).extra("fold2", up + 0.72, 0.0, stop=True)
+    path.extra("fold1", up + 0.74, FOLDED, stop=True).extra("fold1", up + 1.10, 0.0, stop=True)
     events = [ev(0.04, "sound", "hand_reach"), ev(g + 0.02, "contact", essential=True),
-              ev(g + 0.02, "show", ("L", C.ITEM_MAP), essential=True), ev(g + 0.04, "sound", "map_fold"),
-              ev(g + 0.52, "sound", "map_unfold"), ev(g + 0.90, "sound", "map_unfold"), ev(g + 1.86, "hide", "L")]
-    return Clip("map_pickup", g + 2.05, path.tracks(), events,
+              ev(g + 0.02, "show", ("L", C.ITEM_MAP), essential=True),
+              ev(up + 0.44, "sound", "map_unfold"), ev(up + 0.82, "sound", "map_unfold"), ev(up + 1.74, "hide", "L")]
+    return Clip("map_pickup", up + 1.93, path.tracks(), events,
                 meta={"side": "L", "kind": C.ITEM_MAP, "grasp": "L", "world_item": True})
 
 
@@ -338,16 +368,18 @@ def map_pickup():
 def note_pickup():
     path = Path("L", C.ITEM_NOTE)
     g = REACH_GRASP
+    up = g + LIFT - 0.1
     face, face_rot = FACE_ITEM[C.ITEM_NOTE]
-    reach(path, (6.0, 14.0, 8.0), (0.0, 0.05, 0.04), (-4.0, 4.0, 2.0), (0.0, 0.012, 0.0), (-8.0, 2.0, 0.0), OPEN)
-    path.curl(g + 0.08, HOLD_SHEET)
-    path.item(g + 0.30, (-0.120, -0.090, -0.340), (-14.0, 8.0, 2.0), HOLD_SHEET)
-    path.item(g + 0.58, face, face_rot, HOLD_SHEET, stop=True)
-    path.attach(g, 0.0, stop=True).attach(g + 0.20, 1.0, stop=True)
+    reach(path, (6.0, 14.0, 8.0), (0.0, 0.05, 0.04), (-26.0, 4.0, 6.0), (0.0, 0.012, 0.0), (-40.0, 2.0, 4.0), OPEN)
+    path.hand(up - 0.02, (0.0, 0.012, 0.0), (-40.0, 2.0, 4.0), stop=True, space="grasp")
+    path.curl(g + 0.05, HOLD_SHEET)
+    path.item(up + 0.28, (-0.140, -0.160, -0.350), (-14.0, 8.0, 2.0), HOLD_SHEET)
+    path.item(up + 0.56, face, face_rot, HOLD_SHEET, stop=True)
+    path.attach(g, 0.0, stop=True).attach(g + GLIDE, 1.0, stop=True)
     events = [ev(0.04, "sound", "hand_reach"), ev(g + 0.02, "contact", essential=True),
               ev(g + 0.02, "show", ("L", C.ITEM_NOTE), essential=True), ev(g + 0.04, "sound", "paper_pick"),
-              ev(g + 0.58, "open", essential=True)]
-    return Clip("note_pickup", g + 0.58, path.tracks(), events,
+              ev(up + 0.56, "open", essential=True)]
+    return Clip("note_pickup", up + 0.56, path.tracks(), events,
                 meta={"side": "L", "kind": C.ITEM_NOTE, "grasp": "L", "world_item": True})
 
 
@@ -477,16 +509,15 @@ def map_back():
 # ---------------------------------------------------------------------------
 # Trocar as pilhas (R): as duas mãos
 # ---------------------------------------------------------------------------
-SWAP_TILT = ((0.060, -0.140, -0.330), (-62.0, 12.0, -10.0))     # lanterna com a tampa para cima e para trás
+SWAP_TILT = ((0.045, -0.125, -0.400), (-58.0, 12.0, -10.0))     # lanterna com a tampa para cima e para trás
 TAIL_OPENING = 0.057                                              # z da boca da lanterna no referencial do viewmodel
 CELL_HALF = 0.032
 
 
 def _cell_on_axis(z):
     """Pose da pilha alinhada ao eixo da lanterna inclinada, com o centro em `z` (referencial do viewmodel)."""
-    matrix = pose_matrix(*SWAP_TILT) @ pose_matrix((0.0, 0.0, z), (0.0, 0.0, 0.0))
-    pos, rot, _ = pose_parts(matrix)
-    return pos, rot
+    matrix = pose_matrix(*SWAP_TILT) @ pose_matrix((0.0, 0.0, z), (0.0, 90.0, 0.0))     # o eixo X da pilha segue o cano
+    return tuple(matrix.translation), tuple(math.degrees(a) for a in matrix.to_euler("XYZ"))
 
 
 def swap(left_start, left_end):
@@ -513,7 +544,7 @@ def swap(left_start, left_end):
         pos, rot = HOLD_ITEM[("L", C.ITEM_BATTERY)]
         left.item(0.00, pos, rot, CUP, stop=True)
     else:
-        left.item(0.00, (-0.19, -0.30, -0.27), (-20.0, 90.0, 0.0), CUP, w=0.0)
+        left.item(0.00, (-0.19, -0.30, -0.27), (-20.0, 0.0, 0.0), CUP, w=0.0)
         left.weight(0.12, 1.0)
     left.item(0.52, *_cell_on_axis(above + 0.06), CUP, stop=True)
     left.item(0.64, *_cell_on_axis(lined_up + 0.002), CUP, stop=True)

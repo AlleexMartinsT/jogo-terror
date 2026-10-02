@@ -10,6 +10,15 @@ import math
 import numpy as np
 
 
+SIDES_SCALE = 1.0
+
+
+def set_quality(level):
+    """'low' reduz os lados de cada seção (menos triângulos, mesma forma); 'medium' e 'high' usam a malha completa."""
+    global SIDES_SCALE
+    SIDES_SCALE = {"low": 0.7}.get(level, 1.0)
+
+
 # --------------------------------------------------------------------------
 # Curvas e funções de forma
 # --------------------------------------------------------------------------
@@ -183,6 +192,22 @@ class Mesh:
             self.weights = [{rename(k): v for k, v in w.items()} for w in self.weights]
         return self
 
+    def drop_faces(self, predicate):
+        """Remove as faces para as quais `predicate(centro_da_face)` é verdadeiro e descarta os vértices que sobram sem uso."""
+        keep = [i for i, face in enumerate(self.faces)
+                if not predicate(np.mean([self.verts[v] for v in face], axis=0))]
+        used = sorted({v for i in keep for v in self.faces[i]})
+        remap = {old: new for new, old in enumerate(used)}
+        self.faces = [tuple(remap[v] for v in self.faces[i]) for i in keep]
+        self.uv0 = [self.uv0[i] for i in keep]
+        self.uv1 = [self.uv1[i] for i in keep]
+        self.material = [self.material[i] for i in keep]
+        self.sharp = [self.sharp[i] for i in keep]
+        self.verts = [self.verts[v] for v in used]
+        self.weights = [self.weights[v] for v in used]
+        self.region = [self.region[v] for v in used]
+        return self
+
     def shift_uv0(self, du, dv, materials=None):
         """Desloca o atlas das faces (opcionalmente só as de certos materiais): a mão esquerda usa outra metade."""
         for i, face in enumerate(self.uv0):
@@ -210,6 +235,8 @@ class Mesh:
         `uv0_rect`: retângulo do atlas (u0, v0, u1, v1); u dá a volta, v corre ao longo. `uv1` é em escala de
         mundo: metros do arco e do caminho divididos por `uv_tile`. Devolve a lista de índices por anel.
         """
+        if rings[0].points is None and SIDES_SCALE != 1.0:
+            sides = max(8, int(round(sides * SIDES_SCALE / 2.0)) * 2)
         thetas = phase + 2.0 * math.pi * np.arange(sides) / sides
         rows, ring_pts = [], []
         for ring in rings:

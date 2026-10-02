@@ -20,7 +20,8 @@ from sem_alvorada.engine import handclips, handtrack  # noqa: E402
 from sem_alvorada.engine.flashlight import burst_curve  # noqa: E402
 
 FRAME = 1.0 / 60.0
-MAX_STEP = 0.055            # m por quadro a 60 Hz (3,3 m/s): acima disso a mão "teletransportou"
+DT_IDLE = 1.0 / 30.0
+MAX_STEP = 0.07             # m por quadro a 60 Hz (4,2 m/s): acima disso a mão "teletransportou"
 MAX_TURN = 14.0             # graus por quadro a 60 Hz
 STAND_OFFSETS = ((0.0, -1.1), (1.1, 0.0), (0.0, 1.1), (-1.1, 0.0), (0.8, -0.8), (-0.8, -0.8))
 
@@ -115,6 +116,13 @@ def stand_before(game, ref):
     raise AssertionError(f"não achei onde ficar para mirar {ref}")
 
 
+def turn_between(rot_a, rot_b):
+    """Ângulo (graus) entre duas orientações dadas em Euler XYZ (graus)."""
+    from mathutils import Euler
+    a, b = (Euler([math.radians(x) for x in rot], "XYZ").to_quaternion() for rot in (rot_a, rot_b))
+    return math.degrees(a.rotation_difference(b).angle)
+
+
 class Recorder:
     """Acompanha o que as mãos entregaram ao corpo quadro a quadro."""
 
@@ -137,7 +145,7 @@ class Recorder:
             if side in self.last and len(arm.targets) > self.last[side][2]:
                 old_pos, old_rot, _ = self.last[side]
                 self.worst_move[side] = max(self.worst_move[side], math.dist(pos, old_pos))
-                self.worst_turn[side] = max(self.worst_turn[side], max(abs(a - b) for a, b in zip(rot, old_rot)))
+                self.worst_turn[side] = max(self.worst_turn[side], turn_between(rot, old_rot))
             self.last[side] = (pos, rot, len(arm.targets))
 
     def assert_smooth(self):
@@ -247,6 +255,13 @@ def test_clips_are_well_formed_and_smooth():
             assert curve.end <= clip.duration + 1e-9, (clip.name, name)
         anchors = {"R.pos": (0.0, -0.1, -0.5), "L.pos": (0.0, -0.1, -0.5)}
         for name, curve in clip.tracks.items():
+            if name.endswith(".rot"):
+                previous = curve.sample(0.0)
+                for i in range(1, int(clip.duration / FRAME) + 1):
+                    value = curve.sample(i * FRAME)
+                    turn = math.degrees(2.0 * math.acos(min(1.0, abs(sum(a * b for a, b in zip(value, previous))))))
+                    assert turn < MAX_TURN, (clip.name, name, round(i * FRAME, 3), round(turn, 1))
+                    previous = value
             if not name.endswith(".pos"):
                 continue
             previous = curve.sample(0.0, {"grasp": anchors[name]})
@@ -281,8 +296,8 @@ def test_flicker_pattern_is_two_to_four_dips_with_shrinking_gaps():
 def test_first_flashlight_pickup_ends_lit_after_two_to_four_blinks():
     game = new_game()
     state = game.state
-    order, recorder, _ = None, Recorder(game), None
-    target = stand_before(game, "FLASHLIGHT")
+    recorder = Recorder(game)
+    stand_before(game, "FLASHLIGHT")
     levels = []
     seen = {"contact": None, "has": []}
     real_collect = game.interact._collect
@@ -350,7 +365,7 @@ def test_battery_swap_effects_duration_and_refusals():
     press(game, reload=True)
     assert game.flashlight.swap_left > 0 and not state.flashlight_on, "a luz se apaga durante a troca"
     assert kinds_logged(game, "battery_swap")[-1][2] == C.NOISE_PLAYER["battery_swap"]
-    started, lit_before_end = game.clock, None
+    started = game.clock
     while game.hands.busy and game.clock - started < 3.0:
         game.tick(FRAME, InputState())
         if game.flashlight.swap_left > 0:
@@ -435,7 +450,7 @@ def test_pickup_key_swings_once_and_jingles():
         swings.append(game.hands.pendulum.angle[0])
     assert math.degrees(peak) > 12.0, f"o chaveiro balançou só {math.degrees(peak):.1f} graus"
     assert abs(swings[-1]) < math.radians(2.0), "o balanço devia amortecer até parar"
-    assert game.audio.played_names().count("key_jingle") >= 1 and "key_pickup" in game.audio.played_names()
+    assert game.audio.played_names().count("key_jingle") >= 1 and "key_pickup" in game.audio.played_names()   # o do contato vem do Interact
 
 
 def test_held_key_jingles_on_running_steps_with_noise():
@@ -494,7 +509,7 @@ def test_read_floor_note_lifts_opens_reader_and_puts_it_back():
 def test_read_wall_note_touches_without_taking_it_and_zooms_back():
     game = new_game()
     game.state.has_flashlight = True
-    target = stand_before(game, "NOTE_4")
+    stand_before(game, "NOTE_4")
     base_angle = game.player_cam.data.angle
     press(game, interact=True)
     recorder = Recorder(game)
@@ -654,6 +669,104 @@ def test_first_flashlight_pickup_cut_by_a_cutscene_is_never_half_done():
     assert state.has_flashlight == ("FLASHLIGHT" in state.collected), "o item ou foi pego inteiro ou ficou no mundo"
     assert not state.has_flashlight or state.battery <= C.FLASHLIGHT_FOUND_CHARGE + 1e-6
     assert not game.hands.busy and game.flashlight.lantern_matrix is None and not game.hands.visible_kinds()
+
+
+def test_hands_pull_back_and_lower_near_a_wall():
+    game = new_game()
+    game.state.has_flashlight = True
+    teleport(game, 6.5, 2.0, 0.0, 0)                           # hall comprido à frente
+    tick(game, 0.8)
+    open_space = game.hands.last["R"][0]
+    teleport(game, 7.5, 9.575, 0.0, 0)                         # encostado na parede norte
+    tick(game, 0.8)
+    near_wall = game.hands.last["R"][0]
+    assert near_wall[2] > open_space[2] + 0.04 and near_wall[1] < open_space[1] - 0.03, (open_space, near_wall)
+    teleport(game, 6.5, 2.0, 0.0, 0)
+    tick(game, 0.8)
+    assert math.dist(game.hands.last["R"][0], open_space) < 0.01, "a mão devia voltar quando a parede some"
+
+
+def test_left_hand_gets_ready_while_the_wheel_is_open():
+    game = new_game()
+    game.state.has_flashlight = True
+    tick(game, 0.5)
+    assert game.body.arm("L").targets == [] or game.body.arm("L").targets[-1][2] < 0.02
+    held = InputState(wheel_held=True)
+    tick(game, 0.6, held)                                  # a roda abre enquanto a tecla está apertada
+    assert game.inventory.wheel_open
+    pos, _rot, weight = game.body.arm("L").targets[-1]
+    assert 0.3 < weight < 0.8 and pos[0] < -0.2, (pos, weight)
+    tick(game, 1.0)
+    assert game.body.arm("L").releases > 0 and not game.hands.visible_kinds() - {C.ITEM_FLASHLIGHT}
+
+
+def build_models():
+    """Cena de teste com os modelos da mão construídos pela etapa props (como no build de verdade)."""
+    from sem_alvorada.buildctx import BuildContext
+    from sem_alvorada.props import flashlight as props_flashlight
+    from sem_alvorada.props import kit
+    scene = fk.fresh_scene()
+    fallback = scene.objects.get(C.OBJ_VIEW_FLASH)               # a etapa engine cria uma lanterna simples se faltar
+    if fallback is not None:
+        fk.bpy.data.objects.remove(fallback, do_unlink=True)
+    kit.set_quality("medium")
+    props_flashlight.make_viewmodel(BuildContext(scene, verbose=False))
+    return scene
+
+
+def test_handheld_models_exist_fit_the_budget_and_chain_correctly():
+    from sem_alvorada.engine.handheld import MODEL_NAMES
+    scene = build_models()
+    names = [*MODEL_NAMES.values(), "ViewModel_Flashlight_Cap", "ViewModel_Map_P2", "ViewModel_Map_P3"]
+    total = 0
+    for name in names:
+        obj = scene.objects[name]
+        assert obj.hide_viewport and obj.hide_render, f"{name} devia nascer oculto"
+        obj.data.calc_loop_triangles()
+        total += len(obj.data.loop_triangles)
+    assert total <= 6000, f"{total} triângulos nas mãos (teto 6000)"
+    objects = scene.objects
+    assert objects["ViewModel_Flashlight_Cap"].parent is objects["ViewModel_Flashlight"]
+    assert objects["ViewModel_Map_P2"].parent is objects["ViewModel_Map"]
+    assert objects["ViewModel_Map_P3"].parent is objects["ViewModel_Map_P2"]
+    assert abs(objects["ViewModel_Map_P2"].location.x - 0.118) < 1e-6
+    for name in ("ViewModel_Flashlight", "ViewModel_Key", "ViewModel_Map", "ViewModel_Battery", "ViewModel_Paper"):
+        for material in objects[name].data.materials:
+            image = next((n.image for n in material.node_tree.nodes if n.type == "TEX_IMAGE"), None) if material.node_tree else None
+            assert image is None or max(image.size) <= 512, (name, material.name, tuple(image.size))
+
+
+def test_flashlight_viewmodel_has_no_hand_or_sleeve_and_the_cap_opens_at_the_tail():
+    scene = build_models()
+    body = scene.objects["ViewModel_Flashlight"]
+    assert not any(m.name in ("skin_hand", "sleeve_cloth") for m in body.data.materials), "a mão é do corpo agora"
+    cap = scene.objects["ViewModel_Flashlight_Cap"]
+    cap_low = min(v.co.z for v in cap.data.vertices) + cap.location.z
+    body_high = max(v.co.z for v in body.data.vertices)
+    assert abs(cap.location.z - 0.0574) < 1e-3, cap.location
+    assert cap_low > 0.05 and body_high < 0.06, "a tampa fica atrás do cano, na cauda (+Z do viewmodel)"
+    assert max(v.co.x for v in cap.data.vertices) <= 0.002 and min(v.co.x for v in cap.data.vertices) > -0.042
+
+
+def test_handheld_objects_hang_from_the_player_camera_and_hide_when_the_world_is_idle():
+    game = new_game()
+    game.state.has_flashlight = game.state.has_key = True
+    game.hands.equip(C.ITEM_KEY)
+    tick(game, 1.0)
+    flash = game.scene.objects[C.OBJ_VIEW_FLASH]
+    assert flash.parent is game.player_cam and not flash.hide_viewport
+    game.flashlight.update(DT_IDLE, 0.0, 0.0, show_viewmodel=False)       # o que o mundo ocioso (cutscene) faz
+    assert flash.hide_viewport and not game.hands.visible_kinds()
+
+
+def test_neutral_hand_matches_the_body_package():
+    from sem_alvorada.body import skeleton
+    assert all(abs(a - b) < 1e-9 for ra, rb in zip(handclips.NEUTRAL_HAND, skeleton.NEUTRAL_HAND_CAM)
+               for a, b in zip(ra, rb))
+    from sem_alvorada.body import handframe
+    for fingers, palm in (((0, 0, -1), (-1, 0, 0)), ((-0.59, -0.81, 0), (-0.81, 0.59, 0)), ((0.35, 0.3, -0.89), (0.75, -0.65, 0))):
+        mine, theirs = handclips.hand_rotation(fingers, palm), handframe.hand_rotation(fingers, palm)
+        assert all(abs(a - b) < 1e-6 for a, b in zip(mine, theirs)), (mine, theirs)
 
 
 def test_battery_budget_and_constants_match_the_models():

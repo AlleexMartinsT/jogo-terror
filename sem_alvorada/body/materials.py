@@ -17,8 +17,9 @@ FLAT = {
     "button": ((0.50, 0.46, 0.36), 0.35, 0.0),
     "metal": ((0.42, 0.38, 0.30), 0.35, 0.9),
     "lace": ((0.42, 0.36, 0.27), 0.95, 0.0),
+    "gold": ((0.62, 0.43, 0.12), 0.32, 1.0),
 }
-SLOT_ORDER = ["skin", "nail", "flannel", "denim", "denim_hip", "leather", "sole", "button", "metal", "lace"]
+SLOT_ORDER = ["skin", "nail", "flannel", "denim", "denim_hip", "leather", "sole", "button", "metal", "lace", "gold"]
 
 
 def _image(name, array):
@@ -121,7 +122,7 @@ def _denim_hip():
 
 def _leather():
     return textured("body_leather", atlas=tex.atlas_leather(), tile=tex.tile_leather(), color=(0.2, 0.1, 0.06),
-                    roughness=0.5, specular=0.4, relief=0.9, distance=0.002, tile_relief=1.0, tile_distance=0.0025)
+                    roughness=0.42, specular=0.45, relief=0.9, distance=0.002, tile_relief=0.8, tile_distance=0.0018)
 
 
 BUILDERS = {"skin": _skin, "nail": _nail, "flannel": _flannel, "denim": _denim, "denim_hip": _denim_hip, "leather": _leather}

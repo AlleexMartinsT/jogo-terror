@@ -53,6 +53,18 @@ def flash_hand(level):
     return Action(run)
 
 
+def flash_aim(duration, yaw=0.0, pitch=0.0):
+    """Trilha: onde a lanterna aponta em relação à câmera (graus; `yaw` positivo à esquerda, `pitch` positivo para cima).
+
+    `yaw` e `pitch` são números ou `Curve` do tempo da trilha. Serve para a luz não estourar o detalhe que a câmera enquadra.
+    """
+    yaw_curve, pitch_curve = as_curve(yaw), as_curve(pitch)
+
+    def apply(stage, f):
+        stage.flash_aim = (yaw_curve(f * duration), pitch_curve(f * duration))
+    return apply
+
+
 def cut_light(name, energy):
     """Liga (energia > 0) ou apaga uma luz `CutLight_*`."""
     return Action(lambda st: st.set_light(name, energy))
@@ -188,18 +200,15 @@ def entity_hide():
     return Action(lambda st: st.entity.set_visible(False), essential=True)
 
 
-def entity_walk(start, end, yaw, anim="stalk"):
-    """Trilha: a entidade anda de `start` a `end` (passo constante) e a rig anima o passo no ritmo da velocidade.
+def entity_walk(start, end, yaw):
+    """Trilha: a entidade anda de `start` a `end` (passo constante).
 
-    Use com `Track(..., ease="linear")`: a velocidade é distância / duração, que a trilha não conhece, então
-    o roteiro passa a duração em `entity_walk_speed`. Aqui `f` só interpola a posição.
+    Use com `Track(..., "linear")`. A animação (`entity_anim("stalk")`) e a velocidade do passo
+    (`entity_speed`) são ações do roteiro, no começo e no fim da trilha; aqui `f` só interpola a posição.
     """
     def apply(stage, f):
-        entity = stage.entity
         x, y, z = lerp3(stage.resolve(start), stage.resolve(end), f)
-        entity.set_transform(x, y, z, stage.resolve(yaw))
-        if f < 1.0:
-            entity.set_anim(anim)
+        stage.entity.set_transform(x, y, z, stage.resolve(yaw))
     return apply
 
 
@@ -302,6 +311,35 @@ def entity_lunge(eye, amount_start=0.0, amount_end=1.0):
     """Leva a entidade até o agarrão sobre o rosto do jogador (`eye` fixa: posição dos olhos)."""
     def apply(stage, f):
         stage.entity.pose_for_death(stage.resolve(eye), amount_start + (amount_end - amount_start) * f)
+    return apply
+
+
+# --------------------------------------------------------------------------
+# Trilhas simples que o roteiro antigo usava; seguem valendo para quem as chama de fora
+# --------------------------------------------------------------------------
+def door_openness(door_id, start=0.0, end=1.0):
+    """Trilha: a porta vai de `start` a `end` por `snap` a cada quadro (a curva é a da trilha)."""
+    def apply(stage, f):
+        stage.safe("doors.snap", stage.host.doors.snap, door_id, start + (end - start) * f)
+    return apply
+
+
+def move_object(name, start: Vec, end: Vec):
+    """Trilha: move um objeto (se existir) de `start` a `end`; o palco devolve a posição no fim."""
+    def apply(stage, f):
+        obj = stage.touch(stage.obj(name))
+        if obj is not None:
+            obj.location = lerp3(start, end, f)
+    return apply
+
+
+def lift_object(name, start_z, end_z):
+    """Trilha: sobe/desce só o Z de um objeto. `sa_open_lift` do objeto, se existir, manda no destino de uma subida."""
+    def apply(stage, f):
+        obj = stage.touch(stage.obj(name))
+        if obj is not None:
+            target = obj.get("sa_open_lift", end_z) if end_z > start_z else end_z
+            obj.location.z = start_z + (target - start_z) * f
     return apply
 
 

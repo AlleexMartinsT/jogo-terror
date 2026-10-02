@@ -31,6 +31,10 @@ BUILDERS = {
     "ending": scene_ending.build,
 }
 
+# nomes que ferramentas e testes antigos usavam
+build_intro, build_blackout, build_garage_unlock = scene_intro.build, scene_blackout.build, scene_garage.build
+build_death, build_ending = scene_death.build, scene_ending.build
+
 NAMES = tuple(BUILDERS)
 _built = {}
 

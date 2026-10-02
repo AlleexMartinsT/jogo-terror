@@ -141,14 +141,14 @@ def _hand_offsets(hand, t, stress, step_phase, speed_gain):
     drift_w = 2 * math.pi * style.drift_hz
     breath = math.sin(2 * math.pi * style.breath_hz * t + s)
     pulse = math.sin(2 * math.pi * style.pulse_hz * t + 1.7 * s)
-    right = style.drift_pos * noise(t * drift_w, 1.0 + s) + 0.003 * stress * noise(t * 52.0, 11.0 + s)
+    right = style.drift_pos * noise(t * drift_w, 1.0 + s) + 0.003 * stress * noise(t * 34.0, 11.0 + s)
     up = (style.drift_pos * noise(t * drift_w * 0.9, 2.0 + s) + style.breath_pos * breath
-          + style.pulse_pos * pulse + 0.003 * stress * noise(t * 47.0, 12.0 + s))
-    forward = style.drift_pos * 0.6 * noise(t * drift_w * 1.1, 3.0 + s) + 0.004 * stress * noise(t * 61.0, 13.0 + s)
-    yaw = style.drift_rot * noise(t * drift_w * 0.8, 4.0 + s) + 0.9 * stress * noise(t * 53.0, 14.0 + s)
+          + style.pulse_pos * pulse + 0.003 * stress * noise(t * 31.0, 12.0 + s))
+    forward = style.drift_pos * 0.6 * noise(t * drift_w * 1.1, 3.0 + s) + 0.004 * stress * noise(t * 38.0, 13.0 + s)
+    yaw = style.drift_rot * noise(t * drift_w * 0.8, 4.0 + s) + 0.9 * stress * noise(t * 33.0, 14.0 + s)
     pitch = (style.drift_rot * noise(t * drift_w * 0.7, 5.0 + s) + style.breath_rot * breath
-             + 0.7 * stress * noise(t * 59.0, 15.0 + s))
-    roll = style.drift_rot * 0.8 * noise(t * drift_w * 0.6, 6.0 + s) + 1.1 * stress * noise(t * 49.0, 16.0 + s)
+             + 0.7 * stress * noise(t * 37.0, 15.0 + s))
+    roll = style.drift_rot * 0.8 * noise(t * drift_w * 0.6, 6.0 + s) + 1.1 * stress * noise(t * 30.0, 16.0 + s)
     if style.step_bob and step_phase is not None:
         g = speed_gain
         up += -style.step_bob * g * math.cos(2 * math.pi * step_phase)
@@ -235,11 +235,55 @@ class Aim:
         return self.yaw.times
 
 
+class Look:
+    """Alvo do olhar por CHAVES de ponto, interpolado em ÂNGULOS a partir dos olhos de cada instante.
+
+    Interpolar o ponto-alvo em linha reta faz a câmera girar de um lado ao outro quando o caminho passa perto
+    dos olhos (alvo no teto sobre a cabeça, rosto da entidade colado). Aqui cada chave vira (yaw, pitch) vistos
+    de onde os olhos estão agora, e os ângulos (desenrolados, sem salto de 2 pi) seguem curvas suaves. Chaves
+    iguais seguidas são parada. Os pontos podem depender do palco (jogador, entidade, carro).
+    """
+
+    def __init__(self, keys, distance=None):
+        self.keys = curves._as_keys(keys)
+        self.times = [k.t for k in self.keys]
+        self.holds = [k.hold for k in self.keys]
+        self.distance = distance
+
+    def angles(self, t, stage, eye):
+        """(yaw, pitch, distância ao alvo) no instante `t` de olhos em `eye`."""
+        keys, times = self.keys, self.times
+        targets = [tuple(k.value(stage)) if callable(k.value) else tuple(k.value) for k in keys]
+        if len(keys) == 1:
+            yaw, pitch = look_angles(eye, targets[0])
+            return yaw, pitch, curves.dist3(eye, targets[0])
+        yaws, pitches, dists, last = [], [], [], None
+        for target in targets:
+            yaw, pitch = look_angles(eye, target)
+            yaw = yaw if last is None else curves.unwrap(last, yaw)
+            last = yaw
+            yaws.append(yaw)
+            pitches.append(pitch)
+            dists.append(curves.dist3(eye, target))
+        if t <= times[0]:
+            return yaws[0], pitches[0], dists[0]
+        if t >= times[-1]:
+            return yaws[-1], pitches[-1], dists[-1]
+        i = bisect.bisect_right(times, t) - 1
+        h = times[i + 1] - times[i]
+        u = (t - times[i]) / h
+        out = []
+        for values in (yaws, pitches, dists):
+            slopes = curves._pchip_slopes(times, values, self.holds, True)
+            out.append(curves._hermite(values[i], values[i + 1], slopes[i], slopes[i + 1], h, u))
+        return tuple(out)
+
+
 @dataclass(frozen=True)
 class Rig:
     """Um plano contínuo de câmera. Os pontos de `eye` e o alvo `look` (ou ângulos, `Aim`) são mundo, ou espaço do `mount`."""
     eye: Path
-    look: object                      # Path de pontos-alvo, ou Aim
+    look: object                      # Look (chaves de ponto, em ângulos), Path de pontos-alvo ou Aim
     fov: Curve = field(default_factory=lambda: Curve.constant(62.0))
     roll: Curve = field(default_factory=lambda: Curve.constant(0.0))
     hand: Hand = field(default_factory=Hand)
@@ -272,8 +316,8 @@ class Rig:
         (ta, da), (tb, db) = table[i], table[i + 1]
         u = 0.0 if tb == ta else (t - ta) / (tb - ta)
         distance = da + (db - da) * min(max(u, 0.0), 1.0)
-        speed = (db - da) / (tb - ta) if tb > ta else 0.0
-        gain = curves.clamp(speed / 1.2, 0.0, 1.3)
+        vx, vy, _ = self.eye.velocity(t)                  # a velocidade vem da derivada do caminho: sem degraus no balanço
+        gain = curves.clamp(math.hypot(vx, vy) / 1.2, 0.0, 1.3)
         return distance / style.step_length, gain
 
     @property
@@ -304,6 +348,8 @@ def evaluate(rig, t, stage, stress=0.0, dof=None):
     if isinstance(rig.look, Aim):
         yaw, pitch = math.radians(rig.look.yaw(t)), math.radians(rig.look.pitch(t))
         distance = rig.look.distance
+    elif isinstance(rig.look, Look):
+        yaw, pitch, distance = rig.look.angles(t, stage, eye)
     else:
         look = rig.look.at(t, stage)
         yaw, pitch = look_angles(eye, look)

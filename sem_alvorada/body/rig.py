@@ -31,6 +31,11 @@ def _clamp01(value):
     return max(0.0, min(1.0, value))
 
 
+def _smooth01(x):
+    t = _clamp01(x)
+    return t * t * (3.0 - 2.0 * t)
+
+
 class ArmControl:
     """Braço de um lado. Mesma superfície pública de `engine.fallbacks.NullArm`."""
     ready = True
@@ -53,6 +58,7 @@ class ArmControl:
         self._rest_basis_inv = self._rest_basis.inverted()
         self._palm_offset = S.palm_offset(side)
         self._palm_world = None
+        self._swivel = 0.0               # giro do cotovelo escolhido no quadro anterior (rad)
 
     # ------------------------------------------------------------------ contrato
     def set_target(self, position, rotation_deg=(0.0, 0.0, 0.0), weight=1.0):
@@ -160,7 +166,7 @@ class ArmControl:
         palm_body = body_from_world @ (palm_world - frame.root)
         wrist = palm_body - hand_body @ self._palm_offset
         pole = Vector((self._sx * 0.35, -0.30, -1.0))
-        return ArmGoal(wrist, hand_q, pole, self._weight, palm=palm_body, palm_offset=self._palm_offset)
+        return ArmGoal(wrist, hand_q, pole, self._weight, palm=palm_body, palm_offset=self._palm_offset, swivel=self._swivel)
 
 
 class BodyRig:
@@ -245,6 +251,7 @@ class BodyRig:
         for arm in self._arms.values():
             arm.drop()
             arm._weight, arm._target = 0.0, None
+            arm._swivel = 0.0
             arm._curls[:] = F.RELAXED_CURLS
             arm._goal_curls[:] = F.RELAXED_CURLS
             arm._spread = arm._goal_spread = F.RELAXED_SPREAD
@@ -318,13 +325,28 @@ class BodyRig:
             goal = arm._goal(frame, view)
             if goal is not None:
                 spec.arms[side] = goal
+                spec.rot[f"Clavicle.{side}"] = self._shoulder_for(side, goal)
         solution = solve(spec)
+        for side in S.SIDES:
+            self._arms[side]._swivel = solution.swivel.get(f"UpperArm.{side}", 0.0)
         self._solution = solution
         self._root, self._yaw = frame.root, frame.yaw
         self._apply(solution, frame)
         for side in S.SIDES:
             self._arms[side]._palm_world = self._palm_world(side, solution)
             self._place_held(self._arms[side])
+
+    @staticmethod
+    def _shoulder_for(side, goal):
+        """A clavícula avança e sobe um pouco quando a mão vai longe e alto: o alcance cresce e o ombro não fica travado."""
+        rest = S.BONE_MAP[f"UpperArm.{side}"].head
+        rel = goal.palm - rest
+        sx = S.side_sign(side)
+        forward = _smooth01((rel.y - 0.10) / 0.40)
+        high = _smooth01((rel.z + 0.30) / 0.45)
+        protract = math.radians(13.0 * forward) * goal.weight
+        lift = math.radians(7.0 * high) * goal.weight
+        return Quaternion((0.0, 0.0, 1.0), sx * protract) @ Quaternion((0.0, 1.0, 0.0), -sx * lift)
 
     # ------------------------------------------------------------------ escrita nos pose bones
     def _apply(self, solution, frame):

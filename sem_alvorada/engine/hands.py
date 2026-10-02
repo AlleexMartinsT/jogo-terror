@@ -12,7 +12,7 @@ alvo da mão. O contrato com o resto do jogo está em `docs/FASE3.md`.
 import math
 
 import bpy  # noqa: F401 - `mathutils` só existe depois deste import
-from mathutils import Euler, Matrix, Vector
+from mathutils import Euler, Matrix, Quaternion, Vector
 
 from .. import conventions as C
 from . import collision
@@ -23,6 +23,9 @@ from .handtrack import ClipPlayer, number
 FOV_ZOOM = 0.17                  # quanto o campo de visão fecha quando o rosto "se aproxima" de uma nota na parede
 MAP_LOOK_SECONDS = 1.6           # o mapa fica diante do rosto este tempo, se o jogador não apertar E de novo
 CLICK_DECAY = 9.0
+TUCK_START = 0.62                # a parede mais perto que isto (m) faz as mãos recuarem e baixarem os itens
+TUCK_RANGE = 0.34
+TUCK_FOLLOW = 9.0
 WALL_NOTES = frozenset({"NOTE_4", "NOTE_5"})        # presas na parede quando o alvo não traz `sa_mount`
 RIGHT_LOCKED = frozenset({"lantern", "swap", "refuse"})
 
@@ -58,6 +61,8 @@ class Hands:
         self._paper_size = (0.12, 0.16)
         self._lifted = None
         self._cam = (Matrix.Identity(4), Matrix.Identity(4))
+        self._euler = {"R": Euler((0.0, 0.0, 0.0)), "L": Euler((0.0, 0.0, 0.0))}
+        self._tuck = 0.0
         self.reset()
 
     # ---- consultas ----
@@ -98,6 +103,7 @@ class Hands:
         self._left_mode = "hold"
         self._look_left = 0.0
         self._click = 0.0
+        self._tuck = 0.0
         self._visual = {"R": None, "L": None}
         self._base_key = None
         self._previous_step = None
@@ -352,8 +358,7 @@ class Hands:
         self._click = 1.0
 
     def _on_burst(self, index):
-        start, length = K.FLICKER_BURSTS[index]
-        self.game.flashlight.burst(length)
+        self.game.flashlight.burst(K.FLICKER_BURSTS[index][1])
         self.game.sound("flash_flicker_burst", None, 0.8)
 
     def _on_swap_begin(self, _):
@@ -413,11 +418,18 @@ class Hands:
         if flashlight.swap_left > 0 and self.runner.clip is not None and self.runner.clip.name == "swap":
             flashlight.swap_left = max(1e-3, self.runner.clip.duration - self.runner.time)
         self._click = max(0.0, self._click - CLICK_DECAY * dt)
+        self._follow_wall(dt)
         hard = game.player.breathing_hard
         self._pose_hand("R", channels, dt, bob, yaw_rate, pitch_rate, hard)
         self._pose_hand("L", channels, dt, bob, yaw_rate, pitch_rate, hard)
-        self._apply_extras(channels, dt)
+        self._apply_extras(channels)
         self._apply_visibility()
+
+    def _follow_wall(self, dt):
+        """Perto de uma parede o item na mão atravessaria o cenário: a mão recua, baixa e inclina o item para baixo."""
+        wall = self.game.flashlight.wall_distance
+        wanted = max(0.0, min(1.0, (TUCK_START - wall) / TUCK_RANGE))
+        self._tuck += (wanted - self._tuck) * (1.0 - math.exp(-TUCK_FOLLOW * dt))
 
     def _tick_look_timer(self, dt):
         if self._left_mode == "near" and not self.runner.active:
@@ -442,11 +454,14 @@ class Hands:
             mode = "face"
         elif left == C.ITEM_MAP and self._left_mode == "near":
             mode = "near"
-        key = (self._visual["R"], left, mode)
+        ready = left is None and bool(getattr(self.game.inventory, "wheel_open", False))
+        key = (self._visual["R"], left, mode, ready)
         if key != self._base_key:
             self._base_key = key
             self.runner.rebase()
         channels = {**K.rest_channels("R", self._visual["R"]), **K.rest_channels("L", left, mode)}
+        if ready:
+            channels.update(K.ready_channels("L"))
         channels.update({name: number(value) for name, value in K.EXTRAS.items()})
         return channels
 
@@ -479,29 +494,40 @@ class Hands:
             world = collision.world_matrix(target.obj)
         else:
             world = Matrix.Translation(Vector(target.position))
-        return self._cam[1] @ world @ K.ITEM_TO_MODEL[kind]
+        model = K.ITEM_TO_MODEL[kind]
+        if kind == C.ITEM_NOTE:                          # o modelo da folha nasce na borda de baixo, não no centro
+            model = model @ Matrix.Translation((0.0, -self._paper_size[1] / 2, 0.0))
+        return self._cam[1] @ world @ model
 
     # ---- poses ----
     def _pose_hand(self, side, channels, dt, bob, yaw_rate, pitch_rate, hard):
         pos = Vector(channels[f"{side}.pos"])
-        rot = list(channels[f"{side}.rot"])
+        turn = Quaternion(channels[f"{side}.rot"])
         curl = list(channels[f"{side}.curl"])
         weight = channels[f"{side}.w"][0]
         attach = channels[f"{side}.attach"][0]
         sway_pos, sway_rot = self.sway[side].step(dt, self._clock, bob, yaw_rate, pitch_rate, hard)
         pos += Vector(sway_pos)
-        rot = [a + b for a, b in zip(rot, sway_rot)]
+        extra = [math.radians(a) for a in sway_rot]
         if side == "R":
             pitch, yaw = self.game.flashlight.offset
-            rot[0] += math.degrees(pitch) * 1.4
-            rot[1] += math.degrees(yaw) * 1.4
+            extra[0] += pitch * 1.4
+            extra[1] += yaw * 1.4
             pos.y -= 0.006 * self._click
             curl[0] = min(1.0, curl[0] + 0.32 * self._click)
-        self.last[side] = (tuple(pos), tuple(rot), tuple(curl), weight)
-        self._drive_arm(side, tuple(pos), tuple(rot), tuple(curl), weight)
+        pos += Vector((0.0, -0.05, 0.07)) * self._tuck
+        extra[0] -= math.radians(22.0) * self._tuck
+        turn = Euler(extra, "XYZ").to_quaternion() @ turn          # a inércia gira em torno dos eixos da câmera
+        euler = turn.to_euler("XYZ", self._euler[side])
+        self._euler[side] = euler
+        rot = tuple(math.degrees(a) for a in euler)
+        self.last[side] = (tuple(pos), rot, tuple(curl), weight)
+        self._drive_arm(side, tuple(pos), rot, tuple(curl), weight)
         kind = self._visual[side]
         if kind is not None:
-            self._place_item(kind, pos, rot, attach, dt)
+            hand = turn.to_matrix().to_4x4()
+            hand.translation = pos
+            self._place_item(kind, hand, attach, dt)
         elif side == "R":
             self.game.flashlight.lantern_matrix = None
 
@@ -515,8 +541,7 @@ class Hands:
             arm.release()
             self._released[side] = True
 
-    def _place_item(self, kind, pos, rot, attach, dt):
-        hand = K.pose_matrix(pos, rot)
+    def _place_item(self, kind, hand, attach, dt):
         carried = K.GRIPS[kind].item_of(hand)
         matrix, scale = self._blend_with_world(kind, carried, attach)
         if kind == C.ITEM_KEY:
@@ -554,7 +579,7 @@ class Hands:
             self.game.make_noise("key_jingle", player.feet, C.NOISE_PLAYER["key_jingle"], sound="key_jingle")
         self._previous_step = step
 
-    def _apply_extras(self, channels, dt):
+    def _apply_extras(self, channels):
         self.models.set_cap(channels["x.cap"][0])
         self.models.set_map_folds(channels["x.fold1"][0], channels["x.fold2"][0])
         self._apply_zoom(channels["x.zoom"][0])

@@ -16,7 +16,8 @@ from . import actions as act
 from . import anim
 from .camera import Hand, Impact, Rig
 from .curves import Curve, Key, Path
-from .staging import (CORRIDOR_RIM, EYE, GAMEPLAY_FOV, add, blink, curve, path, player_eye, player_gaze, say, yaw_of)
+from .staging import (CORRIDOR_RIM, EYE, GAMEPLAY_FOV, add, curve, looking, path, player_eye, player_gaze, say,
+                      yaw_of)
 from .timeline import Cue, Cutscene, Shot, Track
 
 CASCADE_START, BURST = 1.0, 3.0
@@ -66,17 +67,16 @@ def build():
     eye = (vantage[0], vantage[1], vantage[2] + EYE)
     face_yaw = yaw_of(vantage, sight)
     entity_yaw = yaw_of(sight, vantage)
-    head = (sight[0], sight[1], sight[2] + 2.45)
+    head = (sight[0], sight[1], sight[2] + 1.9)
     near_sight = (sight[0], sight[1] - ENTITY_ADVANCE, sight[2])
     near_head = (head[0], head[1] - ENTITY_ADVANCE, head[2])
     wall_glance = (sight[0] - 3.0, sight[1] + 0.2, sight[2] + 1.6)      # para onde ele "olha" antes de notar o jogador
-    gaze_end = (eye[0] + math.cos(math.radians(90)) * 0, eye[1] + 6.0, eye[2])
     t = lambda x: x - SHOT_A                       # noqa: E731  tempo absoluto -> tempo do plano B
     dur_b = TOTAL - SHOT_A
 
     rig_a = Rig(
         eye=path((0.0, player_eye, True), (SHOT_A, player_eye, True)),
-        look=path((0.0, player_gaze, True), (0.9, player_gaze), (2.4, lamp_point), (SHOT_A, lamp_point, True)),
+        look=looking((0.0, player_gaze, True), (0.5, player_gaze), (BURST - 0.1, lamp_point), (SHOT_A, lamp_point, True)),
         fov=curve((0.0, GAMEPLAY_FOV), (2.6, 64.0), (SHOT_A, 62.0)),
         roll=curve((0.0, 0.0), (BURST, 0.0), (BURST + 0.4, -3.0), (SHOT_A, -3.0)),
         hand=Hand("stand", Curve([(0.0, 0.7), (BURST, 1.4), (SHOT_A, 1.0)])),
@@ -96,14 +96,14 @@ def build():
                         Cue(BURST + 0.05, act.power(False)),
                         Cue(BURST + 0.05, act.flashlight(False)),
                         Cue(BURST + 0.05, act.cut_light(CORRIDOR_RIM, 0.0))),
-                  fade=((BURST - 0.05, 0.0), (BURST + 0.02, 1.0)),
+                  fade=((BURST + 0.7, 0.0), (BURST + 0.85, 1.0)),
                   shake=((BURST - 0.1, 0.0), (BURST, 0.6), (SHOT_A, 0.0)))
 
     # --- plano B: o mesmo "corte no escuro" até a vista de jogo. Os olhos só se afastam e voltam: terminam no vantage.
     eye_b = Path([Key(0.0, eye, True), Key(t(9.0), add(eye, (0.0, 0.07, -0.03))), Key(t(12.8), add(eye, (0.0, 0.16, -0.05))),
                   Key(t(14.6), eye), Key(dur_b, eye, True)])
-    look_b = Path([Key(0.0, head, True), Key(t(9.6), add(head, (0.0, 0.0, 0.05))), Key(t(13.4), add(near_head, (0.0, 0.0, 0.1))),
-                   Key(t(15.8), add(near_head, (0.0, 0.0, 0.0))), Key(dur_b, add(near_head, (0.0, 0.0, 0.0)), True)])
+    look_b = looking((0.0, head, True), (t(9.6), add(head, (0.0, 0.0, 0.05))), (t(13.4), add(near_head, (0.0, 0.0, 0.1))),
+                     (t(15.8), near_head), (dur_b, near_head, True))
     fov_b = curve((0.0, GAMEPLAY_FOV), (t(8.8), 66.0), (t(10.4), 54.0), (t(13.8), 50.0), (dur_b, GAMEPLAY_FOV))
     rig_b = Rig(eye_b, look_b, fov_b,
                 roll=curve((0.0, 0.0), (t(8.8), 0.0), (t(9.2), 2.5), (t(10.4), 0.0), (dur_b, 0.0)),
@@ -128,6 +128,7 @@ def build():
         Cue(t(9.9), act.sound("flash_flicker", None, 0.7)),
         Cue(t(10.05), act.entity_anim("stare")),
         Cue(t(10.3), act.sound("ent_breath", sight, 0.7)),
+        Cue(t(10.4), act.entity_anim("stalk")),
         Cue(t(10.4), act.entity_speed(ENTITY_ADVANCE / 3.0)),
         Cue(t(13.4), act.entity_stands("stare")),
         Cue(t(13.7), act.sound("ent_whisper", near_sight, 0.6)),
@@ -142,7 +143,7 @@ def build():
                for k in range(3)]
     tracks_b = (Track(t(4.0), t(10.1), act.entity_look(wall_glance), "linear"),
                 Track(t(10.1), t(TOTAL), act.entity_look(eye, rate=70.0), "linear"),
-                Track(t(10.4), t(13.4), act.entity_walk(sight, near_sight, entity_yaw, "stalk"), "linear"))
+                Track(t(10.4), t(13.4), act.entity_walk(sight, near_sight, entity_yaw), "linear"))
     shot_b = Shot(dur_b, cam=rig_b, name="escuro_e_luz", cut=True,
                   lines=(say("blackout", 1, t(4.5), t(6.7)), say("blackout", 2, t(6.9), t(10.4)),
                          say("blackout", 3, t(11.2), t(15.8))),

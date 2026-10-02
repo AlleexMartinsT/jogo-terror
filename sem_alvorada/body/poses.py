@@ -46,8 +46,9 @@ def _pose_stand():
 def _pose_sit_bed():
     pelvis = S.BONE_MAP["Hips"].head
     shift = (0.0, -0.02, PELVIS_ABOVE_SEAT - pelvis.z)
-    return _spec(shift, **_both(Thigh=88.0, Shin=-92.0, Foot=4.0, UpperArm=24.0, Forearm=58.0),
-                 Spine1=-4.0, Spine2=-5.0, Spine3=-3.0, Neck=8.0)
+    # as mãos pousam nas coxas (ângulos achados por busca numérica contra a posição da coxa)
+    return _spec(shift, **_both(Thigh=88.0, Shin=-92.0, Foot=4.0, Forearm=79.0), UpperArm__R=(3.1, 13.25, 0.0),
+                 UpperArm__L=(3.1, -13.25, 0.0), Spine1=-4.0, Spine2=-5.0, Spine3=-3.0, Neck=8.0)
 
 
 def _pose_lying_bed():
@@ -109,3 +110,16 @@ class PoseBlend:
         names = set(self._from_rot) | set(self._to_rot)
         self.rot = {n: self._from_rot.get(n, S.IDENTITY).slerp(self._to_rot.get(n, S.IDENTITY), eased) for n in names}
         self.shift = self._from_shift.lerp(self._to_shift, eased)
+
+
+def eye_in_pose(name):
+    """Onde ficam os olhos (x, y, z) na pose `name`, relativos ao ponto de `place` (mesmos eixos do corpo).
+
+    A câmera de uma cutscene em primeira pessoa é posta aí: `BodyRig.place(*raiz, yaw)` com a raiz escolhida para
+    que isto caia no ponto desejado."""
+    from .solver import PoseSpec, solve
+    data = pose_data(name)
+    solution = solve(PoseSpec(hips_shift=data["shift"], rot=data["rot"]))
+    neck = S.BONE_INDEX["Neck"]
+    eye = solution.head[neck] + solution.world[neck] @ S.EYE_FROM_C7
+    return (eye.x, eye.y, eye.z)

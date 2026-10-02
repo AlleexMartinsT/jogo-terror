@@ -10,13 +10,15 @@ from dataclasses import dataclass
 
 from mathutils import Matrix, Quaternion, Vector
 
+from .. import layout
 from . import skeleton as S
 from .solver import LegGoal, PoseSpec
 
 AXIS_X, AXIS_Z = Vector((1.0, 0.0, 0.0)), Vector((0.0, 0.0, 1.0))
 ROOT_BACK = S.EYE_FROM_C7.y            # a raiz dos pés fica atrás do olho; assim o quadril cai sob a coluna
 STAND_EYE, CROUCH_EYE = 1.65, 1.05     # C.PLAYER_EYE_STAND / C.PLAYER_EYE_CROUCH
-PITCH_NECK_SHARE = 0.55                # fatia da inclinação do olhar que o pescoço absorve (o resto é do tronco)
+PITCH_NECK_SHARE = 0.35                # fatia da inclinação do olhar que o pescoço absorve (o resto é do tronco)
+LEAN_PER_PITCH = 0.06                  # graus de tronco inclinado por grau de olhar para baixo
 MAX_LAG = math.radians(68.0)           # quanto o corpo pode ficar para trás da câmera, em guinada
 TOE_OUT = math.radians(5.0)
 SOLE_BACK, BALL_FRONT = -0.065, 0.13   # calcanhar e bola do pé em relação ao tornozelo (m)
@@ -93,11 +95,11 @@ class Locomotion:
         self.clock = 0.0
         self.breath = 0.0
         self.last_phase = 0.0
-        self.stair_z = 0.0
+        self.ground_z = {"L": 0.0, "R": 0.0}      # altura do piso sob cada pé, relativa à raiz, suavizada
 
     # ------------------------------------------------------------------
-    def step(self, dt, player, bob, ground=None):
-        """Um quadro. `ground(x, y)` opcional devolve a altura do piso (escadas)."""
+    def step(self, dt, player, bob):
+        """Um quadro de locomoção a partir do `Player` (posição, olhar, passada, agachar)."""
         self.clock += dt
         position, euler = player.camera_pose()
         cam_pos = Vector(position)
@@ -140,7 +142,7 @@ class Locomotion:
 
         phase = player.stride_phase
         cycle = phase / (2.0 * math.pi)
-        self._legs(spec, cycle, ground, root)
+        self._legs(spec, cycle, root, dt)
         self._arms_fk(rot, cycle, speed)
 
         frame = Frame()
@@ -173,7 +175,7 @@ class Locomotion:
     def _lean(self, pitch):
         down = max(0.0, -math.degrees(pitch))
         up = max(0.0, math.degrees(pitch))
-        return (self.params["lean"] * self.gain + 40.0 * self.crouch + down * 0.26 * (1.0 - PITCH_NECK_SHARE) * 1.6
+        return (self.params["lean"] * self.gain + 40.0 * self.crouch + down * LEAN_PER_PITCH
                 - up * 0.08)
 
     def _spine(self, rot, lean, lag, pitch, speed):
@@ -187,7 +189,7 @@ class Locomotion:
         rot["Spine2"] = Quaternion(AXIS_X, math.radians(breath)) @ rot["Spine2"]
         rot["Neck"] = Quaternion(AXIS_X, math.radians(lean * 0.45))
 
-    def _legs(self, spec, cycle, ground, root):
+    def _legs(self, spec, cycle, root, dt):
         p = self.params
         gait = Gait(p["reach"], p["duty"], p["lift"], p["lean"], p["swing"], p["elbow"])
         direction = self.direction
@@ -202,19 +204,26 @@ class Locomotion:
             x = sx * S.LEG_X + direction.x * along
             y = direction.y * along
             z = S.ANKLE_Z + lift + neutral_rise * (1.0 - self.gain)
-            if ground is not None:
-                z += ground(x, y, root, side)
+            z += self._ground_under(side, x, y, root, dt)
             foot_q = Quaternion(AXIS_Z, -sx * TOE_OUT) @ Quaternion(AXIS_X, pitch)
             pole = Vector((sx * 0.12, 1.0, 0.0))
             spec.legs[side] = LegGoal(Vector((x, y, z)), foot_q, pole)
             spec.rot[f"Toe.{side}"] = Quaternion(AXIS_X, max(0.0, -pitch) * 0.85)
+
+    def _ground_under(self, side, x, y, root, dt):
+        """Quanto o piso sob o pé está acima da raiz (degraus da escada), suavizado para o pé não saltar na quina."""
+        c, s = math.cos(self.body_yaw), math.sin(self.body_yaw)
+        wx, wy = root.x + c * x - s * y, root.y + s * x + c * y
+        height = layout.stairs_height(wx, wy)
+        want = 0.0 if height is None else height - root.z
+        self.ground_z[side] += (want - self.ground_z[side]) * (1.0 - math.exp(-24.0 * dt))
+        return self.ground_z[side]
 
     def _arms_fk(self, rot, cycle, speed):
         """Braço solto: balanço oposto à perna do mesmo lado, mais leve em pé; cotovelos dobram ao correr."""
         p = self.params
         swing, elbow = p["swing"] * self.gain, p["elbow"] * self.gain
         for side, offset in (("L", 0.5), ("R", 0.0)):
-            sx = S.side_sign(side)
             wave = math.sin(2.0 * math.pi * (cycle + offset))
             sway = 1.2 * math.sin(self.clock * 0.9 + (0.0 if side == "L" else 1.7)) * (1.0 - self.gain)
             forward = swing * wave + sway

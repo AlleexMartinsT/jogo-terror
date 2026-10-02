@@ -104,10 +104,11 @@ class PreviewHost:
         self.audio = RecordingAudio()
         self.doors = PreviewDoors(scene)
         self.entity = self._entity()
-        self.body = NullBody()
+        self.body = self._body()
         self.state = start["player"]
         self._pitch = start.get("pitch", 0.0)
         self.finished = []
+        self._flash_on = False
         self.power = start["power"]
         self.gains = {}
         self._lights = [(o, o.get(C.P_LIGHT_ENERGY, o.data.energy)) for o in scene.objects
@@ -122,6 +123,14 @@ class PreviewHost:
     def _entity(self):
         from sem_alvorada.entity.rig import EntityRig
         return EntityRig(self.scene)
+
+    def _body(self):
+        """O corpo de verdade se o .blend o tem (como o `Game`); senão o NullBody."""
+        try:
+            from sem_alvorada.body import BodyRig
+            return BodyRig(self.scene)
+        except Exception:                                   # noqa: BLE001
+            return NullBody()
 
     def _make_flashlight(self):
         light_data = bpy.data.lights.new("PreviewFlashlight", "SPOT")
@@ -182,6 +191,7 @@ class PreviewHost:
         pass
 
     def set_flashlight(self, on):
+        self._flash_on = on
         self._flashlight.data.energy = FLASHLIGHT_ENERGY if on else 0.0
 
     def noise_silence(self, seconds):
@@ -192,9 +202,29 @@ class PreviewHost:
 
     def tick(self, dt):
         self.doors.update(dt)
+        self._adapt_flashlight()
+
+    def _adapt_flashlight(self):
+        """Como o `Flashlight` do jogo: perto de uma superfície a luz recua da lente e o olho se adapta (menos brilho)."""
+        cam = self._player_cam
+        if cam is None or not self._flash_on:
+            return
+        from sem_alvorada.engine import flashlight as game_flashlight
+        bpy.context.view_layer.update()
+        origin = cam.matrix_world.translation
+        forward = cam.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
+        hit, location, _, _, _, _ = self.scene.ray_cast(bpy.context.evaluated_depsgraph_get(), origin, forward,
+                                                        distance=game_flashlight.FULL_POWER_DISTANCE)
+        wall = (location - origin).length if hit else game_flashlight.FULL_POWER_DISTANCE
+        forward_offset = min(game_flashlight.LIGHT_FORWARD_MAX, max(game_flashlight.LIGHT_FORWARD_MIN,
+                                                                      wall - game_flashlight.WALL_GAP))
+        self._flashlight.location = (game_flashlight.LIGHT_XY[0], game_flashlight.LIGHT_XY[1], -forward_offset)
+        ratio = min(1.0, wall / game_flashlight.FULL_POWER_DISTANCE)
+        gain = max(game_flashlight.CLOSE_GAIN_FLOOR, ratio ** game_flashlight.CLOSE_GAIN_EXPONENT)
+        self._flashlight.data.energy = FLASHLIGHT_ENERGY * gain if self._flash_on else 0.0
 
     def show_body(self, visible):
-        pass
+        self.body.set_visible(visible)
 
     def finish(self, reason):
         self.finished.append(reason)
@@ -283,8 +313,18 @@ def _prepare_death(host):
     host.entity.eyes(0.6)
 
 
+def _scout_lamp(scene, watts):
+    """Luz de depuração presa à câmera (só para conferir enquadramento e geometria no escuro): `--lamp watts`."""
+    data = bpy.data.lights.new("ScoutLamp", "POINT")
+    data.energy = watts
+    data.shadow_soft_size = 0.3
+    obj = bpy.data.objects.new("ScoutLamp", data)
+    scene.collection.objects.link(obj)
+    return obj
+
+
 def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, out_dir=OUT_DIR, fill=0.0,
-                  prefix=None, columns=3):
+                  prefix=None, columns=3, lamp=0.0):
     from sem_alvorada.entity import sheet
     os.makedirs(out_dir, exist_ok=True)
     prefix = prefix or name
@@ -295,17 +335,23 @@ def render_frames(scene, name, times, res=(640, 360), samples=32, exposure=0.0, 
     host = PreviewHost(scene, START_STATE[name])
     if name == "death":
         _prepare_death(host)
+    scout = _scout_lamp(scene, lamp) if lamp > 0 else None
     player = CutscenePlayer(host)
     player.play(name)
+    host.tick(0.0)
     tiles, labels = [], []
     for index, target in enumerate(sorted(times)):
         while player.active and player.time < target - 1e-6:
             step = min(STEP, target - player.time)
-            host.tick(step)
             player.update(step)
+            if player.active:
+                host.tick(step)
         if not player.active:
             break
         overlay = player.overlay()
+        if scout is not None:
+            cam = scene.camera
+            scout.location = cam.matrix_world.translation + cam.matrix_world.to_quaternion() @ Vector((0.0, 0.25, -0.1))
         path = os.path.join(out_dir, f"{prefix}_{index:02d}.png")
         scene.render.filepath = path
         bpy.ops.render.render(write_still=True)
@@ -331,6 +377,7 @@ def main(argv=None):
     ap.add_argument("--out", default=OUT_DIR, help="pasta de saída (a padrão é compartilhada com o orquestrador)")
     ap.add_argument("--fill", type=float, default=0.0, help="luz de mundo para depuração (0 = escuro de verdade)")
     ap.add_argument("--columns", type=int, default=3)
+    ap.add_argument("--lamp", type=float, default=0.0, help="luz de depuração (watts) presa à câmera, para conferir a geometria no escuro")
     ap.add_argument("--rebuild", action="store_true", help="recria os objetos de cutscene sobre o .blend antes de renderizar")
     args = ap.parse_args(argv)
     bpy.ops.wm.open_mainfile(filepath=os.path.abspath(args.blend))
@@ -340,7 +387,8 @@ def main(argv=None):
     times = [float(t) for t in args.times.split(",")] if args.times else default_times(args.cutscene)
     res = tuple(int(v) for v in args.res.lower().split("x"))
     render_frames(bpy.context.scene, args.cutscene, times, res, args.samples, args.exposure, out_dir=args.out,
-                  fill=args.fill, prefix=f"{args.cutscene}_{args.tag}" if args.tag else None, columns=args.columns)
+                  fill=args.fill, prefix=f"{args.cutscene}_{args.tag}" if args.tag else None, columns=args.columns,
+                  lamp=args.lamp)
 
 
 if __name__ == "__main__":

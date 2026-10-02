@@ -369,6 +369,8 @@ class Game:
         self.interact.update(player.eye_pos, player.forward())
         if inp.interact and self.interact.current is not None and not self.hands.busy:
             self.interact.use(self.interact.current)
+        elif inp.interact and self.interact.current is None:
+            self.hands.use_held()           # sem alvo na mira: o mapa vem ao rosto, a anotação reabre o leitor
         if self.phase == "play":
             self.director.update(dt)
             self.ambience.update(dt, FLAG_BLACKOUT in self.state.flags)

@@ -22,11 +22,11 @@ TORSO_PHASE = -math.pi / 2                    # u = 0 atrás, 0,25 direita, 0,5 
 TORSO_TABLE = (
     (0.955, 0.158, 0.108, 0.000), (0.990, 0.152, 0.103, 0.003), (1.040, 0.142, 0.097, 0.004),
     (1.090, 0.140, 0.096, 0.005), (1.150, 0.145, 0.098, 0.007), (1.220, 0.153, 0.101, 0.009),
-    (1.290, 0.159, 0.104, 0.010), (1.350, 0.166, 0.104, 0.010), (1.395, 0.172, 0.099, 0.008),
-    (1.428, 0.150, 0.088, 0.010), (1.455, 0.100, 0.075, 0.015), (1.478, 0.068, 0.063, 0.020),
+    (1.290, 0.159, 0.104, 0.010), (1.350, 0.165, 0.104, 0.010), (1.385, 0.172, 0.100, 0.008),
+    (1.412, 0.168, 0.093, 0.009), (1.436, 0.146, 0.084, 0.012), (1.456, 0.104, 0.074, 0.016), (1.478, 0.068, 0.063, 0.020),
 )
-TORSO_Z = (0.955, 0.975, 0.995, 1.015, 1.040, 1.070, 1.100, 1.135, 1.170, 1.205, 1.240, 1.275, 1.310, 1.345, 1.375,
-           1.398, 1.418, 1.436, 1.452, 1.467, 1.478)
+TORSO_Z = (0.955, 0.975, 0.995, 1.015, 1.040, 1.070, 1.100, 1.135, 1.170, 1.205, 1.240, 1.275, 1.310, 1.345, 1.372,
+           1.395, 1.414, 1.432, 1.448, 1.462, 1.478)
 _RX = K.interp([r[0] for r in TORSO_TABLE], [r[1] for r in TORSO_TABLE])
 _RY = K.interp([r[0] for r in TORSO_TABLE], [r[2] for r in TORSO_TABLE])
 _CY = K.interp([r[0] for r in TORSO_TABLE], [r[3] for r in TORSO_TABLE])
@@ -130,11 +130,13 @@ def build_collar():
     """Gola de camisa: faixa em pé que cai para fora, e o pescoço de pele que sobe por dentro dela."""
     mesh = K.Mesh()
     weights = {"Neck": 0.55, "Spine3": 0.45}
-    profile = [(1.462, 0.068, 0.064), (1.482, 0.067, 0.063), (1.505, 0.064, 0.061), (1.522, 0.0665, 0.0635),
-               (1.529, 0.0735, 0.0705), (1.524, 0.0815, 0.0785), (1.512, 0.0865, 0.0835), (1.498, 0.0885, 0.0855),
-               (1.493, 0.0880, 0.0850)]
+    profile = [(1.456, 0.0685, 0.0645), (1.470, 0.0678, 0.0638), (1.486, 0.0665, 0.0625), (1.497, 0.0675, 0.0640),
+               (1.502, 0.0715, 0.0680), (1.500, 0.0775, 0.0740), (1.493, 0.0835, 0.0800), (1.483, 0.0875, 0.0840),
+               (1.478, 0.0880, 0.0845)]
     rings = [K.Ring((0.0, 0.020, z), (1, 0, 0), (0, 1, 0), rx, ry, n=2.2, weights=dict(weights)) for z, rx, ry in profile]
     mesh.sweep(rings, 32, FLANNEL, phase=TORSO_PHASE, region="collar", uv0_rect=tex.FLANNEL_SMALL, uv_tile=tex.FLANNEL_TILE)
+    # abertura em V na frente: o colarinho de camisa aberta mostra o pescoço
+    mesh.drop_faces(lambda c: c[1] > 0.03 and abs(c[0]) < 0.026 + (c[1] - 0.03) * 0.9 and c[2] > 1.462)
     neck = [(1.468, 0.054, 0.052), (1.50, 0.052, 0.050), (1.532, 0.050, 0.048), (1.546, 0.045, 0.043)]
     rings = [K.Ring((0.0, 0.022, z), (1, 0, 0), (0, 1, 0), rx, ry, n=2.1, weights={"Neck": 1.0}) for z, rx, ry in neck]
     mesh.sweep(rings, 20, SKIN, phase=TORSO_PHASE, region="neck", uv0_rect=(0.0, 0.0, 0.02, 0.02), closed_end=True)
@@ -147,7 +149,6 @@ def build_buttons():
     for z in BUTTON_ZS:
         y = torso_front_y(z) + 0.0038
         w = K.normalize(_torso_weights(z)(np.array([math.pi / 2]))[0])
-        profile = [(0.0, 0.0030), (0.0010, 0.0055), (0.0030, 0.0058), (0.0042, 0.0050), (0.0046, 0.0036), (0.0042, 0.0014)]
         rings = [K.Ring((0.0, y + dy, z), (1, 0, 0), (0, 0, 1), r, r, n=2.0, weights=dict(w)) for dy, r in
                  [(0.0, 0.0058), (0.0008, 0.0060), (0.0021, 0.0054), (0.0026, 0.0040), (0.0022, 0.0030)]]
         mesh.sweep(rings, 14, BUTTON, phase=0.0, region="button", uv0_rect=(0.0, 0.0, 0.1, 0.1), uv_tile=0.02,
@@ -167,15 +168,16 @@ def _sleeve_path():
     elbow = np.array(S.BONE_MAP["Forearm.R"].head)
     wrist = np.array(S.BONE_MAP["Hand.R"].head)
     fore = (wrist - elbow) / np.linalg.norm(wrist - elbow)
-    top = shoulder + np.array([-0.008, 0.0, 0.058])
+    top = shoulder + np.array([-0.036, 0.0, 0.020])
     end = elbow + fore * (CUFF_END + 0.02)
-    return K.polyline_curve([top, shoulder, shoulder + (elbow - shoulder) * 0.5, elbow, end]), top, shoulder, elbow, fore
+    along = [elbow + fore * d for d in (0.04, 0.09, 0.14)]
+    return K.polyline_curve([top, shoulder, shoulder + (elbow - shoulder) * 0.5, elbow] + along + [end]), top, shoulder, elbow, fore
 
 
 # (distância s a partir do ombro, raio lateral, raio frontal); depois do cotovelo o raio depende do punho
-SLEEVE_TABLE = ((-0.058, 0.012, 0.012), (-0.050, 0.034, 0.033), (-0.036, 0.054, 0.052), (-0.014, 0.0635, 0.060),
-                (0.020, 0.0625, 0.0585), (0.080, 0.0575, 0.0545), (0.160, 0.0525, 0.0510), (0.250, 0.0495, 0.0490),
-                (0.320, 0.0495, 0.0495), (0.335, 0.0495, 0.0495), (0.380, 0.0470, 0.0465), (0.420, 0.0450, 0.0445))
+SLEEVE_TABLE = ((-0.041, 0.010, 0.010), (-0.036, 0.030, 0.029), (-0.027, 0.046, 0.044), (-0.014, 0.0560, 0.0535), (-0.003, 0.0585, 0.0555),
+                (0.020, 0.0585, 0.0555), (0.080, 0.0545, 0.0520), (0.160, 0.0505, 0.0495), (0.250, 0.0480, 0.0480),
+                (0.320, 0.0480, 0.0480), (0.335, 0.0480, 0.0480), (0.380, 0.0465, 0.0460), (0.420, 0.0450, 0.0445))
 _SR = K.interp([r[0] for r in SLEEVE_TABLE], [r[1] for r in SLEEVE_TABLE])
 _SF = K.interp([r[0] for r in SLEEVE_TABLE], [r[2] for r in SLEEVE_TABLE])
 
@@ -225,7 +227,7 @@ def build_sleeve():
     curve, top, shoulder, elbow, fore = _sleeve_path()
     total = curve.length
     to_shoulder = float(np.linalg.norm(shoulder - top))
-    samples = [-0.058, -0.052, -0.044, -0.034, -0.020, -0.004, 0.020, 0.060, 0.110, 0.170, 0.230, 0.290, 0.325,
+    samples = [-0.041, -0.038, -0.032, -0.024, -0.014, -0.003, 0.012, 0.032, 0.060, 0.110, 0.170, 0.230, 0.290, 0.325,
                UPPER_LEN, UPPER_LEN + 0.020, UPPER_LEN + 0.045, UPPER_LEN + CUFF_START - 0.012, UPPER_LEN + CUFF_START - 0.004,
                UPPER_LEN + CUFF_START + 0.004, UPPER_LEN + CUFF_START + 0.014, UPPER_LEN + 0.12, UPPER_LEN + CUFF_END - 0.012,
                UPPER_LEN + CUFF_END - 0.004, UPPER_LEN + CUFF_END + 0.001]
@@ -248,11 +250,6 @@ def build_sleeve():
     mesh.sweep(rings, SLEEVE_SIDES, FLANNEL, phase=0.0, region="sleeve", uv0_rect=tex.FLANNEL_ATLAS["sleeve_R"],
                uv_tile=tex.FLANNEL_TILE, closed_start=True)
     return mesh
-
-
-def build_cuff_lining():
-    """O avesso do punho dobrado: anel fino visível por dentro, na cor do tecido (sombra por cima da pele)."""
-    return K.Mesh()
 
 
 def mirror(mesh):

@@ -31,7 +31,7 @@ def hip_front_y(z):
 
 
 def _hip_weights(z):
-    t = K.ramp(0.935 - z, 0.0, 0.14)
+    t = thigh_share(z)
 
     def per_vertex(thetas):
         out = []
@@ -98,8 +98,18 @@ _LRY = K.interp([r[0] for r in reversed(LEG_TABLE)], [r[2] for r in reversed(LEG
 _LCY = K.interp([r[0] for r in reversed(LEG_TABLE)], [r[3] for r in reversed(LEG_TABLE)])
 
 
+def thigh_share(z):
+    """Quanto do peso de um ponto do quadril/coxa é da coxa (o resto é do quadril): o mesmo para o casco e para a perna."""
+    return float(K.smoothstep(0.97 - z, 0.0, 0.16))
+
+
 def _leg_weights(z):
-    return K.blend_chain(["Hips", "Thigh.R", "Shin.R", "Foot.R"], [0.955, S.KNEE_Z, S.ANKLE_Z + 0.02], z, [0.05, 0.055, 0.03])
+    share = thigh_share(z)
+    # a cadeia desce com o z: usa -z para que os centros fiquem em ordem crescente
+    lower = K.blend_chain(["Thigh.R", "Shin.R", "Foot.R"], [-S.KNEE_Z, -(S.ANKLE_Z + 0.02)], -z, [0.055, 0.03])
+    weights = {"Hips": 1.0 - share}
+    weights.update({k: v * share for k, v in lower.items()})
+    return K.normalize(weights)
 
 
 def _leg_features(z, noise_phase):
@@ -231,7 +241,6 @@ def _buckle():
     rings = []
     for index, (x, z) in enumerate(pts):
         nx, nz = pts[(index + 1) % len(pts)][0] - pts[index - 1][0], pts[(index + 1) % len(pts)][1] - pts[index - 1][1]
-        tangent = np.array([nx, 0.0, nz]) / math.hypot(nx, nz)
         inward = np.array([-nz, 0.0, nx]) / math.hypot(nx, nz)
         rings.append(K.Ring((x, y, z0 + z), inward, np.array([0.0, 1.0, 0.0]), 0.0034, 0.0021, n=2.4, weights={"Hips": 1.0}))
     mesh.sweep(rings, 10, METAL, phase=0.0, region="buckle", uv0_rect=NEUTRAL, uv_tile=0.02, loop=True)

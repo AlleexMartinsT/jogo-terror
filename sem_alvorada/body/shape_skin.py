@@ -39,7 +39,7 @@ _ARM_PROFILE = (
 _ARM_D = [row[0] for row in _ARM_PROFILE]
 _RX = K.interp(_ARM_D, [row[1] for row in _ARM_PROFILE])
 _RY = K.interp(_ARM_D, [row[2] for row in _ARM_PROFILE])
-SAMPLES_D = (-0.200, -0.170, -0.140, -0.110, -0.085, -0.062, -0.040, -0.022, -0.008, 0.004, 0.018, 0.034, 0.050,
+SAMPLES_D = (-0.150, -0.130, -0.110, -0.085, -0.062, -0.040, -0.022, -0.008, 0.004, 0.018, 0.034, 0.050,
              0.066, 0.080, 0.090, 0.098)
 
 
@@ -191,6 +191,13 @@ def build_thumb(side="R", material=SKIN, uv_rect=None, tile=0.12):
 # --------------------------------------------------------------------------
 # Unhas
 # --------------------------------------------------------------------------
+def nail_half_width(v, half):
+    """Contorno da unha: base arredondada sob a cutícula, laterais retas, borda livre levemente curva."""
+    base = np.sqrt(np.clip(1.0 - (1.0 - min(v / 0.28, 1.0)) ** 2, 0.0, 1.0))
+    free = 1.0 - 0.16 * max(0.0, (v - 0.72) / 0.28) ** 2
+    return half * max(0.10, base) * free
+
+
 def build_nail(finger, side="R", material=NAIL):
     """Unha de um dedo: grade curva sobre o dorso da última falange, 0,4 mm acima da pele."""
     f, p, t = (np.array(v) for v in S.hand_frame("R"))
@@ -202,7 +209,7 @@ def build_nail(finger, side="R", material=NAIL):
     knuckle = wrist + f * S.MCP_FORWARD[finger] + t * S.MCP_LATERAL[finger]
     radius = _FINGER_R[finger]
     b_start, b_end = l1 + l2 + 0.28 * l3, l1 + l2 + l3 - 0.0012
-    cols, rows = 5, 5
+    cols, rows = 7, 8
     points = np.zeros((rows, cols, 3))
     for r in range(rows):
         v = r / (rows - 1)
@@ -210,7 +217,7 @@ def build_nail(finger, side="R", material=NAIL):
         k_r = float(np.interp(b, [row[0] for row in finger_profile(finger)], [row[1] for row in finger_profile(finger)]))
         k_t = float(np.interp(b, [row[0] for row in finger_profile(finger)], [row[2] for row in finger_profile(finger)]))
         rx, ry = radius * k_r, radius * k_t * 0.94
-        half = rx * 0.72 * (1.0 - 0.18 * v ** 2)
+        half = nail_half_width(v, rx * 0.74)
         for c in range(cols):
             u = -1.0 + 2.0 * c / (cols - 1)
             a = half * u
@@ -228,7 +235,7 @@ def _thumb_nail(side, material):
     curve = K.polyline_curve(pts)
     total = curve.length
     mesh = K.Mesh()
-    rows, cols = 5, 5
+    rows, cols = 8, 7
     points = np.zeros((rows, cols, 3))
     for r in range(rows):
         v = r / (rows - 1)
@@ -237,12 +244,29 @@ def _thumb_nail(side, material):
         normal, _ = K.perpendicular_frame(tan, p)
         lateral = np.cross(tan, normal)
         rx, ry = 0.0102 * (1 - 0.15 * v), 0.0090 * (1 - 0.1 * v)
-        half = rx * 0.74
+        half = nail_half_width(v, rx * 0.76)
         for c in range(cols):
             a = half * (-1.0 + 2.0 * c / (cols - 1))
             x_norm = min(abs(a) / rx, 0.98)
             points[r, c] = pos + lateral * a - normal * (ry * (1.0 - x_norm ** 2.4) ** (1.0 / 2.4) + 0.0004)
     mesh.grid(points, material, {f"Thumb2.{side}": 1.0}, region="nail_Thumb", flip=True)
+    return mesh
+
+
+def build_ring_band(finger="Ring", material="gold"):
+    """Aliança de ouro gasto na primeira falange (construída no lado direito; só a mão esquerda a usa)."""
+    mesh = K.Mesh()
+    f, p, t = (np.array(v) for v in S.hand_frame("R"))
+    wrist = np.array(S.BONE_MAP["Hand.R"].head)
+    knuckle = wrist + f * S.MCP_FORWARD[finger] + t * S.MCP_LATERAL[finger]
+    radius = _FINGER_R[finger]
+    rings = []
+    for b, extra in ((0.0160, -0.0004), (0.0166, 0.0006), (0.0185, 0.0009), (0.0214, 0.0009), (0.0233, 0.0006), (0.0239, -0.0004)):
+        k_r, k_t = np.interp(b, [r[0] for r in finger_profile(finger)], [r[1] for r in finger_profile(finger)]), \
+            np.interp(b, [r[0] for r in finger_profile(finger)], [r[2] for r in finger_profile(finger)])
+        rings.append(K.Ring(knuckle + f * b, t, p, radius * k_r + extra + 0.0006, radius * k_t * 0.94 + extra + 0.0006, n=2.4,
+                            weights={f"{finger}1.R": 1.0}))
+    mesh.sweep(rings, FINGER_SIDES + 4, material, phase=math.pi, region="ring_band", uv0_rect=(0.0, 0.0, 0.01, 0.01), uv_tile=0.02)
     return mesh
 
 

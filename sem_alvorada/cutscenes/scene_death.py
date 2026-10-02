@@ -13,7 +13,7 @@ import math
 from . import actions as act
 from .camera import Hand, Impact, Rig
 from .curves import Curve, Key, Path
-from .staging import add, curve, player_eye, player_gaze
+from .staging import curve, looking, player_eye, player_gaze
 from .timeline import Cue, Cutscene, Shot, Track
 
 DURATION = 3.5
@@ -45,11 +45,6 @@ def entity_head_now(stage):
     return stage.entity_head()
 
 
-def above_her(stage):
-    x, y, z = stage.entity_head()
-    return (x, y, z + 0.6)
-
-
 def build():
     def face(stage):
         """Onde o rosto vai parar no bote: à frente dos olhos, na direção da entidade."""
@@ -60,13 +55,13 @@ def build():
     eye = Path([Key(0.0, player_eye, True), Key(0.45, fallen(0.02, 0.0)), Key(0.78, fallen(0.10, 0.04)),
                 Key(1.10, fallen(0.20, 0.55)), Key(1.48, fallen(FALL_BACK, 1.30)), Key(1.75, fallen(FALL_BACK + 0.04, 1.40)),
                 Key(2.5, fallen(FALL_BACK + 0.08, 1.43)), Key(DURATION - 0.01, fallen(FALL_BACK + 0.10, 1.44), True)])
-    look = Path([Key(0.0, player_gaze, True), Key(0.30, entity_head_now), Key(1.0, entity_head_now),
-                 Key(1.5, entity_head_now), Key(2.2, above_her), Key(DURATION - 0.01, above_her, True)])
+    look = looking((0.0, player_gaze, True), (0.30, entity_head_now), (1.0, entity_head_now),
+                   (1.5, entity_head_now), (DURATION - 0.01, entity_head_now, True))
     rig = Rig(eye, look,
               fov=curve((0.0, 72.0), (0.35, 60.0), (0.8, 46.0), (1.5, 44.0), (2.6, 38.0), (DURATION - 0.01, 36.0)),
               roll=curve((0.0, 0.0), (0.7, 5.0), (1.45, 22.0), (2.2, 30.0), (DURATION - 0.01, 31.0)),
               hand=Hand("panic", Curve([(0.0, 0.6), (0.6, 1.0), (CUT, 1.4)])),
-              impacts=(Impact(0.58, 2.2, 7.5, 5.0, 1.0), Impact(1.48, 2.6, 8.5, 5.5, 2.0), Impact(1.85, 0.8, 6.0, 4.5, 4.0)))
+              impacts=(Impact(0.58, 1.9, 7.0, 5.0, 1.0), Impact(1.48, 2.2, 7.0, 5.5, 2.0), Impact(1.85, 0.8, 6.0, 4.5, 4.0)))
     cues = (
         Cue(0.0, act.entity_eyes(1.0)),
         Cue(0.0, act.entity_anim("attack")),

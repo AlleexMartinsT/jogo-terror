@@ -111,12 +111,15 @@ class CutscenePlayer:
             return
         stage, timeline = run.stage, run.timeline
         stage.skipping = True
-        for index, (t0, t1, track) in enumerate(timeline.tracks):
-            if not run.tracks_done[index]:
-                stage.safe(f"track {track.apply.__qualname__}", track.apply, stage, 1.0)
-        for t, action in timeline.cues[run.next_cue:]:
-            if action.essential:
-                stage.safe(f"cue {action.run.__qualname__}", action, stage)
+        # na ordem do tempo, como numa execução completa: uma trilha só chega ao fim depois das ações que a precedem
+        pending = [(t, 0, action) for t, action in timeline.cues[run.next_cue:] if action.essential]
+        pending += [(t1, 1, (stage, track)) for index, (t0, t1, track) in enumerate(timeline.tracks)
+                    if not run.tracks_done[index]]
+        for _, kind, item in sorted(pending, key=lambda entry: (entry[0], entry[1])):
+            if kind == 0:
+                stage.safe(f"cue {item.run.__qualname__}", item, stage)
+            else:
+                stage.safe(f"track {item[1].apply.__qualname__}", item[1].apply, stage, 1.0)
         run.t = timeline.total
         self._finish(run)
 
@@ -150,8 +153,8 @@ class CutscenePlayer:
         self._apply_tracks(run)
         stage.update_actors(dt)
         self._place_camera(run, dt)
+        stage.update_actors(dt, late=True)
         self._animate_entity(run, dt)
-        self._animate_body(run, dt)
 
     def _fire_cues(self, run):
         cues = run.timeline.cues
@@ -190,6 +193,7 @@ class CutscenePlayer:
         cam.location = position
         cam.rotation_mode = "QUATERNION"
         cam.rotation_quaternion = q
+        stage.camera_pose = (position, q)
         stage.safe("lens", camera.apply_lens, cam, state)
         self._apply_lids(run, tl.sample("lids", run.t), state.fov)
         if stage.flashlight_follows:
@@ -219,7 +223,7 @@ class CutscenePlayer:
     def _apply_lids(self, run, closed, fov):
         """Pálpebras: dois planos colados na lente (filhos da câmera). 0 aberto, 1 fechado."""
         stage = run.stage
-        top, bottom = stage.obj("Cut_LidTop"), stage.obj("Cut_LidBottom")
+        top, bottom = stage.touch(stage.obj("Cut_LidTop")), stage.touch(stage.obj("Cut_LidBottom"))
         if top is None or bottom is None:
             return
         visible = closed > 0.002
@@ -248,6 +252,10 @@ class CutscenePlayer:
                                  camera.qmul(camera.axis_rotation("y", FLASH_HAND_RAD * hand * noise(t * 27.0, 4.0)),
                                              camera.axis_rotation("z", FLASH_HAND_RAD * hand * noise(t * 23.0, 5.0))))
             q = camera.qmul(q, tremor)
+        yaw, pitch = stage.flash_aim
+        if yaw or pitch:
+            q = camera.qmul(q, camera.qmul(camera.axis_rotation("y", math.radians(yaw)),
+                                           camera.axis_rotation("x", math.radians(pitch))))
         pcam.location = position
         pcam.rotation_mode = "QUATERNION"
         pcam.rotation_quaternion = q
@@ -256,13 +264,6 @@ class CutscenePlayer:
         entity = getattr(run.stage.host, "entity", None)
         if entity is not None and getattr(entity, "visible", False):
             run.stage.safe("entity.update", entity.update, dt, run.stage.entity_speed)
-
-    def _animate_body(self, run, dt):
-        stage = run.stage
-        if stage._body_shown:
-            ticker = getattr(stage.host, "body_tick", None)
-            if ticker is not None:
-                stage.safe("body_tick", ticker, dt)
 
     def _release(self, run):
         run.stage.finish_up()

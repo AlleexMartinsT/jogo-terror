@@ -124,6 +124,7 @@ class FakeEntity:
         self.speeds = []
         self.death_amounts = []
         self.history = []
+        self._grab_start = None
 
     def set_visible(self, flag):
         self.visible = bool(flag)
@@ -150,9 +151,15 @@ class FakeEntity:
         return (x, y, z + 2.5)
 
     def pose_for_death(self, eye, amount=1.0):
+        """Como a rig real: sai de onde está e chega, em `amount`, a 0,62 m dos olhos, de frente para eles."""
         self.death_amounts.append(amount)
         ex, ey, ez = eye
-        self.transform = (ex, ey + 0.42, 0.0, math.pi)
+        if self._grab_start is None:
+            self._grab_start = self.transform
+        sx, sy, sz, syaw = self._grab_start
+        length = math.hypot(sx - ex, sy - ey) or 1.0
+        fx, fy = ex + (sx - ex) / length * 0.62, ey + (sy - ey) / length * 0.62
+        self.transform = (sx + (fx - sx) * amount, sy + (fy - sy) * amount, sz, syaw)
 
 
 class FakeDoors:
@@ -223,7 +230,7 @@ class RecordingBody:
         self.calls.append(("attach_view", camera_obj.name if camera_obj is not None else None))
 
     def reset(self):
-        pass
+        self.calls.append(("reset",))
 
     def poses(self):
         return [c[1] for c in self.calls if c[0] == "pose"]
@@ -306,10 +313,6 @@ class FakeHost:
 
     def show_body(self, visible):
         self.body_shown.append(bool(visible))
-
-    def body_tick(self, dt):
-        if self.body is not None and self.body_shown and self.body_shown[-1]:
-            self.body.update(dt, None)
 
     def finish(self, reason):
         self.finished.append(reason)

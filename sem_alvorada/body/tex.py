@@ -97,7 +97,7 @@ SKIN_RED = np.array((0.74, 0.40, 0.36), np.float32)
 SKIN_VEIN = np.array((0.46, 0.51, 0.60), np.float32)
 SKIN_DIRT = np.array((0.29, 0.23, 0.18), np.float32)
 SKIN_HAIR = np.array((0.20, 0.14, 0.10), np.float32)
-ARM_D0, ARM_D1 = -0.200, 0.098          # alcance do antebraço+mão (m) mapeado em v = 0..1
+ARM_D0, ARM_D1 = -0.150, 0.098          # alcance do antebraço+mão (m) mapeado em v = 0..1
 ARM_ATLAS = {"R": (0.00, 0.00, 0.28, 1.0), "L": (0.50, 0.00, 0.78, 1.0)}
 FINGER_COLUMN = 0.036
 FINGER_ROWS = 0.46
@@ -161,7 +161,6 @@ def _paint_arm(layer, side, rng):
         line = gaussian(d - arc, 0.0009) * gaussian(wrap_angle(theta - (0.5 * math.pi + 0.15)), 0.55)
         height -= depth * line
         rgb = mix(rgb, SKIN_DIRT, 0.30 * line)
-    thenar = gaussian(d - 0.050, 0.020) * gaussian(wrap_angle(theta - 0.80), 0.40)         # linha da vida em torno do tênar
     arc = 0.026 + 0.028 * np.sin(np.clip(wrap_angle(theta - 0.15) / 1.0, -1.6, 1.6))       # linha da vida: curva em volta do tênar
     life = gaussian(d - arc, 0.0010) * gaussian(wrap_angle(theta - 0.55), 0.62) * (d > 0.015)
     height -= 0.18 * life
@@ -428,7 +427,7 @@ def atlas_denim_legs(seed=13):
         fade = np.exp(-((z - 0.52) / 0.07) ** 2) * front + np.exp(-((z - 0.82) / 0.06) ** 2) * (front + back) * 0.6
         fade += 0.7 * np.exp(-((z - 0.43) / 0.05) ** 2) * back                                   # atrás do joelho
         fade *= 0.6 + 0.8 * fbm(h, w, rng, 4, 6, 0.5, wrap=False)
-        tint = mix(tint * shade[..., None], (1.8, 1.7, 1.55), np.clip(fade, 0, 1) * 0.45)
+        tint = mix(tint * shade[..., None], (1.35, 1.32, 1.25), np.clip(fade, 0, 1) * 0.40)
         hem = np.clip((v - 0.90) / 0.10, 0, 1)
         mud = np.clip((v - 0.62) / 0.38, 0, 1) ** 1.6 * (0.4 + 0.6 * fbm(h, w, rng, 5, 5, 0.55, wrap=False))
         tint = mix(tint, (0.40, 0.33, 0.25), mud * 0.7)
@@ -459,8 +458,6 @@ def atlas_denim_hip(seed=17):
     rng = np.random.default_rng(seed)
     layer = new_layer(SIZE, SIZE, (1.0, 1.0, 1.0))
     h = w = SIZE
-    u = (np.arange(w) + 0.5)[None, :] / w * np.ones((h, 1), np.float32)
-    v = (np.arange(h) + 0.5)[:, None] / h * np.ones((1, w), np.float32)
     shade = 0.92 + 0.14 * fbm(h, w, rng, 5, 3, 0.55)
     tint = np.ones((h, w, 3), np.float32) * shade[..., None]
     wear = np.clip((fbm(h, w, rng, 5, 4, 0.6) - 0.5) * 2.2, 0, 1)
@@ -502,17 +499,19 @@ LEATHER_ATLAS = {"R": (0.00, 0.0, 0.50, 1.0), "L": (0.50, 0.0, 1.0, 1.0)}
 
 
 def tile_leather(seed=21):
-    """Couro com grão de poros e rachaduras finas. Ladrilhável."""
+    """Couro curtido: grão de poros em células suaves, rachaduras finas e manchas de uso. Ladrilhável."""
     rng = np.random.default_rng(seed)
     n = SIZE
-    cells = fbm(n, n, rng, 3, 48, 0.5)
-    grain = np.abs(value_noise(n, n, 64, 64, rng) - 0.5) * 2.0
-    cracks = np.clip(1.0 - np.abs(fbm(n, n, rng, 4, 10, 0.55) - 0.5) * 28.0, 0, 1)
-    base = np.array((0.30, 0.17, 0.10), np.float32)
-    rgb = base[None, None, :] * (0.78 + 0.34 * fbm(n, n, rng, 5, 4, 0.55))[..., None]
-    rgb *= (1.0 - 0.28 * grain)[..., None]
-    rgb = mix(rgb, (0.14, 0.08, 0.05), cracks * 0.6)
-    height = 0.5 + 0.20 * (cells - 0.5) - 0.22 * grain * 0.6 - 0.30 * cracks
+    cells = fbm(n, n, rng, 3, 40, 0.5)
+    pebble = np.abs(value_noise(n, n, 56, 56, rng) - 0.5) * 2.0
+    cracks = np.clip(1.0 - np.abs(fbm(n, n, rng, 4, 8, 0.55) - 0.5) * 34.0, 0, 1)
+    base = np.array((0.34, 0.20, 0.12), np.float32)
+    rgb = base[None, None, :] * (0.80 + 0.30 * fbm(n, n, rng, 4, 3, 0.55))[..., None]
+    rgb *= (1.0 - 0.10 * pebble)[..., None]
+    rgb = mix(rgb, (0.17, 0.10, 0.06), cracks * 0.45)
+    wornout = np.clip((fbm(n, n, rng, 3, 5, 0.5) - 0.55) * 3.0, 0, 1)
+    rgb = mix(rgb, (0.46, 0.32, 0.22), 0.35 * wornout)
+    height = 0.5 + 0.10 * (cells - 0.5) - 0.12 * pebble - 0.22 * cracks
     out = np.empty((n, n, 4), np.float32)
     out[..., :3] = np.clip(rgb, 0, 1)
     out[..., 3] = np.clip(height, 0, 1)

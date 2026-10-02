@@ -1,10 +1,12 @@
 """Corpo do jogador em primeira pessoa (Daniel Harper, 1,80 m): armadura, malha e controle em tempo de execução.
 
-ESTADO: MARCO 1 PRONTO. A rig funciona de ponta a ponta (agentes 3 e 4 já podem integrar): armadura de 54 ossos,
-`BodyRig(scene)` com a mesma superfície pública de `NullBody`, IK de dois ossos nos braços, dedos com presets,
-locomoção (passos na fase de `player.stride_phase`, agachar, correr, respirar, tronco que acompanha o olhar),
-poses de cutscene e a etapa "body" do build (antes de "engine"). As malhas ainda são as simples do marco 1;
-o modelo final (dobras, botões, texturas) e a locomoção polida entram nos marcos 2 e 3 sem mudar a interface.
+ESTADO: MARCO 1 PRONTO (e marcos 2 e 3 entregues). A rig funciona de ponta a ponta: armadura de 54 ossos,
+`BodyRig(scene)` com a mesma superfície pública de `NullBody`, IK de dois ossos nos braços (com giro do cotovelo
+para a mão alcançar a orientação pedida), dedos com presets, locomoção (passos na fase de `player.stride_phase`,
+degraus da escada, agachar, correr, respirar, tronco que acompanha o olhar), poses de cutscene e a etapa "body"
+do build (antes de "engine"). O modelo tem camisa de flanela xadrez com carcela, bolsos, botões, gola e punhos
+dobrados, jeans com cós, passantes e cinto de couro com fivela, botas com cadarço, mãos com falanges, unhas,
+tendões, veias e aliança na esquerda; texturas procedurais de 512x512 com relevo.
 
 Como usar (mãos, agente 3):
     arm = game.body.arm("R")                                  # "L" ou "R"
@@ -14,6 +16,8 @@ Como usar (mãos, agente 3):
     arm.hold(obj, (0, 0, -0.03)); arm.drop(obj)               # offset no referencial da mão (ver handframe.py)
     arm.release(blend)                                        # volta à pose solta; blend = fração do caminho por chamada
     body.hand_rotation(fingers=(0, 0, -1), palm=(-1, 0, 0))   # Euler (graus) a partir de para onde a mão aponta
+    # lanterna: set_fingers(*fingers.preset("grip_cylinder")); set_target(pos, body.grip_rotation("R", barrel=(0, .05, -1)), 1)
+    #           hold(obj, body.grip_offset("R"))   # obj com o cano ao longo de -Z e a origem no meio da pegada
 `weight` e `blend` agem por chamada: chame todo quadro com o valor que sua animação pede.
 
 Como usar (cutscenes, agente 4): `host.show_body(True)`; `body.place(x, y, z, yaw)` assume o corpo (fica assim até
@@ -31,15 +35,16 @@ Arquivos: `skeleton` (ossos e medidas), `solver` (FK e IK de dois ossos com dobr
 (modelagem), `materials`, `assemble` (monta na cena).
 """
 from . import fingers
-from .handframe import hand_rotation
+from .handframe import grip_offset, grip_rotation, hand_rotation
 from .rig import BodyRig
 
 
 def build(ctx):
-    from . import assemble
+    from . import assemble, meshkit
     from . import skeleton as S
+    meshkit.set_quality(ctx.quality)
     rig, body, data = assemble.create_body(ctx)
     ctx.log(f"corpo: {assemble.triangle_count(body)} triângulos, {len(S.BONES)} ossos")
 
 
-__all__ = ["BodyRig", "build", "fingers", "hand_rotation"]
+__all__ = ["BodyRig", "build", "fingers", "grip_offset", "grip_rotation", "hand_rotation"]

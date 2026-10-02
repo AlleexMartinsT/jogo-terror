@@ -11,7 +11,6 @@ Visualmente o carro fica idêntico; só passa a haver peças que giram.
 import math
 
 import bpy
-import numpy as np
 from mathutils import Vector
 
 from .. import compat
@@ -143,7 +142,7 @@ def _particle_mesh(name, count, material):
 
 def create_dust(ctx):
     """Poeira e lascas de reboco (o estrondo no andar de cima)."""
-    mat = _effect_material("cut_dust", (0.50, 0.46, 0.40), (0.55, 0.50, 0.42), 1.4, roughness=1.0)
+    mat = _effect_material("cut_dust", (0.45, 0.42, 0.37), (0.45, 0.42, 0.36), 0.7, roughness=1.0)
     obj = bpy.data.objects.new(OBJ_DUST, _particle_mesh(OBJ_DUST, DUST_PARTICLES, mat))
     obj.visible_shadow = False
     return _place(obj, ctx, hidden=True)
@@ -346,4 +345,10 @@ def rebuild(scene):
              else bpy.data.lights).remove(data)
     ctx = BuildContext(scene, verbose=False)
     create_all(ctx)
+    if bpy.data.objects.get(C.OBJ_BODY_RIG) is None:            # .blend de antes da etapa `body`
+        try:
+            from .. import body
+            body.build(ctx)
+        except Exception as error:                              # noqa: BLE001 - sem corpo as cenas seguem
+            print(f"[cutscenes] corpo não montado: {error}", flush=True)
     bpy.context.view_layer.update()

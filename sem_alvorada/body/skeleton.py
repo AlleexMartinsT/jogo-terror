@@ -10,7 +10,6 @@ junto com o pai). Quem escreve a pose nunca se preocupa com o "roll" dos ossos d
 
 Espaço do corpo: origem no chão, sob o quadril; X direita, Y frente, Z cima.
 """
-import math
 from dataclasses import dataclass
 
 import bpy  # noqa: F401  (no pacote pip, importar bpy é o que torna `mathutils` importável)
@@ -29,15 +28,16 @@ HIP_Z = 0.93
 LEG_X = 0.088
 PELVIS_Z = 0.955
 C7_Z = 1.45
-SHOULDER = Vector((0.185, 0.005, 1.43))
+SHOULDER = Vector((0.172, 0.005, 1.42))
 CLAVICLE_HEAD = Vector((0.025, 0.035, 1.46))
 UPPER_ARM_LEN = 0.335
 FOREARM_LEN = 0.265
 HAND_LEN = 0.098                 # do punho à linha dos nós dos dedos
 PALM_SURFACE = 0.012             # do plano médio da mão até a superfície da palma
 PALM_CENTER_F = 0.055            # do punho ao centro da palma, ao longo dos dedos
-# o olho fica à frente do eixo da coluna e acima da base do pescoço
-EYE_FROM_C7 = Vector((0.0, 0.09, EYE_Z - C7_Z))
+# o olho fica à frente do eixo da coluna e acima da base do pescoço; 6,5 cm (e não os 9 cm de uma cabeça real)
+# deixam o peito 4 a 5 cm à frente do olho, e assim olhar para baixo mostra camisa, barriga e cinto
+EYE_FROM_C7 = Vector((0.0, 0.065, EYE_Z - C7_Z))
 
 FINGERS = ("Index", "Middle", "Ring", "Pinky")
 PHALANX = {"Index": (0.044, 0.025, 0.021), "Middle": (0.048, 0.028, 0.022),

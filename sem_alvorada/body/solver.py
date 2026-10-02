@@ -13,7 +13,9 @@ from ..entity.skeleton import two_bone_joint
 from . import skeleton as S
 
 IDENTITY = S.IDENTITY
-MAX_WRIST_SWING = math.radians(72.0)       # quanto a mão dobra em relação ao antebraço (flexão e desvio)
+MAX_WRIST_SWING = math.radians(80.0)       # quanto a mão dobra em relação ao antebraço (flexão e desvio)
+SWIVEL_STEP = math.radians(4.0)           # passo da busca do giro do cotovelo em torno da linha ombro-pulso
+SWIVEL_MAX = math.radians(84.0)
 MAX_ANKLE_BEND = math.radians(70.0)
 ROLL_SHARE = 0.62                          # fatia da torção que o osso do meio do antebraço assume
 
@@ -28,10 +30,11 @@ _LENGTH = [b.length for b in S.BONES]
 
 class ArmGoal:
     """Onde o pulso deve chegar (espaço do corpo), a orientação absoluta da mão e o polo do cotovelo."""
-    __slots__ = ("wrist", "hand_q", "pole", "weight", "palm", "palm_offset")
+    __slots__ = ("wrist", "hand_q", "pole", "weight", "palm", "palm_offset", "swivel")
 
-    def __init__(self, wrist, hand_q, pole, weight=1.0, palm=None, palm_offset=None):
+    def __init__(self, wrist, hand_q, pole, weight=1.0, palm=None, palm_offset=None, swivel=0.0):
         self.wrist, self.hand_q, self.pole, self.weight = wrist, hand_q, pole, weight
+        self.swivel = swivel          # giro do cotovelo (rad) usado no quadro anterior: a busca começa por ele
         # com `palm` (alvo do centro da palma) o solver corrige o pulso quando o limite de flexão muda a orientação
         self.palm, self.palm_offset = palm, palm_offset
 
@@ -58,11 +61,12 @@ class PoseSpec:
 
 class Solution:
     """Pose resolvida: rotações locais, orientações absolutas e cabeças dos ossos (espaço do corpo)."""
-    __slots__ = ("local", "world", "head", "hips_shift", "reach_error")
+    __slots__ = ("local", "world", "head", "hips_shift", "reach_error", "swivel")
 
     def __init__(self, local, world, head, hips_shift):
         self.local, self.world, self.head, self.hips_shift = local, world, head, hips_shift
         self.reach_error = {}
+        self.swivel = {}
 
     def tail(self, name):
         index = _INDEX[name]
@@ -133,20 +137,26 @@ def _solve_leg(upper_name, origin, parent_world, goal, rot):
     return local, (end - goal.ankle).length
 
 
-def _solve_arm(upper_name, origin, parent_world, goal, rot):
-    """Locais do braço: braço, antebraço, meio do antebraço (torção) e mão."""
-    lower_name, hand_name = S.IK_CHAINS[upper_name]
-    roll_name = lower_name.replace("Forearm", "ForearmRoll")
-    upper_i, lower_i = _INDEX[upper_name], _INDEX[lower_name]
-    arm_len = _LENGTH[upper_i]
-    fore_len = _LENGTH[lower_i] + _LENGTH[_INDEX[roll_name]]
-    fore_axis = _REST_DIR[_INDEX[lower_name]]
+def _swivel_candidates(hint):
+    """Giros do cotovelo a testar: o último usado primeiro (sem saltos), depois os vizinhos, cada vez mais longe."""
+    hint = hint * 0.985                       # relaxa devagar rumo ao cotovelo natural
+    yield hint
+    k = 1
+    while k * SWIVEL_STEP <= SWIVEL_MAX:
+        yield hint + k * SWIVEL_STEP
+        yield hint - k * SWIVEL_STEP
+        k += 1
+
+
+def _arm_attempt(upper_name, origin, goal, arm_len, fore_len, pole, fore_axis):
+    """Uma tentativa de IK do braço com um polo: devolve o quadro completo e o ângulo de flexão do pulso."""
     wrist = goal.wrist
-    for _attempt in range(3):
-        joint, end = two_bone_joint(origin, wrist, arm_len, fore_len, goal.pole)
+    for _pass in range(3):
+        joint, end = two_bone_joint(origin, wrist, arm_len, fore_len, pole)
         upper_q, fore_q = _chain_frames(upper_name, origin, joint, end)
         rel = fore_q.inverted() @ goal.hand_q
         twist, swing = _twist_swing(rel, fore_axis)
+        angle = swing.angle
         swing = _limit(swing, MAX_WRIST_SWING)
         hand_q = fore_q @ twist @ swing
         if goal.palm is None:
@@ -155,6 +165,30 @@ def _solve_arm(upper_name, origin, parent_world, goal, rot):
         if (corrected - wrist).length < 2e-4:
             break
         wrist = corrected
+    return joint, end, upper_q, fore_q, twist, swing, hand_q, angle
+
+
+def _solve_arm(upper_name, origin, parent_world, goal, rot, last_swivel):
+    """Locais do braço: braço, antebraço, meio do antebraço (torção) e mão."""
+    lower_name, hand_name = S.IK_CHAINS[upper_name]
+    roll_name = lower_name.replace("Forearm", "ForearmRoll")
+    upper_i, lower_i = _INDEX[upper_name], _INDEX[lower_name]
+    arm_len = _LENGTH[upper_i]
+    fore_len = _LENGTH[lower_i] + _LENGTH[_INDEX[roll_name]]
+    fore_axis = _REST_DIR[_INDEX[lower_name]]
+    chord = (goal.wrist - origin).normalized()
+    best = None
+    for candidate in _swivel_candidates(goal.swivel):
+        pole = Quaternion(chord, candidate) @ goal.pole if candidate else goal.pole
+        attempt = _arm_attempt(upper_name, origin, goal, arm_len, fore_len, pole, fore_axis)
+        if best is None or attempt[-1] < best[0][-1] - 1e-9:
+            best = (attempt, candidate)
+        if attempt[-1] <= MAX_WRIST_SWING + 1e-6:
+            best = (attempt, candidate)
+            break
+    attempt, chosen = best
+    joint, end, upper_q, fore_q, twist, swing, hand_q, _angle = attempt
+    last_swivel[0] = chosen
     signed = 2.0 * math.atan2(twist.x * fore_axis.x + twist.y * fore_axis.y + twist.z * fore_axis.z, twist.w)
     if signed > math.pi:
         signed -= 2.0 * math.pi
@@ -180,6 +214,7 @@ def solve(spec):
     head = [None] * _N
     forced = {}
     errors = {}
+    swivels = {}
     rot = spec.rot
     for i in range(_N):
         name = _NAME_OF[i]
@@ -198,7 +233,7 @@ def solve(spec):
                 if name.startswith("UpperArm"):
                     goal = spec.arms.get(side)
                     if goal is not None and goal.weight > 0.0:
-                        forced, errors[name] = _merge(forced, _solve_arm(name, head[i], parent_world, goal, rot))
+                        forced, errors[name] = _merge(forced, _solve_arm(name, head[i], parent_world, goal, rot, swivels.setdefault(name, [0.0])))
                         q = forced[name]
                 elif name.startswith("Thigh"):
                     goal = spec.legs.get(side)
@@ -209,6 +244,7 @@ def solve(spec):
         world[i] = parent_world @ q
     solution = Solution(local, world, head, spec.hips_shift)
     solution.reach_error = errors
+    solution.swivel = {name: value[0] for name, value in swivels.items()}
     return solution
 
 

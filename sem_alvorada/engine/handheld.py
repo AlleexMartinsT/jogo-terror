@@ -93,10 +93,11 @@ class Handhelds:
             self.cap.rotation_euler = (0.0, math.radians(degrees), 0.0)
 
     def set_map_folds(self, first, second):
-        """Ângulos (graus) das duas dobras do mapa; 0 = aberto."""
+        """Ângulos (graus) das duas dobras do mapa; 0 = aberto. Os painéis dobram para trás do primeiro (longe da
+        câmera), então desdobrar nunca passa uma folha grande diante do rosto."""
         for panel, angle in zip(self.panels, (first, second)):
             if panel is not None:
-                panel.rotation_euler = (0.0, -math.radians(angle), 0.0)
+                panel.rotation_euler = (0.0, math.radians(angle), 0.0)
 
     def set_paper(self, note_id):
         """A folha na mão ganha a textura e a proporção da anotação lida. Devolve o tamanho (largura, altura)."""

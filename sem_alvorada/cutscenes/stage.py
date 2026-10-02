@@ -45,7 +45,11 @@ class PlayerSnapshot:
 
 
 class Actor:
-    """Algo que vive por vários quadros (vento, pêndulo, carro). Subclasses restauram o que mexeram em `stop`."""
+    """Algo que vive por vários quadros (vento, pêndulo, carro). Subclasses restauram o que mexeram em `stop`.
+
+    `late = True`: roda depois que a câmera do quadro foi posicionada (o corpo e as mãos dependem dela).
+    """
+    late = False
 
     def start(self, stage):
         pass
@@ -68,9 +72,12 @@ class Stage:
         self.poses = {}                   # nome do objeto carregador -> (origem, (rx, ry, rz)); a câmera `mount` lê daqui
         self.actors = {}
         self.entity_speed = 0.0           # m/s que a rig da entidade usa para o passo
+        self.flash_aim = (0.0, 0.0)       # graus (guinada, inclinação) da lanterna em relação à câmera: a luz não precisa cair onde o olhar cai
+        self.camera_pose = None           # (posição, quaternion) da câmera neste quadro; os atores `late` leem
         self.flash_hand = 0.0             # 0..1: tremor da lanterna na mão (a lanterna do jogo segue a câmera da cutscene)
         self.flashlight_follows = False
         self._memo = {}
+        self._headlights_used = False
         self.skipping = False             # True durante o skip: ações essenciais vão direto ao estado final
         self._loops = set()
         self._lit = set()                 # luzes CutLight_* que esta cutscene acendeu
@@ -185,9 +192,10 @@ class Stage:
         if actor is not None:
             self.safe(f"actor.stop({key})", actor.stop, self)
 
-    def update_actors(self, dt):
+    def update_actors(self, dt, late=False):
         for key, actor in list(self.actors.items()):
-            self.safe(f"actor.update({key})", actor.update, self, dt)
+            if actor.late == late:
+                self.safe(f"actor.update({key})", actor.update, self, dt)
 
     # ---------------------------------------------------------------- som
     def sound(self, name, pos=None, volume=1.0, pitch=1.0):
@@ -236,6 +244,7 @@ class Stage:
                 continue
             obj.hide_viewport = obj.hide_render = not on
             obj.data.energy = float(obj.get("sa_base_energy", HEADLIGHT_ENERGY)) if on else 0.0
+        self._headlights_used = self._headlights_used or on
 
     def headlight_level(self, level):
         """Intensidade 0..1 dos faróis (a partida do motor faz a luz oscilar)."""
@@ -246,6 +255,7 @@ class Stage:
             base = float(obj.get("sa_base_energy", HEADLIGHT_ENERGY))
             obj.hide_viewport = obj.hide_render = level <= 0.001
             obj.data.energy = base * max(0.0, level)
+            self._headlights_used = self._headlights_used or level > 0.001
 
     def set_visible(self, name, visible):
         obj = self.obj(name)
@@ -313,6 +323,8 @@ class Stage:
         for key in list(self.actors):
             self.stop_actor(key)
         self.stop_all_loops()
+        if self._headlights_used:
+            self.headlights(False)
         for name in list(self._lit):
             self.set_light(name, 0.0)
         for name in list(self._gains):

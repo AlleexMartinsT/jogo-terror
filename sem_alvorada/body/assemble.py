@@ -56,7 +56,9 @@ def build_mesh_data():
     mesh.merge(shirt.mirror(sleeve))
     arm = skin.build_hand_skin("R")
     mesh.merge(arm.copy())
-    mesh.merge(skin.mirror_arm(arm))
+    left = skin.mirror_arm(arm)
+    left.merge(skin.mirror_arm(skin.build_ring_band()))          # a aliança continua na mão esquerda
+    mesh.merge(left)
     mesh.merge(legs.build_hips())
     leg = legs.build_leg_right()
     mesh.merge(leg.copy())
@@ -69,7 +71,6 @@ def build_mesh_data():
 
 
 def mesh_to_blender(data, name):
-    slots = M.SLOT_ORDER
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(data.verts, [], data.faces)
     for material in M.slot_materials():

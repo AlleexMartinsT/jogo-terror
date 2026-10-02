@@ -8,7 +8,7 @@ import math
 
 from .. import conventions as C
 from .. import layout, story
-from .curves import Curve, Key, Path, walk_keys
+from .curves import Curve, Key, Path
 from .timeline import Cue, Line
 from . import actions as act
 
@@ -115,6 +115,12 @@ def player_gaze(stage):
 def path(*keys, rest=True, tension=1.0):
     """Caminho 3D: cada chave é `(t, ponto)` ou `(t, ponto, True)` (a câmera para ali)."""
     return Path([Key(*k) if not isinstance(k, Key) else k for k in keys], rest_ends=rest, tension=tension)
+
+
+def looking(*keys, distance=None):
+    """Alvo do olhar: chaves `(t, ponto)` ou `(t, ponto, True)`; interpolado em ângulos (ver `camera.Look`)."""
+    from .camera import Look
+    return Look([Key(*k) if not isinstance(k, Key) else k for k in keys], distance)
 
 
 def curve(*keys, rest=True):

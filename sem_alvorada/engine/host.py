@@ -33,7 +33,7 @@ class NullEntityRig:
     def head_position(self):
         return (0.0, 0.0, 0.0)
 
-    def pose_for_death(self, player_eye_pos):
+    def pose_for_death(self, player_eye_pos, amount=1.0):
         pass
 
 
@@ -104,12 +104,6 @@ class CutsceneHost:
     def set_light_gain(self, name, gain):
         """Realça ou escurece uma luz da casa por nome (a queda de luz em cascata do apagão)."""
         self.game.lights.set_gain(name, gain)
-
-    def body_tick(self, dt):
-        """Avança o corpo do jogador durante a cutscene (poses e braços), se ele estiver visível."""
-        body = self.game.body
-        if getattr(body, "visible", False):
-            body.update(dt, self.game.player, (0.0, 0.0))
 
     def finish(self, reason):
         self.game.director.on_cutscene_finished(reason)

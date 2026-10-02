@@ -2,7 +2,8 @@
 
     python tests/test_cutscenes_player.py
 
-Não precisa do Blender: o player é lógica pura.
+Não precisa do Blender: o player é lógica pura (os atores de malha rodam sobre malhas de numpy).
+A fluidez da câmera (saltos, velocidade, aceleração, cortes declarados) está em `test_cutscenes_fluency.py`.
 """
 import math
 import os
@@ -11,209 +12,23 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, "tests"))
 
+from cutscene_fakes import (HALL_STATE, START_STATES, FakeHost, RecordingBody, host_for,  # noqa: E402
+                            settle_state)
 from sem_alvorada import conventions as C  # noqa: E402
 from sem_alvorada import layout, story  # noqa: E402
-from sem_alvorada.cutscenes import CutscenePlayer, Overlay, NAMES, scripts, timeline  # noqa: E402
+from sem_alvorada.cutscenes import NAMES, CutscenePlayer, Overlay, scripts, timeline  # noqa: E402
+from sem_alvorada.cutscenes import camera  # noqa: E402
+from sem_alvorada.engine.fallbacks import NullBody  # noqa: E402
 
 REASONS = {"intro": "intro_done", "blackout": "blackout_done", "garage_unlock": "unlock_done",
            "death": "death_done", "ending": "ending_done"}
-PLAYER_STATE = (11.1, 5.9, 0.0, math.radians(-90), 1.65)          # cozinha, diante da porta da garagem
-HALL_STATE = (5.6, 8.65, 2.8, math.radians(-90), 4.45)              # saindo do quarto do casal
-
-
-class FakeDof:
-    def __init__(self):
-        self.use_dof = False
-        self.focus_distance = 10.0
-        self.aperture_fstop = 2.8
-
-
-class FakeDatablock:
-    def __init__(self, energy=None):
-        self.angle = 1.0
-        self.dof = FakeDof()
-        if energy is not None:
-            self.energy = energy
-
-
-class FakeObject:
-    def __init__(self, name, light=False):
-        self.name = name
-        self.location = _Location()
-        self.rotation_mode = "XYZ"
-        self.rotation_euler = (0.0, 0.0, 0.0)
-        self.rotation_quaternion = (1.0, 0.0, 0.0, 0.0)
-        self.scale = (1.0, 1.0, 1.0)
-        self.hide_viewport = self.hide_render = light
-        self.data = FakeDatablock(0.0 if light else None)
-        self.props = {}
-
-    def get(self, key, default=None):
-        return self.props.get(key, default)
-
-
-class _Location(list):
-    """Lista com .x .y .z, como o Vector do Blender."""
-
-    def __init__(self):
-        super().__init__([0.0, 0.0, 0.0])
-
-    z = property(lambda self: self[2], lambda self, v: self.__setitem__(2, v))
-
-
-class FakeAudio:
-    def __init__(self, fail=False):
-        self.played, self.loops, self.stopped, self.fail = [], {}, [], fail
-
-    def play(self, name, pos=None, volume=1.0, pitch=1.0):
-        if self.fail:
-            raise RuntimeError("sem dispositivo de áudio")
-        self.played.append(name)
-
-    def loop(self, key, name, pos=None, volume=1.0, pitch=1.0):
-        self.loops[key] = name
-
-    def stop(self, key):
-        self.loops.pop(key, None)
-        self.stopped.append(key)
-
-
-class FakeEntity:
-    def __init__(self):
-        self.visible = False
-        self.transform = None
-        self.anim = "idle"
-        self.eye_level = 0.0
-        self.look = "unset"
-        self.look_rate = 200.0
-        self.head_limit = 2.42
-        self.updates = 0
-        self.speeds = []
-        self.death_amounts = []
-        self.history = []
-
-    def set_visible(self, flag):
-        self.visible = bool(flag)
-
-    def set_transform(self, x, y, z, yaw):
-        self.transform = (x, y, z, yaw)
-
-    def set_anim(self, name):
-        self.anim = name
-        self.history.append(name)
-
-    def eyes(self, level):
-        self.eye_level = level
-
-    def look_at(self, x, y=None, z=None):
-        self.look = None if x is None else (x, y, z)
-
-    def update(self, dt, speed=None):
-        self.updates += 1
-        self.speeds.append(speed)
-
-    def head_position(self):
-        x, y, z, _ = self.transform or (0, 0, 0, 0)
-        return (x, y, z + 2.5)
-
-    def pose_for_death(self, eye, amount=1.0):
-        self.death_amounts.append(amount)
-        ex, ey, ez = eye
-        self.transform = (ex, ey + 0.42, 0.0, math.pi)
-
-
-class FakeDoors:
-    def __init__(self):
-        self.snaps = []
-        self.glides = []
-
-    def snap(self, door_id, value):
-        self.snaps.append((door_id, value))
-
-    def set_openness(self, door_id, value, speed=None):
-        self.glides.append((door_id, value, speed))
-
-
-class FakeHost:
-    def __init__(self, state=PLAYER_STATE, missing=(), audio_fails=False, pitch=0.0, body=None):
-        self.audio = FakeAudio(audio_fails)
-        self.pitch = pitch
-        self.body = body
-        self.body_shown = []
-        self.gains = {}
-        self.entity = FakeEntity()
-        self.doors = FakeDoors()
-        self.scene = _FakeScene()
-        self.state = state
-        self.camera = None
-        self.camera_calls = []
-        self.finished = []
-        self.power_calls, self.flashlight_calls, self.placed = [], [], []
-        self.silence_calls, self.brain_calls, self.brain_pos = [], 0, None
-        self.objects = {}
-        for name in ("CutsceneCam", "Car", "GarageRollup", "Car_Headlight_L", "Car_Headlight_R",
-                     "Cut_EndClock", "Cut_DawnGlow", "PlayerCam", "Car_Wheel_FL", "Car_Wheel_FR", "Car_Wheel_RL",
-                     "Car_Wheel_RR", "Cut_Bunny", "Cut_Wheel", "Cut_Key", "Cut_KeyCharm", "Cut_Dust", "Cut_Sparks",
-                     "Cut_LidTop", "Cut_LidBottom", "AlarmClock"):
-            if name not in missing:
-                self.objects[name] = FakeObject(name, light="Headlight" in name)
-        if "Cut_EndClock" in self.objects:
-            self.objects["Cut_EndClock"].hide_viewport = self.objects["Cut_EndClock"].hide_render = True
-        for name in ("CutLight_ClockGlow", "CutLight_BedLamp", "CutLight_Dawn", "CutLight_Road",
-                     "CutLight_CorridorRim", "CutLight_Driveway", "CutLight_CarCabin"):
-            self.objects[name] = FakeObject(name, light=True)
-
-    def set_camera(self, obj):
-        self.camera_calls.append(obj)
-        self.camera = obj
-
-    def player_pitch(self):
-        return self.pitch
-
-    def set_light_gain(self, name, gain):
-        self.gains[name] = gain
-
-    def show_body(self, visible):
-        self.body_shown.append(bool(visible))
-
-    def get_object(self, name):
-        return self.objects.get(name)
-
-    def player_state(self):
-        return self.state
-
-    def place_player(self, x, y, z, yaw):
-        self.placed.append((x, y, z, yaw))
-        self.state = (x, y, z, yaw, z + C.PLAYER_EYE_STAND)
-
-    def set_power(self, on, flicker=0.0):
-        self.power_calls.append((on, flicker))
-
-    def flash_light(self, seconds):
-        pass
-
-    def set_flashlight(self, on):
-        self.flashlight_calls.append(on)
-
-    def noise_silence(self, seconds):
-        self.silence_calls.append(seconds)
-
-    def entity_brain_activate(self, pos=None):
-        self.brain_calls += 1
-        self.brain_pos = pos
-
-    def finish(self, reason):
-        self.finished.append(reason)
-
-
-class _FakeScene:
-    objects = ()
 
 
 def run_to_end(name, dt_sequence, host=None, on_frame=None, limit=100000):
     """Roda a cutscene até terminar; `dt_sequence` é um iterador de passos. Devolve (host, player, tempo)."""
-    host = host or FakeHost()
+    host = host or host_for(name)
     player = CutscenePlayer(host)
     done = []
     player.play(name, on_done=lambda: done.append(True))
@@ -262,6 +77,8 @@ def check_camera(host):
     assert abs(math.sqrt(sum(c * c for c in q)) - 1.0) < 1e-6
     fov = math.degrees(cam.data.angle)
     assert 20.0 <= fov <= 100.0, fov
+    dof = cam.data.dof
+    assert math.isfinite(dof.focus_distance) and dof.focus_distance > 0 and 0.8 <= dof.aperture_fstop <= 32
 
 
 # --------------------------------------------------------------------------
@@ -315,7 +132,7 @@ def test_subtitle_alpha_fades():
 def test_skip():
     for name in NAMES:
         for skip_at in (0.0, 0.7, 5.0, 12.0, 100.0):
-            host = FakeHost()
+            host = host_for(name)
             player = CutscenePlayer(host)
             player.play(name)
             t = 0.0
@@ -330,11 +147,36 @@ def test_skip():
             player.skip()                                       # segunda chamada: nada acontece
             player.update(1 / 60)
             assert host.finished == [REASONS[name]]
-            assert player.errors == []
+            assert player.errors == [], (name, skip_at, player.errors)
     host = FakeHost()
     CutscenePlayer(host).skip()                                 # sem cutscene ativa
     assert host.finished == []
     print("  skip funciona em qualquer instante e é idempotente")
+
+
+def test_skip_leaves_the_same_game_state_as_the_full_run():
+    """O estado que o jogo vê depois (posição do jogador, luz, porta, cérebro, entidade, objetos) não depende de pular."""
+    for name in NAMES:
+        full_host = host_for(name)
+        run_to_end(name, constant(1 / 30), full_host)
+        reference = settle_state(full_host)
+        for skip_at in (0.0, 1.0, 3.3, 7.0, 12.5, 20.0):
+            host = host_for(name)
+            player = CutscenePlayer(host)
+            player.play(name)
+            t = 0.0
+            while t < skip_at and player.active:
+                player.update(1 / 30)
+                t += 1 / 30
+            if player.active:
+                player.skip()
+            state = settle_state(host)
+            if state != reference:
+                diff = {k: (state[k], reference[k]) for k in state if state[k] != reference[k] and k != "objects"}
+                diff.update({n: (state["objects"][n], reference["objects"][n]) for n in state["objects"]
+                             if state["objects"][n] != reference["objects"][n]})
+                raise AssertionError(f"{name} pulada em {skip_at}: {diff}")
+    print("  pular em qualquer instante deixa o mesmo estado final da execução completa")
 
 
 def test_skip_keeps_game_state_consistent():
@@ -344,90 +186,114 @@ def test_skip_keeps_game_state_consistent():
     player.skip()
     px, py, pz = layout.PLAYER_START
     assert host.placed[-1][:3] == (px, py, pz), host.placed
+    assert host.power_calls[-1] == (True, 0.0), "a casa começa o jogo com a luz acesa"
 
-    host = FakeHost(HALL_STATE)
+    host = host_for("blackout")
     player = CutscenePlayer(host)
     player.play("blackout")
     player.skip()
     assert host.power_calls[-1][0] is False
     assert host.brain_calls == 1
     assert host.flashlight_calls[-1] is True
-    assert host.entity.visible and host.entity.eye_level == 1.0
+    assert host.entity.visible and host.entity.eye_level == 1.0 and host.entity.anim == "stare"
     x, y, z = host.placed[-1][:3]
     assert layout.ROOMS["hall_u"].rect.contains(x, y) and math.dist((x, y), layout.ENTITY_FIRST_SIGHT[:2]) > 3.5
+    assert math.dist(host.brain_pos[:2], (x, y)) > 3.0, "o cérebro acorda longe do jogador"
+    assert all(abs(g - 1.0) < 1e-9 for g in host.gains.values()), "os ganhos de luz da cascata voltam ao normal"
 
-    host = FakeHost()
+    host = host_for("garage_unlock")
     player = CutscenePlayer(host)
     player.play("garage_unlock")
     player.skip()
     assert host.doors.snaps[-1] == ("garage_door", 1.0)
     assert host.brain_calls == 1
 
-    host = FakeHost()
+    host = host_for("ending")
     player = CutscenePlayer(host)
     player.play("ending")
     player.skip()
-    assert host.objects["GarageRollup"].location.z == 2.3
+    assert host.objects["GarageRollup"].location[2] == 0.0 and tuple(host.objects["Car"].location) == (0.0, 0.0, 0.0), \
+        "o portão e o carro voltam ao lugar (o final não deixa a cena bagunçada para um novo jogo)"
     print("  pular deixa o estado do jogo coerente (posição, luz, portas, cérebro)")
 
 
-def test_camera_continuity():
-    """Sem saltos de câmera dentro de um plano; saltos só nos cortes entre planos."""
-    for name in NAMES:
-        tl = timeline.compile_cutscene(scripts.get(name))
-        boundaries = [t0 for t0, _, _ in tl.shots[1:]]
-        host = FakeHost(HALL_STATE if name == "blackout" else PLAYER_STATE)
-        player = CutscenePlayer(host)
-        player.play(name)
-        cam = host.objects["CutsceneCam"]
-        last = tuple(cam.location)
-        t = 0.0
-        worst = 0.0
-        while player.active:
-            player.update(1 / 60)
-            t += 1 / 60
-            if not player.active:
-                break
-            now = tuple(cam.location)
-            jump = math.dist(now, last)
-            near_cut = any(abs(t - b) < 1.5 / 60 for b in boundaries)
-            if not near_cut:
-                worst = max(worst, jump)
-            last = now
-        assert worst < 0.30, f"{name}: a câmera saltou {worst:.2f} m entre quadros"
-    print("  câmera sem saltos fora dos cortes")
-
-
 def test_intro_ends_on_gameplay_view():
-    host = FakeHost(HALL_STATE)
+    """A passagem para o jogador não tem salto: posição, yaw e FOV do último quadro são os da câmera do jogo."""
+    host = host_for("intro")
     player = CutscenePlayer(host)
     player.play("intro")
     cam = host.objects["CutsceneCam"]
-    while player.active:
+    total = timeline.compile_cutscene(scripts.get("intro")).total
+    while player.active and player.time < total - 0.03:
         player.update(1 / 60)
-        if player.time > 36.9:
-            break
     px, py, pz = layout.PLAYER_START
-    assert math.dist(cam.location, (px, py, pz + C.PLAYER_EYE_STAND)) < 0.05, tuple(cam.location)
-    assert abs(math.degrees(cam.data.angle) - C.FOV_DEG) < 1.0
-    print("  a intro termina exatamente na vista do jogador")
+    assert math.dist(cam.location, (px, py, pz + C.PLAYER_EYE_STAND)) < 0.005, tuple(cam.location)
+    assert abs(math.degrees(cam.data.angle) - C.FOV_DEG) < 0.05
+    want = camera.camera_quaternion(math.radians(layout.PLAYER_START_YAW_DEG), 0.0, 0.0)
+    assert math.degrees(camera.angle_between(tuple(cam.rotation_quaternion), want)) < 0.05
+    print("  a intro termina exatamente na vista do jogador (posição, yaw e FOV)")
+
+
+def test_cutscenes_start_on_the_players_view():
+    """Garagem e morte começam na vista exata do jogador (sem corte na entrada)."""
+    for name, pitch in (("garage_unlock", math.radians(-12)), ("blackout", 0.0), ("death", math.radians(5))):
+        host = host_for(name, pitch=pitch)
+        player = CutscenePlayer(host)
+        player.play(name)
+        cam = host.objects["CutsceneCam"]
+        x, y, z, yaw, eye_z = host.state
+        assert math.dist(cam.location, (x, y, eye_z)) < 0.03, (name, tuple(cam.location))
+        want = camera.camera_quaternion(yaw, pitch, 0.0)
+        assert math.degrees(camera.angle_between(tuple(cam.rotation_quaternion), want)) < 1.5, name
+        assert abs(math.degrees(cam.data.angle) - C.FOV_DEG) < 0.2, name
+    print("  garagem, apagão e morte começam na vista do jogador (posição, yaw, inclinação e FOV)")
 
 
 def test_blackout_beats():
-    events = {"fade_black": None, "eyes_on": None, "flashlight_off": None}
+    seen = {"fade_black": None, "eyes_on": None, "first_sight": None, "walk": []}
 
     def watch(player, host, elapsed):
         ov = player.overlay()
-        if ov.fade > 0.99 and events["fade_black"] is None:
-            events["fade_black"] = elapsed
-        if host.entity.eye_level >= 1.0 and events["eyes_on"] is None:
-            events["eyes_on"] = elapsed
-    host, player, _ = run_to_end("blackout", constant(1 / 60), FakeHost(HALL_STATE), on_frame=watch)
-    assert events["fade_black"] is not None and events["eyes_on"] is not None
-    assert events["eyes_on"] > events["fade_black"] + 2.0, "silêncio e escuridão antes do susto"
-    assert host.entity.transform[:3] == layout.ENTITY_FIRST_SIGHT
+        if ov.fade > 0.99 and seen["fade_black"] is None:
+            seen["fade_black"] = elapsed
+        if host.entity.eye_level >= 1.0 and seen["eyes_on"] is None:
+            seen["eyes_on"] = elapsed
+        if host.entity.transform and seen["first_sight"] is None:
+            seen["first_sight"] = host.entity.transform[:3]
+        seen["walk"].append(host.entity.speeds[-1] if host.entity.speeds else 0.0)
+    host, player, _ = run_to_end("blackout", constant(1 / 60), host_for("blackout"), on_frame=watch)
+    assert seen["fade_black"] is not None and seen["eyes_on"] is not None
+    assert seen["eyes_on"] > seen["fade_black"] + 2.0, "silêncio e escuridão antes do susto"
+    assert seen["first_sight"] == layout.ENTITY_FIRST_SIGHT
     assert host.silence_calls, "o silêncio antes do susto precisa pedir noise_silence"
-    print(f"  blackout: preto em {events['fade_black']:.1f} s, olhos acendem em {events['eyes_on']:.1f} s")
+    assert max(s or 0.0 for s in seen["walk"]) > 0.2, "a passada lenta em direção à câmera anima o passo da entidade"
+    assert host.entity.speeds[-1] == 0.0
+    sight = layout.ENTITY_FIRST_SIGHT
+    assert abs(host.entity.transform[1] - (sight[1] - 1.0)) < 1e-6, "ele deu um metro de passo"
+    assert host.brain_pos == tuple(host.entity.transform[:3]), "o cérebro acorda de onde a cutscene o deixou"
+    assert host.power_calls[-1][0] is False
+    print(f"  blackout: luz estoura em {seen['fade_black']:.1f} s, olhos acendem em {seen['eyes_on']:.1f} s")
+
+
+def test_light_cascade_dies_in_order_and_the_last_bursts():
+    gains = []
+
+    def watch(player, host, elapsed):
+        gains.append((elapsed, dict(host.gains)))
+    host, _, _ = run_to_end("blackout", constant(1 / 60), host_for("blackout"), on_frame=watch)
+    death = {}
+    for elapsed, snapshot in gains:
+        for name, gain in snapshot.items():
+            if gain == 0.0 and name not in death:
+                death[name] = elapsed
+    assert len(death) >= 4, death
+    order = sorted(death, key=death.get)
+    assert order[-1].startswith("Light_hall_u"), "a última a morrer é a do corredor, sobre o jogador"
+    peak = max(g for _, snap in gains for g in snap.values())
+    assert peak > 2.0, "a lâmpada estoura: antes de apagar ela dá um clarão"
+    spread = death[order[-1]] - death[order[0]]
+    assert 0.8 < spread < 2.6, spread
+    print(f"  cascata: {len(death)} luzes morrem em {spread:.1f} s, a do corredor por último e com clarão")
 
 
 def test_death_is_a_dry_cut():
@@ -436,18 +302,20 @@ def test_death_is_a_dry_cut():
     def watch(player, host, elapsed):
         if player.active:
             fades.append(player.overlay().fade)
-    host, _, _ = run_to_end("death", constant(1 / 60), FakeHost(HALL_STATE), on_frame=watch)
+    host, _, elapsed = run_to_end("death", constant(1 / 60), host_for("death"), on_frame=watch)
     jump_at = next(i for i, f in enumerate(fades) if f > 0.9)
     assert fades[jump_at - 1] < 0.05, "o corte para o preto da morte precisa ser seco"
     assert all(f > 0.9 for f in fades[jump_at:]), "depois do corte fica preto até o fim"
     assert host.entity.death_amounts and host.entity.death_amounts[-1] == 1.0
     assert host.entity.death_amounts == sorted(host.entity.death_amounts)
     assert not host.entity.visible, "a entidade some ao terminar"
-    print("  morte: corte seco para o preto")
+    assert elapsed < 4.0, "a morte é rápida: sem congelar o tempo"
+    print(f"  morte: corte seco para o preto, {elapsed:.1f} s no total")
 
 
 def test_ending_moves_car_and_shows_card():
-    seen = {"card": None, "flash": 0.0, "fade_end": 0.0, "lights": 0.0, "stood_tall": False}
+    seen = {"card": None, "flash": 0.0, "fade_end": 0.0, "lights": 0.0, "stood_tall": False, "car_y": [],
+            "rollup": 0.0, "wheel_spin": 0.0, "bunny": 0.0, "engine": False}
 
     def watch(player, host, elapsed):
         if not player.active:
@@ -459,34 +327,51 @@ def test_ending_moves_car_and_shows_card():
         if ov.card:
             seen["card"] = ov.card
         seen["fade_end"] = ov.fade
-    host, _, _ = run_to_end("ending", constant(1 / 30), on_frame=watch)
-    car = host.objects["Car"].location
+        seen["car_y"].append(host.objects["Car"].location[1])
+        seen["rollup"] = max(seen["rollup"], host.objects["GarageRollup"].location[2])
+        seen["wheel_spin"] = max(seen["wheel_spin"], abs(host.objects["Car_Wheel_FL"].rotation_euler[0]))
+        seen["bunny"] = max(seen["bunny"], abs(host.objects["Cut_Bunny"].rotation_euler[0]))
+        seen["engine"] = seen["engine"] or "engine" in host.audio.loops
+    host, _, _ = run_to_end("ending", constant(1 / 30), host_for("ending"), on_frame=watch)
+    car = layout.ANCHORS["car"]
     stop_y = layout.ENTITY_ROAD_POS[1] + 6.0
-    assert abs(car[1] - stop_y) < 1e-6 and abs(car[0] - layout.ANCHORS["car"].x) < 1e-6, tuple(car)
-    assert host.objects["GarageRollup"].location.z == 2.3
+    assert abs(min(seen["car_y"]) - stop_y) < 0.05, (min(seen["car_y"]), stop_y)
+    assert abs(seen["car_y"][1] - car.y) < 0.01, "o carro começa parado na garagem"
+    assert abs(seen["rollup"] - 2.3) < 0.2, seen["rollup"]
     assert seen["lights"] > 0, "os faróis precisam acender durante a saída"
+    assert seen["wheel_spin"] > 3.0, "as rodas giram"
+    assert seen["bunny"] > 0.05, "o coelhinho balança com o carro"
+    assert seen["engine"], "o motor toca em marcha lenta"
     assert seen["flash"] >= 0.99
     assert seen["card"] == story.ENDING_CARD, seen["card"]
     assert seen["fade_end"] > 0.99
     assert host.entity.transform[:3] == layout.ENTITY_ROAD_POS
     assert seen["stood_tall"] and host.entity.head_limit == 2.42, "na estrada ele fica ereto; ao fim volta o limite"
     assert host.objects["Cut_EndClock"].hide_render, "objetos mostrados pela cutscene voltam a ficar ocultos"
-    print("  final: carro sai da garagem, entidade na estrada, flash e cartão")
+    assert not host.objects["AlarmClock"].hide_render, "o despertador escondido volta"
+    print("  final: portão sobe, carro sai com rodas e coelhinho, entidade na estrada, flash e cartão")
 
 
 def test_missing_optional_objects_do_not_break():
-    host = FakeHost(missing=("Car", "GarageRollup", "Car_Headlight_L", "Car_Headlight_R", "Cut_EndClock"))
+    host = FakeHost(START_STATES["ending"], missing=("Car", "GarageRollup", "Car_Headlight_L", "Car_Headlight_R",
+                                                      "Cut_EndClock", "Cut_Bunny", "Cut_Wheel", "Cut_Key", "Cut_Dust",
+                                                      "Cut_Sparks", "Cut_LidTop", "Cut_LidBottom", "PlayerCam",
+                                                      "Curtain_w_master_n", "Curtain_w_master_w", "AlarmClock"))
     host, player, _ = run_to_end("ending", constant(1 / 30), host)
     assert host.finished == ["ending_done"] and player.errors == []
-    print("  final sem Car/GarageRollup/faróis: segue sem quebrar")
+    for name in ("intro", "blackout", "garage_unlock", "death"):
+        host = host_for(name, missing=("Cut_Dust", "Cut_Sparks", "Cut_Key", "Cut_LidTop", "PlayerCam", "Curtain_w_master_n"))
+        host, player, _ = run_to_end(name, constant(1 / 30), host)
+        assert host.finished == [REASONS[name]] and player.errors == [], (name, player.errors)
+    print("  sem Car/GarageRollup/faróis/poeira/pálpebras/cortinas: segue sem quebrar")
 
 
 def test_host_errors_are_contained():
-    host = FakeHost(audio_fails=True)
+    host = host_for("intro", audio_fails=True)
     host, player, _ = run_to_end("intro", constant(1 / 30), host)
     assert host.finished == ["intro_done"]
     assert any("audio.play" in e for e in player.errors)
-    host = FakeHost(missing=("CutsceneCam",))
+    host = host_for("death", missing=("CutsceneCam",))
     host, player, _ = run_to_end("death", constant(1 / 30), host)
     assert host.finished == ["death_done"] and any("CutsceneCam" in e for e in player.errors)
     print("  falhas do host não derrubam a cutscene e ficam registradas")
@@ -494,15 +379,96 @@ def test_host_errors_are_contained():
 
 def test_cut_lights_are_switched_off_at_the_end():
     for name in ("intro", "blackout", "ending"):
-        host, _, _ = run_to_end(name, constant(1 / 30), FakeHost(HALL_STATE))
+        host, _, _ = run_to_end(name, constant(1 / 30), host_for(name))
         for obj_name, obj in host.objects.items():
             if obj_name.startswith("CutLight_"):
                 assert obj.data.energy == 0.0 and obj.hide_render, (name, obj_name)
     print("  luzes CutLight_* apagadas ao terminar")
 
 
+def test_actors_restore_the_scene():
+    """Cortinas, poeira, faíscas, carro, rodas, coelhinho, portão e chave voltam ao que eram."""
+    for name in NAMES:
+        host = host_for(name)
+        before = settle_state(host)
+        meshes = {n: o.data.vertices.coords.copy() for n, o in host.objects.items() if hasattr(o.data, "vertices")}
+        run_to_end(name, constant(1 / 30), host)
+        for n, coords in meshes.items():
+            assert (host.objects[n].data.vertices.coords == coords).all() or n in ("Cut_Dust", "Cut_Sparks"), (name, n)
+        after = settle_state(host)
+        for n in ("Car", "GarageRollup", "Car_Wheel_FL", "Cut_Bunny", "Cut_Wheel", "PlayerCam"):
+            assert after["objects"][n] == before["objects"][n], (name, n, before["objects"][n], after["objects"][n])
+    print("  atores devolvem malhas, transformações e visibilidade")
+
+
+def test_curtains_move_and_stay_inside_their_budget():
+    host = host_for("intro")
+    original = host.objects["Curtain_w_master_n"].data.vertices.coords.copy()
+    seen = []
+
+    def watch(player, h, elapsed):
+        if 20.0 < elapsed < 21.0:
+            seen.append(abs(h.objects["Curtain_w_master_n"].data.vertices.coords - original).max())
+    run_to_end("intro", constant(1 / 60), host, on_frame=watch)
+    assert max(seen) > 0.02, "a cortina balança"
+    assert max(seen) < 0.5, "mas não atravessa o quarto"
+    print(f"  cortina: deslocamento máximo {max(seen) * 100:.0f} cm")
+
+
+def test_dust_falls_from_the_ceiling():
+    host = host_for("garage_unlock")
+    heights = []
+
+    def watch(player, h, elapsed):
+        if elapsed > 7.0:
+            z = h.objects["Cut_Dust"].data.vertices.coords[:, 2]
+            visible = z[(h.objects["Cut_Dust"].data.vertices.coords != 0).any(axis=1)]
+            if len(visible):
+                heights.append((elapsed, float(visible.max()), float(visible.min())))
+    run_to_end("garage_unlock", constant(1 / 30), host, on_frame=watch)
+    assert heights and heights[0][1] > 2.4, "a poeira nasce no forro"
+    assert min(h[2] for h in heights) < 2.0, "e desce"
+    print("  poeira nasce no forro (2,6 m) e desce")
+
+
+def test_body_integration_with_a_recording_body():
+    """Com corpo: poses, braços e a referência da câmera; sem corpo (NullBody ou ausente): nada quebra."""
+    for name in NAMES:
+        body = RecordingBody()
+        host = host_for(name, body=body)
+        host, player, _ = run_to_end(name, constant(1 / 30), host)
+        assert player.errors == [], (name, player.errors)
+        if name in ("intro", "garage_unlock", "ending"):
+            assert host.body_shown[0] is True and host.body_shown[-1] is False, (name, host.body_shown)
+            assert ("attach_view", "CutsceneCam") in body.calls, name
+            last_reset = max(i for i, c in enumerate(body.calls) if c == ("reset",))
+            assert not any(c[0] in ("place", "pose") for c in body.calls[last_reset:]), \
+                f"{name}: o corpo volta ao jogo (reset) no fim e nenhuma pose vem depois"
+        if name == "intro":
+            assert body.poses()[:3] == ["lying_bed", "sit_bed", "stand"], body.poses()
+        null_host = host_for(name, body=NullBody())
+        _, null_player, _ = run_to_end(name, constant(1 / 30), null_host)
+        assert null_player.errors == [], (name, null_player.errors)
+        assert null_host.finished == [REASONS[name]]
+    print("  corpo: poses e referência da câmera; com NullBody tudo segue")
+
+
+def test_dof_can_be_turned_off():
+    host = host_for("intro")
+    player = CutscenePlayer(host, dof=False)
+    player.play("intro")
+    for _ in range(300):
+        player.update(1 / 30)
+    assert host.objects["CutsceneCam"].data.dof.use_dof is False
+    host = host_for("intro")
+    player = CutscenePlayer(host, dof=True)
+    player.play("intro")
+    assert host.objects["CutsceneCam"].data.dof.use_dof is True
+    print("  profundidade de campo liga e desliga")
+
+
 def test_replay_and_unknown_name():
-    host = FakeHost()
+    host = host_for("death")
     player = CutscenePlayer(host)
     player.play("death")
     player.update(0.2)
@@ -521,7 +487,7 @@ def test_replay_and_unknown_name():
 
 def test_on_done_order():
     order = []
-    host = FakeHost()
+    host = host_for("death")
     host.finish = lambda reason: order.append(("finish", reason))
     player = CutscenePlayer(host)
     player.play("death", on_done=lambda: order.append(("done", player.active)))

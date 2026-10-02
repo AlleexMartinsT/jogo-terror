@@ -9,11 +9,16 @@ eventos nomeados (`contact`, `click`, `done`...). O executor garante:
   entre o que estava na tela e o que a nova fonte pede vira um deslocamento que decai por amortecimento
   crítico, com a velocidade também emendada. A mão nunca teletransporta, nem quando o clipe é interrompido.
 
-Os valores são sempre tuplas de floats (escalares viram tuplas de um item). Nada aqui importa bpy.
+Os valores são sempre tuplas de floats (escalares viram tuplas de um item). As rotações (canais `*.rot`) são
+quaternions (w, x, y, z): interpolar ângulos de Euler passa por orientações absurdas perto de um eixo
+vertical ("gimbal"), e várias garras da mão ficam exatamente ali.
 """
 import math
 from bisect import bisect_right
 from dataclasses import dataclass, field
+
+import bpy  # noqa: F401 - `mathutils` só existe depois deste import
+from mathutils import Quaternion
 
 FOLLOW_RATE = 13.0          # 1/s: quão depressa uma emenda é absorvida (~0,35 s para sumir)
 VELOCITY_PROBE = 1.0 / 240.0
@@ -116,6 +121,71 @@ class Track:
                      for a, b, ma, mb in zip(p0, p1, m0, m1))
 
 
+def _align(q, reference):
+    """O mesmo quaternion, no hemisfério de `reference` (q e -q são a mesma rotação)."""
+    return tuple(-x for x in q) if sum(a * b for a, b in zip(q, reference)) < 0.0 else tuple(q)
+
+
+def _normalize(q):
+    length = math.sqrt(sum(x * x for x in q)) or 1.0
+    return tuple(x / length for x in q)
+
+
+def _quaternion(values):
+    return Quaternion(values)
+
+
+def _log(q):
+    """Vetor de rotação (eixo * metade do ângulo) de um quaternion unitário."""
+    vector = q.axis * (q.angle / 2.0) if q.angle > 1e-9 else q.axis * 0.0
+    return vector
+
+
+def _exp(vector):
+    angle = vector.length
+    if angle < 1e-9:
+        return Quaternion((1.0, 0.0, 0.0, 0.0))
+    return Quaternion(vector / angle, 2.0 * angle)
+
+
+class QuatTrack(Track):
+    """Curva de uma rotação: SQUAD entre quaternions (sem saltos de eixo, sem sobressalto entre as chaves)."""
+
+    def __init__(self, keys):
+        super().__init__(keys)
+        aligned = []
+        previous = None
+        for key in self.keys:
+            value = _normalize(key.value) if previous is None else _align(_normalize(key.value), previous)
+            aligned.append(Key(key.t, value, key.stop, key.space))
+            previous = value
+        self.keys = aligned
+        self._quats = [_quaternion(k.value) for k in self.keys]
+        self._control = [self._control_point(i) for i in range(len(self.keys))]
+
+    def _control_point(self, index):
+        keys, quats = self.keys, self._quats
+        if index == 0 or index == len(keys) - 1 or keys[index].stop:
+            return quats[index]
+        here = quats[index]
+        toward_next = _log(here.inverted() @ quats[index + 1])
+        toward_previous = _log(here.inverted() @ quats[index - 1])
+        return here @ _exp((toward_next + toward_previous) * -0.25)
+
+    def sample(self, t, anchors=None):
+        if t <= self.times[0]:
+            return tuple(self.keys[0].value)
+        if t >= self.times[-1]:
+            return tuple(self.keys[-1].value)
+        i = bisect_right(self.times, t) - 1
+        u = (t - self.times[i]) / (self.times[i + 1] - self.times[i])
+        a, b = self._quats[i], self._quats[i + 1]
+        edge = a.slerp(b, u)
+        inner = self._control[i].slerp(self._control[i + 1], u)
+        result = edge.slerp(inner, 2.0 * u * (1.0 - u))
+        return _align(tuple(result), self.keys[i].value)
+
+
 class _Channel:
     __slots__ = ("out", "vel", "off", "offv", "kind")
 
@@ -213,11 +283,15 @@ class ClipPlayer:
 
     def _settle(self, name, source, dt):
         value, source_velocity, kind = source
+        rotation = name.endswith(".rot")
         channel = self._channels.get(name)
         if channel is None:
             channel = self._channels[name] = _Channel(value, kind)
             return channel.out
         if channel.kind != kind:
+            if rotation and sum(a * b for a, b in zip(channel.out, value)) < 0.0:
+                channel.out = tuple(-x for x in channel.out)             # a mesma rotação, no hemisfério da fonte nova
+                channel.vel = tuple(-x for x in channel.vel)
             channel.off = _sub(channel.out, value)
             channel.offv = _sub(channel.vel, source_velocity)
             channel.kind = kind
@@ -231,9 +305,13 @@ class ClipPlayer:
             channel.off, channel.offv = tuple(new_off), tuple(new_offv)
             previous = channel.out
             channel.out = _add(value, channel.off)
+            if rotation:
+                channel.out = _normalize(channel.out)
             channel.vel = tuple((a - b) / dt for a, b in zip(channel.out, previous))
         else:
             channel.out = _add(value, channel.off)
+            if rotation:
+                channel.out = _normalize(channel.out)
         return channel.out
 
     def current(self, name):

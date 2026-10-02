@@ -18,8 +18,8 @@ CONE = math.radians(12.0)
 DOOR_EXTRA_REACH = 0.3
 SIGHT_MARGIN = 0.08
 RADIUS = {"item": 0.10, "note": 0.15, "door": 0.45, "look": 0.5, "car": 0.6}
-STORY_SOUND = {C.ITEM_FLASHLIGHT: "pickup", C.ITEM_KEY: "key_jingle", C.ITEM_MAP: "map_unfold",
-               C.ITEM_BATTERY: "battery_pickup", C.ITEM_NOTE: "paper_rustle"}
+STORY_SOUND = {C.ITEM_FLASHLIGHT: "flash_pickup", C.ITEM_KEY: "key_pickup", C.ITEM_MAP: "map_fold",
+               C.ITEM_BATTERY: "battery_pickup", C.ITEM_NOTE: "paper_rustle"}      # tocam no contato dos dedos
 
 
 @dataclass

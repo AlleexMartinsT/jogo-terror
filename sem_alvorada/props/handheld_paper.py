@@ -4,7 +4,7 @@ O material de cima é trocado em tempo de execução pelo da anotação que est�
 o verso é o papel liso. A altura de ondas e cantos é absoluta (a escala não mexe em Z), então a folha continua
 fina e levemente arqueada seja qual for o tamanho.
 
-Referencial do modelo: origem no centro da folha, face para +Z.
+Referencial do modelo: origem no meio da borda de baixo (onde a mão a segura), a folha sobe por +Y, face para +Z.
 """
 import bpy
 
@@ -19,7 +19,7 @@ def build_mesh():
     item = Assembly(OBJECT_NAME)
     sheet = item.part(PAPER)
     paper.sheet(sheet, 1.0, 1.0, "note_letter", "paper_back", thickness=0.0005, nu=6, nv=8, wave=0.0030, curl=0.0060,
-                curl_corners=((1, 1),), seed=41, bend_x=0.0040)
+                curl_corners=((1, 1),), seed=41, bend_x=0.0040, offset=(0.0, 0.5, 0.0))
     return item.to_mesh(OBJECT_NAME)
 
 

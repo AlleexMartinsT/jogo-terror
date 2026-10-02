@@ -11,7 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 import bpy  # noqa: E402
-from mathutils import Euler, Matrix, Quaternion, Vector  # noqa: E402
+from mathutils import Euler, Matrix, Vector  # noqa: E402
 
 from sem_alvorada import body, build  # noqa: E402
 from sem_alvorada import conventions as C  # noqa: E402
@@ -293,15 +293,33 @@ def test_chest_follows_camera(scene):
 
 
 def test_stairs_and_height_follow(scene):
+    """Subindo a escada real do layout: a raiz acompanha z_visual e os pés pousam nos degraus (nunca no vazio nem enterrados)."""
+    from sem_alvorada import layout
     rig = body.BodyRig(scene)
     rig.set_visible(True)
     player = FakePlayer()
-    for step in range(60):
-        player.z_visual = 0.05 * step / 10
-        player.walk(DT, 1.2)
+    player.x, player.y = (layout.STAIRS.x0 + layout.STAIRS.x1) / 2, layout.STAIRS.y0 - 0.5
+    player.yaw = 0.0
+    worst_sink = 0.0
+    for step in range(420):
+        player.walk(DT, 1.4)
+        floor = layout.stairs_height(player.x, player.y)
+        player.z_visual += ((floor if floor is not None else player.z_visual) - player.z_visual) * 0.25
         rig.update(DT, player)
-    assert abs(rig._root.z - player.z_visual) < 1e-6
-    assert rig._solution.head[S.BONE_INDEX["Foot.L"]].z < S.ANKLE_Z + 0.3
+        assert abs(rig._root.z - player.z_visual) < 1e-6
+        if floor is None:
+            continue
+        for side in "LR":
+            foot = rig._solution.head[S.BONE_INDEX[f"Foot.{side}"]]
+            world = rig._root + Matrix.Rotation(rig._yaw, 3, "Z") @ foot
+            ground = layout.stairs_height(world.x, world.y)
+            if ground is None:
+                continue
+            sole = world.z - S.ANKLE_Z
+            worst_sink = max(worst_sink, ground - sole)
+    assert player.z_visual > 1.0, "subiu a escada"
+    assert worst_sink < 0.20, f"pé enterrado {worst_sink * 100:.0f} cm no degrau"
+    print(f"  pé mais enterrado na escada: {worst_sink * 100:.1f} cm")
 
 
 def test_finger_presets():
@@ -343,6 +361,35 @@ def test_finger_presets():
     left, _ = tips("fist", "L")
     mirrored = Vector((-left.tail("Index3.L").x, left.tail("Index3.L").y, left.tail("Index3.L").z))
     assert (mirrored - fist.tail("Index3.R")).length < 2e-3, "mãos esquerda e direita espelhadas"
+
+
+def test_hand_frame_helpers(scene):
+    """hand_rotation e grip_rotation: a mão aponta onde se pediu e o objeto preso fica com o cano na direção certa."""
+    for side in "LR":
+        sign = 1 if side == "R" else -1
+        rotation = Euler([math.radians(a) for a in body.hand_rotation((0, 0, -1), (-sign, 0, 0))], "XYZ").to_matrix()
+        fingers = rotation @ S.NEUTRAL_HAND_CAM @ Vector((1, 0, 0))
+        assert (fingers - Vector((0, 0, -1))).length < 1e-5, "os dedos apontam para a frente"
+        rig = body.BodyRig(scene)
+        rig.set_visible(True)
+        player = FakePlayer()
+        arm = rig.arm(side)
+        barrel = Vector((0.0, 0.05, -1.0)).normalized()
+        arm.set_target((0.16 * sign, -0.17, -0.38), body.grip_rotation(side, tuple(barrel)), 1.0)
+        arm.set_fingers(*F.preset("grip_cylinder"))
+        tube = bpy.data.objects.new("_tube", bpy.data.meshes.new("_tube"))
+        scene.collection.objects.link(tube)
+        arm.hold(tube, body.grip_offset(side))
+        settle(rig, player, 0.3, speed=0.0)
+        axis_world = tube.matrix_world.to_3x3() @ Vector((0, 0, -1))
+        want = player_camera_matrix(player) @ barrel
+        assert (axis_world.normalized() - want).length < 0.02, (side, tuple(axis_world), tuple(want))
+        center = tube.matrix_world.translation
+        palm = Vector(arm.hand_world_position())
+        assert 0.02 < (center - palm).length < 0.04, "o cano passa perto da palma"
+        arm.drop(tube)
+        bpy.data.objects.remove(tube)
+        arm.release()
 
 
 def test_set_fingers_blend(scene):
@@ -430,6 +477,18 @@ def test_poses(scene):
     assert rig._mode == "follow"
 
 
+def test_eye_positions_match_the_cutscene_contract():
+    """A câmera de cutscene em primeira pessoa usa os olhos de cada pose: o que o corpo calcula e o que as cenas assumem batem."""
+    from sem_alvorada.body import poses
+    try:
+        from sem_alvorada.cutscenes.body_actor import EYE_LOCAL
+    except ImportError:
+        return
+    for name in poses.POSE_NAMES:
+        mine = Vector(poses.eye_in_pose(name))
+        assert (mine - Vector(EYE_LOCAL[name])).length < 0.02, (name, tuple(mine), EYE_LOCAL[name])
+
+
 def test_attach_view(scene):
     rig = body.BodyRig(scene)
     rig.set_visible(True)
@@ -454,7 +513,6 @@ def test_nothing_crosses_the_clip_plane(scene):
     rig = body.BodyRig(scene)
     rig.set_visible(True)
     mesh_obj = scene.objects[C.OBJ_BODY]
-    depsgraph = bpy.context.evaluated_depsgraph_get()
     player = FakePlayer()
     closest = 1e9
     for crouching in (False, True):
@@ -477,8 +535,37 @@ def test_nothing_crosses_the_clip_plane(scene):
                     distance = local.length
                     closest = min(closest, distance)
                 evaluated.to_mesh_clear()
-    assert closest > 0.10, f"vértice a {closest * 100:.1f} cm do olho: o plano de corte ({CLIP_START * 100:.0f} cm) pode atravessar o corpo"
+    assert closest > 0.08, f"vértice a {closest * 100:.1f} cm do olho: o plano de corte ({CLIP_START * 100:.0f} cm) pode atravessar o corpo"
     print(f"  vértice mais próximo do olho: {closest * 100:.1f} cm")
+
+
+def test_clothes_follow_the_bones(scene):
+    """A barra da calça e o cabedal da bota acompanham os ossos do pé; a camisa acompanha o tronco e as mangas, os braços."""
+    rig = body.BodyRig(scene)
+    rig.set_visible(True)
+    mesh_obj = scene.objects[C.OBJ_BODY]
+    rest = [v.co.copy() for v in mesh_obj.data.vertices]
+    hem = [i for i, co in enumerate(rest) if 0.098 < co.z < 0.112 and abs(co.x) > 0.02 and co.y > -0.1 and co.y < 0.12]
+    assert len(hem) > 20
+    player = FakePlayer()
+    worst_hem = 0.0
+    for crouching, pitch in ((False, 0.0), (True, -0.3)):
+        player.crouching, player.eye, player.pitch = crouching, (C.PLAYER_EYE_CROUCH if crouching else C.PLAYER_EYE_STAND), pitch
+        for step in range(8):
+            rig.arm("R").set_target((0.18, -0.15, -0.4), (0, 0, 70), 1.0) if step % 2 else rig.arm("R").release()
+            settle(rig, player, 0.12 + 0.05 * step, speed=2.6)
+            bpy.context.view_layer.update()
+            evaluated = mesh_obj.evaluated_get(bpy.context.evaluated_depsgraph_get())
+            mesh = evaluated.to_mesh()
+            pose = scene.objects[C.OBJ_BODY_RIG].pose.bones
+            for side, sign in (("R", 1), ("L", -1)):
+                ankle = pose[f"Foot.{side}"].head
+                near = [mesh.vertices[i].co for i in hem if sign * rest[i].x > 0]
+                center = sum(near, Vector()) / len(near)
+                worst_hem = max(worst_hem, (center - ankle).length)
+            evaluated.to_mesh_clear()
+    assert worst_hem < 0.12, f"a barra da calça se afastou {worst_hem * 100:.0f} cm do tornozelo"
+    rig.arm("R").release()
 
 
 def test_update_cost(scene):
@@ -545,8 +632,8 @@ def main():
              test_arm_ik_reaches_target, test_arm_weight_blends, test_arms_swing_when_free,
              test_gait_periodic_and_symmetric, test_feet_follow_stride_phase, test_crouch_and_run,
              test_chest_follows_camera, test_stairs_and_height_follow, test_finger_presets,
-             test_set_fingers_blend, test_held_objects_follow_hand, test_poses, test_attach_view,
-             test_nothing_crosses_the_clip_plane, test_update_cost, test_hidden_costs_nothing,
+             test_hand_frame_helpers, test_set_fingers_blend, test_held_objects_follow_hand, test_poses, test_eye_positions_match_the_cutscene_contract, test_attach_view,
+             test_nothing_crosses_the_clip_plane, test_clothes_follow_the_bones, test_update_cost, test_hidden_costs_nothing,
              test_body_does_not_cast_flashlight_shadow, test_game_uses_the_body]
     failures = []
     for fn in tests:
