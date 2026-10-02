@@ -22,9 +22,13 @@ class InputState:
     confirm: bool = False
     skip: bool = False
     cancel: bool = False
+    wheel_held: bool = False       # nível: a tecla da roda de itens está apertada
+    wheel_dx: float = 0.0          # mouse acumulado ENQUANTO a roda está aberta (dx>0: direita, dy>0: cima)
+    wheel_dy: float = 0.0
 
     def clear_edges(self):
         """Zera o que só vale por um quadro; o operador chama depois de cada tick."""
         self.look_dx = self.look_dy = 0.0
+        self.wheel_dx = self.wheel_dy = 0.0
         self.interact = self.flashlight = self.reload = False
         self.pause = self.confirm = self.skip = self.cancel = False

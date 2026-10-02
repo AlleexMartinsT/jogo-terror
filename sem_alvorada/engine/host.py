@@ -59,6 +59,14 @@ class CutsceneHost:
     def doors(self):
         return self.game.doors
 
+    @property
+    def body(self):
+        """O corpo do jogador (BodyRig ou NullBody); `show_body` decide se aparece na cutscene."""
+        return self.game.body
+
+    def show_body(self, visible):
+        self.game.body_in_cutscene = bool(visible)
+
     def set_camera(self, obj):
         """Câmera da cena; None devolve a câmera do jogador."""
         self.game.set_active_camera(obj)

@@ -19,12 +19,14 @@ from .ambience import Ambience
 from .director import Director
 from .doors import DoorManager
 from .entity_runtime import EntityRuntime
-from .fallbacks import FallbackNoise, NullAudio
+from .fallbacks import FallbackNoise, NullAudio, NullBody
 from .flashlight import Flashlight
 from .host import CutsceneHost, WorldView
+from .hands import Hands
 from .hudmodel import build_hud_model
 from .inputstate import InputState
 from .interact import Interact
+from .inventory import Inventory
 from .lights import LightManager
 from .meter import MeterPeaks
 from .player import Player
@@ -32,6 +34,7 @@ from .state import FLAG_BLACKOUT, GameState
 
 MAX_DT = 0.1
 MESSAGE_SECONDS = 3.5
+BODY_PHASES = frozenset({"play", "paused", "reading"})      # fases em que o corpo do jogador aparece
 BODY_KINDS = frozenset({"walk", "run", "crouch_walk", "breath_heavy", "pickup", "flash_click",
                         "battery_swap", "stairs_creak"})
 CUTSCENE_REASON = {"intro": "intro_done", "blackout": "blackout_done", "garage_unlock": "unlock_done",
@@ -81,6 +84,7 @@ class Game:
         self._heartbeat_loop = False
         self._audio_ducked = False
         self.player_cam = scene.objects.get(C.OBJ_PLAYER_CAM)
+        self.body_in_cutscene = False     # as cutscenes ligam quando mostram o corpo do jogador
 
         self.collision = collision.build_collision(scene)
         self.doors = DoorManager(self, scene)
@@ -88,6 +92,9 @@ class Game:
         self.noise = self._make_noise()
         self.player = Player(self, self.collision)
         self.flashlight = Flashlight(self, scene.objects.get(C.OBJ_FLASHLIGHT), scene.objects.get(C.OBJ_VIEW_FLASH))
+        self.body = self._make_body()
+        self.hands = Hands(self)
+        self.inventory = Inventory(self)
         self.lights = LightManager(scene)
         self.interact = Interact(self, scene)
         self.director = Director(self)
@@ -110,6 +117,15 @@ class Game:
                 except Exception as error:      # noqa: BLE001 - sem som é melhor que sem jogo
                     print(f"[engine] AudioEngine falhou ({error}); usando áudio nulo", flush=True)
         return NullAudio()
+
+    def _make_body(self):
+        body_class = _import_class("body", "BodyRig")
+        if body_class is not None:
+            try:
+                return body_class(self.scene)
+            except Exception as error:          # noqa: BLE001 - sem corpo visível o jogo continua
+                print(f"[engine] BodyRig falhou ({error}); sem corpo em primeira pessoa", flush=True)
+        return NullBody()
 
     def _make_noise(self):
         noise_class = _import_class("audio.noise", "NoiseSystem")
@@ -189,6 +205,9 @@ class Game:
         self.meter.reset()
         self.flashlight.swap_left = 0.0
         self.player.reset_body()
+        self.hands.reset()
+        self.inventory.reset()
+        self.body.reset()
         self.reader_note = None
         self.message_text, self._message_left = "", 0.0
 
@@ -278,6 +297,7 @@ class Game:
         {"title": self._tick_title, "cutscene": self._tick_cutscene, "play": self._tick_play,
          "reading": self._tick_reading, "paused": self._tick_paused, "dead": self._tick_dead,
          "credits": self._tick_credits}[self.phase](dt, inp)
+        self.body.set_visible(self.phase in BODY_PHASES or (self.phase == "cutscene" and self.body_in_cutscene))
         self._sync_camera()
         self._update_listener()
         self.noise.set_listener(self.player.feet)
@@ -322,13 +342,18 @@ class Game:
             return
         self.clock += dt
         player = self.player
+        self.inventory.update(dt, inp)
+        if self.inventory.wheel_open:
+            inp.look_dx = inp.look_dy = 0.0         # com a roda aberta o mouse escolhe o setor, não gira a câmera
         player.update(dt, inp)
         if inp.flashlight:
-            self.flashlight.toggle()
+            self.hands.toggle_flashlight()
         if inp.reload:
-            self.flashlight.reload()
+            self.hands.reload_flashlight()
         lateral, vertical = player.bob_offset()
         self.flashlight.update(dt, player.yaw, player.pitch, bob=(lateral, vertical))
+        self.hands.update(dt, (lateral, vertical))
+        self.body.update(dt, player, (lateral, vertical))
         self.doors.update(dt, player)
         self.lights.update(dt, player.room_id)
         self.noise.update(dt)
@@ -337,7 +362,7 @@ class Game:
         if self.phase != "play":
             return
         self.interact.update(player.eye_pos, player.forward())
-        if inp.interact and self.interact.current is not None:
+        if inp.interact and self.interact.current is not None and not self.hands.busy:
             self.interact.use(self.interact.current)
         if self.phase == "play":
             self.director.update(dt)
@@ -347,6 +372,7 @@ class Game:
         if inp.interact or inp.confirm or inp.cancel or inp.pause or inp.skip:
             self.reader_note = None
             self.phase = "play"
+            self.hands.end_read()
             self.sound("paper_rustle", None, 0.6)
 
     def _tick_paused(self, dt, inp):

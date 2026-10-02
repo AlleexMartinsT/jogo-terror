@@ -123,3 +123,52 @@ class FallbackNoise:
 
     def hud_levels(self):
         return dict(self._smooth)
+
+
+class NullArm:
+    """Braço de mentira: aceita os comandos do contrato do corpo (docs/FASE3.md) e não faz nada."""
+    ready = False
+
+    def set_target(self, position, rotation_deg=(0.0, 0.0, 0.0), weight=1.0):
+        pass
+
+    def set_fingers(self, curls, spread=0.0, blend=1.0):
+        pass
+
+    def release(self, blend=1.0):
+        pass
+
+    def hold(self, obj, offset=None):
+        pass
+
+    def drop(self, obj=None):
+        pass
+
+    def hand_world_position(self):
+        return None
+
+
+class NullBody:
+    """Ocupa o lugar do BodyRig quando o módulo `body` não existe (ou não foi construído no .blend)."""
+    visible = False
+
+    def __init__(self):
+        self._arms = {"L": NullArm(), "R": NullArm()}
+
+    def set_visible(self, visible):
+        self.visible = False
+
+    def update(self, dt, player, bob=(0.0, 0.0)):
+        pass
+
+    def arm(self, side):
+        return self._arms[side]
+
+    def place(self, x, y, z, yaw):
+        pass
+
+    def pose(self, name, seconds=0.0):
+        pass
+
+    def reset(self):
+        pass

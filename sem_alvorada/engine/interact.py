@@ -154,6 +154,10 @@ class Interact:
         action(target)
 
     def _take(self, target):
+        """A mão estende até o item; o inventário só muda quando os dedos o tocam (`_collect`)."""
+        self.game.hands.pickup(target, on_contact=lambda: self._collect(target))
+
+    def _collect(self, target):
         game, state = self.game, self.game.state
         item = target.item
         if item == C.ITEM_FLASHLIGHT:
@@ -178,7 +182,7 @@ class Interact:
         game = self.game
         game.make_noise("pickup", game.player.feet, C.NOISE_PLAYER["pickup"], sound=STORY_SOUND[C.ITEM_NOTE])
         game.state.notes_read.add(target.ref)
-        game.open_note(target.ref)
+        game.hands.begin_read(target.ref, on_open=lambda: game.open_note(target.ref))
         game.director.on_note_read(target.ref)
 
     def _use_door(self, target):

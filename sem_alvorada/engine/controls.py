@@ -7,6 +7,7 @@ MOVE_KEYS = {"W": (0, 1), "UP_ARROW": (0, 1), "S": (0, -1), "DOWN_ARROW": (0, -1
              "A": (-1, 0), "LEFT_ARROW": (-1, 0), "D": (1, 0), "RIGHT_ARROW": (1, 0)}
 RUN_KEYS = frozenset({"LEFT_SHIFT", "RIGHT_SHIFT"})
 CROUCH_KEYS = frozenset({"C", "LEFT_CTRL", "RIGHT_CTRL"})
+WHEEL_KEYS = frozenset({"Q", "TAB"})
 EDGE_KEYS = {"E": ("interact",), "F": ("flashlight",), "R": ("reload",), "ESC": ("pause", "cancel"),
              "RET": ("confirm",), "NUMPAD_ENTER": ("confirm",), "SPACE": ("skip", "confirm"),
              "LEFTMOUSE": ("interact", "confirm")}
@@ -36,9 +37,15 @@ class Controls:
         elif value == "RELEASE":
             self._down.discard(key_type)
         self._refresh_levels()
-        return key_type in MOVE_KEYS or key_type in EDGE_KEYS or key_type in RUN_KEYS or key_type in CROUCH_KEYS
+        return (key_type in MOVE_KEYS or key_type in EDGE_KEYS or key_type in RUN_KEYS
+                or key_type in CROUCH_KEYS or key_type in WHEEL_KEYS)
 
     def mouse(self, dx_pixels, dy_pixels):
+        # Com a roda de itens aberta o mouse escolhe o setor em vez de girar a câmera.
+        if self.inp.wheel_held:
+            self.inp.wheel_dx += dx_pixels * MOUSE_SENSITIVITY
+            self.inp.wheel_dy += dy_pixels * MOUSE_SENSITIVITY
+            return
         self.inp.look_dx += dx_pixels * MOUSE_SENSITIVITY
         self.inp.look_dy += dy_pixels * MOUSE_SENSITIVITY
 
@@ -49,6 +56,7 @@ class Controls:
         self.inp.move_y = max(-1.0, min(1.0, float(y)))
         self.inp.run = bool(self._down & RUN_KEYS)
         self.inp.crouch = bool(self._down & CROUCH_KEYS)
+        self.inp.wheel_held = bool(self._down & WHEEL_KEYS)
 
     def take_debug_requests(self):
         requests, self.debug_requests = self.debug_requests, []

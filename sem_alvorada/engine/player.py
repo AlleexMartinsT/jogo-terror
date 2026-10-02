@@ -78,6 +78,11 @@ class Player:
         room = layout.room_at(self.x, self.y, self.z)
         return room.surface if room else "concrete"
 
+    @property
+    def stride_phase(self):
+        """Fase da passada em radianos: cada pi é um passo (um pé), 2 pi é o ciclo completo. Mesma do head bob."""
+        return self._bob_phase
+
     def bob_offset(self):
         """(lateral, vertical) do head bob em metros, para a câmera e o viewmodel."""
         amplitude = BOB_AMPLITUDE[self._bob_mode] * self._bob_gain
