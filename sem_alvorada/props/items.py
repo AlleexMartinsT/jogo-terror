@@ -40,7 +40,7 @@ def _placements():
         "NOTE_1": (build_note_letter, 0.56, 8.86, 2.8 + 0.55, 90.0, "rest"),
         "NOTE_2": (build_note_drawing, 1.35, 3.90, 2.8 + 0.44, -90.0 + 6.0, "rest"),
         "NOTE_3": (build_note_clipping, 3.05, 4.15, 0.422, 35.0, "rest"),
-        "NOTE_4": (build_note_notebook, 0.165, 9.42, 1.5, -90.0, "wall"),
+        "NOTE_4": (build_note_notebook, 0.1795, 9.42, 1.5, -90.0, "wall"),     # na frente da cortiça (face em x=0.173)
         "NOTE_5": (build_note_postit, fridge_x + 0.004, fridge_y + 0.05, fridge_z + 0.12, -90.0, "wall"),
         "NOTE_6": (build_note_prescription, 11.62, 6.72, 2.8 + 0.78, 20.0, "rest"),
         "NOTE_7": (build_note_tow_slip, 15.2, 6.68, 1.005, 12.0, "rest"),

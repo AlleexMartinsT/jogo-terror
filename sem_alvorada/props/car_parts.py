@@ -102,7 +102,7 @@ def _end_surface(x_lo, x_hi, z_lo, z_hi, sign, setback):
     return fn
 
 
-def _lamp_surface(m, side, x_lo, x_hi, z_lo, z_hi, front, setback, mat, keep=None, cells=(10, 3)):
+def _lamp_surface(m, side, x_lo, x_hi, z_lo, z_hi, front, setback, mat, keep=None, cells=(16, 3)):
     """Uma lente curva que acompanha o canto, para o lado `side` (+1 passageiro, -1 motorista).
 
     `keep(i, j)` decide quais células existem: a lente do farol batido tem pedaços que faltam.
@@ -127,7 +127,7 @@ def _lamp_surface(m, side, x_lo, x_hi, z_lo, z_hi, front, setback, mat, keep=Non
 
 def _broken_lens(i, j):
     """Lente do farol do passageiro: faltam os cacos do lado de fora e do alto, onde bateu."""
-    return not ((i >= 6 and j >= 1) or (i == 4 and j == 2) or (i >= 8))
+    return not ((i >= 10 and j >= 1) or (i == 6 and j == 2) or (i >= 13))
 
 
 def headlight(m, side):
@@ -150,7 +150,7 @@ def headlight(m, side):
 
 def taillight(m, side):
     """Lanterna traseira: faixa vermelha larga em cima; embaixo âmbar (seta) e branco (ré)."""
-    x_lo, x_hi = 0.485, 0.925
+    x_lo, x_hi = 0.485, 0.900
     _lamp_surface(m, side, x_lo, x_hi, 0.752, 0.898, False, 0.060, PLASTIC)
     _lamp_surface(m, side, x_lo, x_hi, 0.822, 0.896, False, 0.016, "car_tail_red")
     _lamp_surface(m, side, x_lo, 0.70, 0.754, 0.816, False, 0.016, "car_lens_clear")
