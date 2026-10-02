@@ -8,14 +8,19 @@ Domingo, 6:47, Harlan Ridge, Ohio. O sol devia ter nascido às 6:12 e a janela c
 
 ## Capturas
 
-![Quarto onde o jogo começa](docs/capturas/01_quarto.png)
-![O Alto ao fundo do corredor de cima](docs/capturas/02_corredor_o_alto.png)
-![Cozinha, de lanterna](docs/capturas/04_cozinha.png)
-![Garagem e o carro](docs/capturas/06_garagem_carro.png)
+![Quarto onde o jogo começa](docs/capturas/01_quarto.jpg)
+![A lanterna no criado-mudo](docs/capturas/02_lanterna_no_criado_mudo.jpg)
+![Sala de estar, antes do apagão, com a lanterna na mão](docs/capturas/08_sala_luz_acesa.jpg)
+![O Alto ao fundo do corredor de cima](docs/capturas/06_corredor_o_alto.jpg)
+![Cozinha, de lanterna](docs/capturas/15_cozinha.jpg)
+![Portão da garagem, vista de dentro](docs/capturas/18_garagem_portao.jpg)
 
-Mais em [`docs/capturas`](docs/capturas): escada, sala com a TV chiando, leitor de notas, tela de título e quadros das cutscenes de abertura, morte e final.
+Mais em [`docs/capturas`](docs/capturas): os dois quartos de cima, banheiro, escada, escritório com o quadro de cortiça, hall, sala de jantar, o carro, o leitor de notas, a tela de título e quadros das cutscenes. Os arquivos `estudio_*` mostram o exterior e o carro sob luz de apoio (veja os limites abaixo).
 
-Essas imagens não são gravações da janela do Blender. Foram geradas por `tools/prints.py`, que monta o jogo de verdade (`Game`), posiciona o jogador, renderiza a câmera dele no EEVEE e desenha o HUD por cima com o mesmo código de layout que o jogo usa na GPU. O visual ao vivo deve ser parecido, mas o desempenho e o compositor em tempo real só se confirmam abrindo o jogo.
+Essas imagens não são gravações da janela do Blender. As de dentro da casa foram geradas por `tools/prints.py`, que monta o jogo de verdade (`Game`), posiciona o jogador, renderiza a câmera dele no EEVEE e desenha o HUD por cima com o mesmo código de layout que o jogo usa na GPU. O visual ao vivo deve ser parecido, mas o desempenho e o compositor em tempo real só se confirmam abrindo o jogo.
+
+![Fachada, sob luz de apoio](docs/capturas/estudio_fachada.jpg)
+![Carro da família](docs/capturas/estudio_carro.jpg)
 
 ## Como jogar
 
@@ -135,7 +140,7 @@ O Blender removeu o Game Engine na versão 2.80. Este jogo roda como um operador
 - O timbre dos sons foi conferido por números e espectrogramas, não de ouvido.
 - O equilíbrio da dificuldade foi pouco exercitado: o robô de teste não se esconde.
 - A cena tem cerca de 960 mil triângulos (teto de 1,2 milhão no teste de integração) e 216 props. Em GPU de entrada isso pode pesar no EEVEE: use `--quality low` e, se for preciso, esconda o exterior, que só aparece pelas janelas e no final.
-- O exterior é quase preto no jogo, de propósito. As imagens de fachada, rua e telhado em `docs/capturas/estudio_*` foram feitas com `tools/vista_estudio.py`, com luz de apoio, para mostrar o modelo e não o que o jogador vê.
+- O exterior é quase preto no jogo, de propósito. As imagens `docs/capturas/estudio_*` (fachada, garagem, porta, telhado) foram feitas com `tools/vista_estudio.py`, e a do carro com `tools/inspect_object.py`, ambas com luz de apoio: mostram o modelo, não o que o jogador vê.
 - O Alto (a entidade) continua com o modelo da primeira fase. Ele destoa do resto, agora mais detalhado, e é o próximo item.
 - Ficaram simplificados: o interior do forno e do freezer (as tampas não abrem), as portas do carro (só fresta e maçaneta, sem animação) e o desenho de ranhuras do pneu (sulcos em geometria, relevo fino só em textura).
 - Duas famílias de funções de ruído para textura (`props/tex_noise.py` e `props/tex_ruido.py`) cobrem coisas parecidas e podem ser unificadas.
