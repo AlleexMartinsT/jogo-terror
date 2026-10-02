@@ -9,7 +9,9 @@ import bpy
 from .. import conventions as C
 from .. import craft
 from . import materials as M
-from . import shape_cloth as cloth
+from . import shape_boots as boots
+from . import shape_legs as legs
+from . import shape_shirt as shirt
 from . import shape_skin as skin
 from . import skeleton as S
 from .meshkit import Mesh
@@ -46,17 +48,23 @@ def create_armature(ctx):
 def build_mesh_data():
     """Todas as peças do corpo, já com pesos, em uma `Mesh` só."""
     mesh = Mesh()
-    mesh.merge(cloth.build_shirt_torso())
-    sleeve = cloth.build_sleeve_right()
+    mesh.merge(shirt.build_torso())
+    mesh.merge(shirt.build_collar())
+    mesh.merge(shirt.build_buttons())
+    sleeve = shirt.build_sleeve()
     mesh.merge(sleeve.copy())
-    mesh.merge(cloth.mirror(sleeve))
+    mesh.merge(shirt.mirror(sleeve))
     arm = skin.build_hand_skin("R")
     mesh.merge(arm.copy())
     mesh.merge(skin.mirror_arm(arm))
-    mesh.merge(cloth.build_pants())
-    boot = cloth.build_boot_right()
+    mesh.merge(legs.build_hips())
+    leg = legs.build_leg_right()
+    mesh.merge(leg.copy())
+    mesh.merge(legs.mirror_leg(leg))
+    mesh.merge(legs.build_belt())
+    boot = boots.build_boot_right()
     mesh.merge(boot.copy())
-    mesh.merge(cloth.mirror(boot))
+    mesh.merge(boots.mirror_boot(boot))
     return mesh
 
 

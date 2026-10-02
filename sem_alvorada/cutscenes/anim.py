@@ -177,7 +177,7 @@ class SparkBurst(Actor):
     def update(self, stage, dt):
         if self._mesh is None:
             return
-        tau = np.clip(stage.t - self.t0, 0.0, None)
+        tau = np.full(self._count, max(stage.t - self.t0, 0.0))
         alive = (stage.t >= self.t0) & (tau < self.life_each)
         pos = np.array(self.origin)[None, :] + self.v * tau[:, None]
         pos[:, 2] -= 0.5 * GRAVITY * tau ** 2

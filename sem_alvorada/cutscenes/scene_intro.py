@@ -70,12 +70,14 @@ def build():
     look = Aim.toward(eye, [
         (0.0, clock, True),
         (5.6, add(clock, (0.0, 0.02, 0.0))),
-        (7.6, (0.30, 9.0, 3.60)),
-        (9.6, (0.9, 9.6, 4.35)),
-        (11.6, toward_sun((1.12, 8.42, 4.12))),
-        (13.4, floor_shoes),
-        (15.2, floor_shoes[:2] + (3.5,)),
-        (17.2, toward_sun(window_eye)),
+        (7.4, (0.32, 8.92, 3.62)),                       # a mão vai ao abajur
+        (8.8, (0.34, 8.96, 3.80)),
+        (10.2, (2.0, 10.0, 4.25)),
+        (11.8, toward_sun((1.12, 8.42, 4.12))),
+        (13.3, floor_shoes),
+        (14.4, floor_shoes[:2] + (3.4,)),
+        (16.0, toward_sun(window_eye)),
+        (17.4, toward_sun(window_eye)),
         (WALK_FROM - 1.0, toward_sun(window_eye)),
         (WALK_FROM + 0.8, heading(WALK_FROM + 0.8)),
         (WALK_FROM + 2.4, heading(WALK_FROM + 2.4)),
@@ -85,7 +87,7 @@ def build():
         (WALK_TO + 2.8, ahead(end_eye, yaw, 6.0)),
         (DURATION - 0.01, ahead(end_eye, yaw, 6.0), True),
     ], distance=2.0)
-    fov = curve((0.0, 44.0), (5.5, 40.0), (8.5, 52.0), (12.0, 60.0), (14.0, 66.0), (17.5, 56.0), (23.5, 48.0),
+    fov = curve((0.0, 44.0), (5.5, 40.0), (8.5, 52.0), (12.0, 58.0), (14.0, 66.0), (17.5, 54.0), (22.0, 44.0), (23.5, 46.0),
                 (WALK_FROM + 3.0, 66.0), (WALK_TO + 2.0, GAMEPLAY_FOV), (DURATION - 0.01, GAMEPLAY_FOV))
     roll = curve((0.0, 7.0), (5.0, 6.0), (8.4, 9.0), (10.6, -2.5), (13.0, 0.0), (DURATION - 0.01, 0.0))
     amount_lying = Curve([(0.0, 1.2), (6.0, 1.0), (DURATION, 0.7)])
@@ -118,14 +120,15 @@ def build():
         Cue(8.0, act.body_pose("sit_bed", 2.0)),
         Cue(8.2, act.sound("creak_1", None, 0.5)),
         Cue(9.4, act.sound("cloth_rustle_1", None, 0.4)),
-        Cue(11.2, act.sound("flash_on", None, 0.5)),
-        Cue(11.2, act.cut_light(BED_LAMP, 28.0)),
+        Cue(8.5, act.sound("flash_on", None, 0.5)),
+        Cue(8.5, act.cut_light(BED_LAMP, 28.0)),
         Cue(13.8, act.sound("step_carpet_1", None, 0.4)),
         Cue(14.9, act.body_pose("stand", 1.4)),
         Cue(16.5, act.sound("breath_calm", None, 0.4)),
         Cue(22.0, act.loop("radio", "amb_radio_static", 0.8)),
-        Cue(28.0, act.sound("power_hum", None, 0.5)),
-        Cue(28.0, act.power(True, 0.3)),
+        Cue(22.4, act.sound("power_hum", None, 0.5)),
+        Cue(22.4, act.power(True, 0.55)),
+        Cue(30.0, act.power(True, 0.0)),
         Cue(32.5, act.stop_loop("radio")),
         Cue(DURATION - 0.05, act.cut_light(CLOCK_GLOW, 0.0)),
         Cue(DURATION - 0.05, act.place_player(start[0], start[1], start[2], yaw)),
@@ -135,7 +138,7 @@ def build():
              say("intro", 3, 22.5, 25.6), say("intro", 4, 25.9, 30.2), say("intro", 5, 31.4, 36.0))
     shot = Shot(DURATION, cam=rig, name="acordar", lines=lines, cues=cues,
                 fade=((0.0, 1.0), (0.5, 1.0), (1.4, 0.0)),
-                letterbox=((0.0, 0.0), (2.0, 1.0), (30.5, 1.0), (35.0, 0.0)),
+                letterbox=((0.0, 0.0), (6.0, 0.0), (7.5, 1.0), (30.5, 1.0), (35.0, 0.0)),
                 shake=((0.0, 0.0), (14.0, 0.0), (14.2, 0.15), (15.5, 0.0)),
                 lids=lids)
     return Cutscene("intro", "intro_done", (shot,), initial={"fade": 1.0})

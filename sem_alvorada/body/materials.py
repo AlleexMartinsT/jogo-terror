@@ -9,8 +9,6 @@ import numpy as np
 import bpy
 
 from .. import compat
-from ..props import materials as prop_materials
-from ..props import tex_itens  # noqa: F401  (registra 'sleeve_cloth', a flanela do viewmodel antigo)
 from . import tex
 
 # nome do slot -> (cor linear, rugosidade, metálico) dos materiais sem textura
@@ -20,7 +18,7 @@ FLAT = {
     "metal": ((0.42, 0.38, 0.30), 0.35, 0.9),
     "lace": ((0.42, 0.36, 0.27), 0.95, 0.0),
 }
-SLOT_ORDER = ["skin", "nail", "flannel", "denim", "leather", "sole", "button", "metal", "lace"]
+SLOT_ORDER = ["skin", "nail", "flannel", "denim", "denim_hip", "leather", "sole", "button", "metal", "lace"]
 
 
 def _image(name, array):
@@ -106,7 +104,27 @@ def _nail():
                     relief=0.6, distance=0.0008)
 
 
-BUILDERS = {"skin": _skin, "nail": _nail}
+def _flannel():
+    return textured("body_flannel", atlas=tex.atlas_flannel(), tile=tex.tile_flannel(), color=(0.3, 0.12, 0.1),
+                    roughness=0.95, specular=0.15, relief=0.6, distance=0.002, tile_relief=0.9, tile_distance=0.0022)
+
+
+def _denim():
+    return textured("body_denim", atlas=tex.atlas_denim_legs(), tile=tex.tile_denim(), color=(0.12, 0.16, 0.26),
+                    roughness=0.9, specular=0.15, relief=0.8, distance=0.0016, tile_relief=0.9, tile_distance=0.0012)
+
+
+def _denim_hip():
+    return textured("body_denim_hip", atlas=tex.atlas_denim_hip(), tile=tex.tile_denim(), color=(0.12, 0.16, 0.26),
+                    roughness=0.9, specular=0.15, relief=0.8, distance=0.0016, tile_relief=0.9, tile_distance=0.0012)
+
+
+def _leather():
+    return textured("body_leather", atlas=tex.atlas_leather(), tile=tex.tile_leather(), color=(0.2, 0.1, 0.06),
+                    roughness=0.5, specular=0.4, relief=0.9, distance=0.002, tile_relief=1.0, tile_distance=0.0025)
+
+
+BUILDERS = {"skin": _skin, "nail": _nail, "flannel": _flannel, "denim": _denim, "denim_hip": _denim_hip, "leather": _leather}
 
 
 def get(name):
@@ -117,16 +135,7 @@ def get(name):
         return existing
     if name in BUILDERS:
         return BUILDERS[name]()
-    if name == "flannel":
-        base = prop_materials.get("sleeve_cloth")
-        mat = base.copy()
-        mat.name = full
-        return mat
-    if name in FLAT:
-        color, roughness, metallic = FLAT[name]
-    else:
-        color, roughness, metallic = {"denim": ((0.11, 0.15, 0.24), 0.92, 0.0),
-                                      "leather": ((0.17, 0.09, 0.05), 0.55, 0.0)}[name]
+    color, roughness, metallic = FLAT[name]
     mat = compat.new_material(full)
     compat.set_bsdf(compat.bsdf_of(mat), base_color=color, roughness=roughness, metallic=metallic,
                     specular=0.3 if metallic == 0 else 0.5)

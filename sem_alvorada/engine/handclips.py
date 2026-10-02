@@ -49,11 +49,26 @@ def pose_parts(matrix, previous=None):
     return tuple(matrix.translation), tuple(math.degrees(a) for a in euler), euler
 
 
-class Grip:
-    """Onde a palma fica no referencial do item: `mão = item @ garra`."""
+# Mão neutra no espaço da câmera: colunas (dedos, normal da palma, lado do polegar). Igual a
+# `body.skeleton.NEUTRAL_HAND_CAM` (há teste); copiada aqui para o engine não depender do pacote do corpo.
+NEUTRAL_HAND = Matrix(((0.0, 0.0, -1.0), (0.0, -1.0, 0.0), (-1.0, 0.0, 0.0))).transposed()
 
-    def __init__(self, pos=(0.0, 0.0, 0.0), rot=(0.0, 0.0, 0.0)):
-        self.matrix = pose_matrix(pos, rot)
+
+def hand_rotation(fingers, palm):
+    """Euler XYZ (graus) que leva a mão neutra a apontar os dedos para `fingers` e a palma para `palm`."""
+    f = Vector(fingers).normalized()
+    p = Vector(palm)
+    p = (p - f * p.dot(f)).normalized()
+    target = Matrix((f, p, f.cross(p))).transposed()
+    return tuple(math.degrees(a) for a in (target @ NEUTRAL_HAND.inverted()).to_euler("XYZ"))
+
+
+class Grip:
+    """Onde a palma fica no referencial do item: `mão = item @ garra`. A orientação sai de para onde os dedos
+    apontam e para onde a palma olha (a mesma descrição de `body.hand_rotation`)."""
+
+    def __init__(self, pos=(0.0, 0.0, 0.0), fingers=(0.0, 0.0, -1.0), palm=(0.0, -1.0, 0.0)):
+        self.matrix = pose_matrix(pos, hand_rotation(fingers, palm))
         self.inverse = self.matrix.inverted()
 
     def hand_of(self, item_matrix):
@@ -63,18 +78,22 @@ class Grip:
         return hand_matrix @ self.inverse
 
 
-# Garras provisórias: palma logo abaixo do item. Afinadas contra a mão do corpo quando ele existe.
+# Garras no referencial do MODELO de cada item (mão direita para a lanterna, esquerda para o resto). A
+# lanterna é um punho em volta do cano vindo da direita e de baixo, polegar sobre o botão e apontando à frente;
+# o chaveiro é pinçado pela cabeça com a mão atrás (a palma fica a ~7 cm da ponta dos dedos); o mapa fica preso
+# pela borda esquerda, com a mão atrás dele; a pilha repousa na palma virada para cima; a folha é segurada
+# pela borda de baixo.
 GRIPS = {
-    C.ITEM_FLASHLIGHT: Grip((0.0, -0.034, 0.012), (0.0, 0.0, 0.0)),
-    C.ITEM_KEY: Grip((0.0, 0.010, 0.012), (0.0, 0.0, 0.0)),
-    C.ITEM_MAP: Grip((0.030, -0.010, 0.014), (0.0, 0.0, 0.0)),
-    C.ITEM_BATTERY: Grip((0.0, -0.022, 0.0), (0.0, 0.0, 180.0)),
-    C.ITEM_NOTE: Grip((0.0, -0.040, 0.010), (0.0, 0.0, 0.0)),
+    C.ITEM_FLASHLIGHT: Grip((0.025, -0.018, 0.0), (-0.59, -0.81, 0.0), (-0.81, 0.59, 0.0)),
+    C.ITEM_KEY: Grip((-0.020, -0.010, 0.065), (0.35, 0.30, -0.89), (0.75, -0.65, 0.0)),
+    C.ITEM_MAP: Grip((-0.030, -0.025, -0.035), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
+    C.ITEM_BATTERY: Grip((0.0, -0.027, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+    C.ITEM_NOTE: Grip((0.0, -0.040, -0.012), (0.0, 0.8, -0.6), (-0.4, 0.0, -0.9)),
 }
 
 # Item parado na mão (pose do item no espaço da câmera): (posição, rotação)
 HOLD_ITEM = {
-    ("R", C.ITEM_FLASHLIGHT): ((0.165, -0.125, -0.28), (0.0, 0.0, 0.0)),
+    ("R", C.ITEM_FLASHLIGHT): ((0.150, -0.100, -0.300), (8.0, 6.0, -8.0)),
     ("L", C.ITEM_KEY): ((-0.215, -0.085, -0.40), (0.0, 0.0, 0.0)),
     ("L", C.ITEM_MAP): ((-0.290, -0.115, -0.44), (-28.0, 14.0, 6.0)),
     ("L", C.ITEM_BATTERY): ((-0.150, -0.130, -0.34), (-6.0, 90.0, 0.0)),

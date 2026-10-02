@@ -92,9 +92,10 @@ def perpendicular_frame(tangent, hint):
 # --------------------------------------------------------------------------
 class Ring:
     """Seção transversal: centro, dois eixos, semi-eixos, expoente de superelipse e ajustes por vértice."""
-    __slots__ = ("center", "ax", "ay", "rx", "ry", "n", "radial", "offset", "weights", "shift")
+    __slots__ = ("center", "ax", "ay", "rx", "ry", "n", "radial", "offset", "weights", "shift", "points")
 
-    def __init__(self, center, ax, ay, rx, ry, n=2.0, radial=None, offset=None, weights=None, shift=(0.0, 0.0)):
+    def __init__(self, center, ax, ay, rx, ry, n=2.0, radial=None, offset=None, weights=None, shift=(0.0, 0.0),
+                 points=None):
         self.center = np.asarray(center, dtype=float)
         self.ax, self.ay = np.asarray(ax, dtype=float), np.asarray(ay, dtype=float)
         self.rx, self.ry, self.n = rx, ry, n
@@ -102,9 +103,12 @@ class Ring:
         self.offset = offset          # função (theta) -> (sides,3) deslocamentos absolutos, ou array
         self.weights = weights        # dict osso->peso, ou função (theta) -> lista de dicts
         self.shift = shift            # deslocamento do centro da seção nos eixos (ax, ay)
+        self.points = points          # (sides, 3) explícito: ignora a superelipse (contornos que não são elipses)
 
 
 def section_points(ring, thetas):
+    if ring.points is not None:
+        return np.asarray(ring.points, dtype=float) + (ring.offset(thetas) if callable(ring.offset) else (ring.offset if ring.offset is not None else 0.0))
     c, s = np.cos(thetas), np.sin(thetas)
     e = 2.0 / ring.n
     x = ring.rx * np.sign(c) * np.abs(c) ** e
@@ -198,7 +202,7 @@ class Mesh:
         self.verts = [tuple(p) for p in pts]
 
     # -- varredura -------------------------------------------------------
-    def sweep(self, rings, sides, material, *, closed_start=False, closed_end=False, phase=0.0, region="",
+    def sweep(self, rings, sides, material, *, closed_start=False, closed_end=False, loop=False, phase=0.0, region="",
               uv0_rect=(0.0, 0.0, 1.0, 1.0), uv_tile=0.1, v_scale=None, start_end_material=None,
               sharp=False, seam_angle=None):
         """Liga os anéis em sequência com quadriláteros (e fecha as pontas com leque se pedido).
@@ -220,27 +224,37 @@ class Mesh:
         centers = np.array([r.center + 0.0 for r in rings])
         path = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(centers, axis=0), axis=1))])
         u0, v0, u1, v1 = uv0_rect
-        total = path[-1] if path[-1] > 1e-9 else 1.0
+        total = path[-1] + (np.linalg.norm(centers[0] - centers[-1]) if loop else 0.0)
+        total = total if total > 1e-9 else 1.0
         arcs = []
         for pts in ring_pts:
             edge = np.linalg.norm(np.roll(pts, -1, axis=0) - pts, axis=1)
             arcs.append(np.concatenate([[0.0], np.cumsum(edge)]))
-        for r in range(len(rings) - 1):
+        ring_count = len(rings)
+        # as normais saem para fora quando (ax x ay) aponta no sentido do caminho; senão inverte as faces
+        along = centers[1] - centers[0] if ring_count > 1 else np.zeros(3)
+        flip = float(np.dot(np.cross(rings[0].ax, rings[0].ay), along)) < 0.0
+        for r in range(ring_count if loop else ring_count - 1):
+            r2 = (r + 1) % ring_count
             for j in range(sides):
                 k = (j + 1) % sides
-                ids = (rows[r][j], rows[r][k], rows[r + 1][k], rows[r + 1][j])
+                ids = (rows[r][j], rows[r][k], rows[r2][k], rows[r2][j])
                 ua, ub = u0 + (u1 - u0) * j / sides, u0 + (u1 - u0) * (j + 1) / sides
-                va, vb = v0 + (v1 - v0) * path[r] / total, v0 + (v1 - v0) * path[r + 1] / total
+                p_a, p_b = path[r], (path[r + 1] if r + 1 < ring_count else path[-1] + np.linalg.norm(centers[0] - centers[-1]))
+                a_b = arcs[r2] if r + 1 < ring_count else arcs[0]
+                va, vb = v0 + (v1 - v0) * p_a / total, v0 + (v1 - v0) * p_b / total
                 uv0 = ((ua, va), (ub, va), (ub, vb), (ua, vb))
-                uv1 = ((arcs[r][j] / uv_tile, path[r] / uv_tile), (arcs[r][j + 1] / uv_tile, path[r] / uv_tile),
-                       (arcs[r + 1][j + 1] / uv_tile, path[r + 1] / uv_tile), (arcs[r + 1][j] / uv_tile, path[r + 1] / uv_tile))
+                uv1 = ((arcs[r][j] / uv_tile, p_a / uv_tile), (arcs[r][j + 1] / uv_tile, p_a / uv_tile),
+                       (a_b[j + 1] / uv_tile, p_b / uv_tile), (a_b[j] / uv_tile, p_b / uv_tile))
+                if flip:
+                    ids, uv0, uv1 = tuple(reversed(ids)), tuple(reversed(uv0)), tuple(reversed(uv1))
                 self.add_face(ids, uv0, uv1, material, sharp)
         if closed_start:
             self._cap(rows[0], rings[0], thetas, material if start_end_material is None else start_end_material,
-                      reverse=True, region=region, uv0_rect=uv0_rect)
+                      reverse=not flip, region=region, uv0_rect=uv0_rect)
         if closed_end:
             self._cap(rows[-1], rings[-1], thetas, material if start_end_material is None else start_end_material,
-                      reverse=False, region=region, uv0_rect=uv0_rect)
+                      reverse=flip, region=region, uv0_rect=uv0_rect)
         return rows
 
     def _cap(self, row, ring, thetas, material, reverse, region, uv0_rect):
