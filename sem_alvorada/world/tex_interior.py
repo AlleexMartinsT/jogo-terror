@@ -58,9 +58,10 @@ def paint_dirty(rng, size=512, base=(0.215, 0.245, 0.205), plaster=(0.36, 0.34, 
     peeled = T.threshold(field, 0.69, 0.018)
     rim = np.clip(T.threshold(field, 0.655, 0.018) - peeled, 0, 1)
     bare = T.gain(T.solid(size, size, plaster), 0.62 + 0.55 * T.fbm(rng, size, size, 8, 4))
-    edges, second, _ = T.cellular(rng, size, size, 7)
-    crack = T.threshold(0.045 - (second - edges), 0.0, 0.025) * T.threshold(field, 0.42, 0.2)
-    crack = np.maximum(crack, T.blur(T.branching_cracks(rng, size, size, 5, 120), 0.6) * 2.2)
+    edges, second, _ = T.cellular(rng, size, size, 5)
+    where = T.threshold(T.fbm(rng, size, size, 2, 4), 0.58, 0.12)
+    crack = T.threshold(0.016 - (second - edges), 0.0, 0.012) * where
+    crack = np.maximum(crack, T.blur(T.branching_cracks(rng, size, size, 4, 110), 0.6) * 2.2)
     crack = np.clip(crack, 0, 1)
     image = T.lerp(paint, bare, peeled)
     image = T.gain(image, 1 - 0.40 * rim)
@@ -92,7 +93,7 @@ def bathroom_wall_tile(rng, size=512, count=8, base=(0.40, 0.44, 0.415)):
     bevel_light = np.clip(1.0 - np.abs(edge - 1.5) / 2.0, 0, 1) * 0.25
     image = T.gain(image, 1 + bevel_light - 0.30 * (edge < 0.5))
     craze, craze2, _ = T.cellular(rng, size, size, 40)
-    crazed = (rng.random((count, count)) < 0.5)[iy, ix] * T.threshold(0.07 - (craze2 - craze), 0.0, 0.03)
+    crazed = (rng.random((count, count)) < 0.22)[iy, ix] * T.threshold(0.07 - (craze2 - craze), 0.0, 0.03)
     image = T.gain(image, 1 - 0.28 * crazed)
     stained = (rng.random((count, count)) < 0.14)[iy, ix]
     image = T.lerp(image, T.tint(image, (0.78, 0.64, 0.46)), stained * 0.55)
@@ -133,7 +134,8 @@ def garage_block(rng, size=512, base=(0.20, 0.21, 0.205)):
     image = T.gain(image, 1 - 0.55 * pores)
     white = T.threshold(T.fbm(rng, size, size, 6, 4), 0.66, 0.08) * (ys % row_h < row_h * 0.3)
     image = T.lerp(image, np.array((0.34, 0.34, 0.31), np.float32), white * 0.5)
-    image = np.where(mortar[..., None], T.solid(size, size, (0.09, 0.09, 0.085)) * (0.7 + 0.5 * rng.random((size, size, 1))), image)
+    mortar_color = T.solid(size, size, (0.09, 0.09, 0.085)) * (0.7 + 0.5 * rng.random((size, size, 1)))
+    image = np.where(mortar[..., None], mortar_color, image)
     height = np.where(mortar, 0.14, 0.72 - 0.10 * peeled) - 0.22 * pores + 0.05 * (rng.random((size, size)) - 0.5)
     rough = np.where(mortar, 0.95, 0.70 + 0.2 * peeled + 0.1 * rng.random((size, size)))
     return Maps(T.finish(image), T.height_map(height), T.rough_map(rough))
@@ -158,8 +160,9 @@ def trim_paint(rng, size=256, base=(0.47, 0.45, 0.395)):
     image = T.tint(image, (1.0, 0.98, 0.9))
     image = T.gain(image, 0.94 + 0.12 * strokes)
     chip_field = T.fbm(rng, size, size, 9, 4, 0.6)
-    chips = T.threshold(chip_field, 0.74, 0.02)
-    wood = T.solid(size, size, (0.13, 0.085, 0.055)) * (0.7 + 0.6 * T.value_noise(rng, size, size, 3, size // 3))[..., None]
+    chips = T.threshold(chip_field, 0.80, 0.02)
+    grain = (0.7 + 0.6 * T.value_noise(rng, size, size, 3, size // 3))[..., None]
+    wood = T.solid(size, size, (0.13, 0.085, 0.055)) * grain
     image = T.lerp(image, wood, chips)
     grime = T.threshold(T.fbm(rng, size, size, 5, 3), 0.62, 0.3)
     image = T.lerp(image, T.tint(image, (0.78, 0.74, 0.62)), grime * 0.5)
@@ -180,8 +183,8 @@ def curtain_fabric(rng, size=256, base=(0.165, 0.125, 0.105)):
     image = T.lerp(image, T.tint(image, (1.3, 1.22, 1.1)), fade * 0.4)
     stripes = 0.5 + 0.5 * np.sin(xs / size * 2 * np.pi * 8)
     image = T.gain(image, 0.92 + 0.12 * T.threshold(stripes, 0.7, 0.2))
-    mildew = T.threshold(T.fbm(rng, size, size, 8, 4), 0.66, 0.08)
-    image = T.gain(image, 1 - 0.35 * mildew)
+    mildew = T.threshold(T.fbm(rng, size, size, 5, 4), 0.62, 0.25)
+    image = T.gain(image, 1 - 0.22 * mildew)
     height = 0.45 + 0.30 * weave + 0.05 * (rng.random((size, size)) - 0.5)
     return Maps(T.finish(image), T.height_map(height), T.rough_map(np.full((size, size), 0.98)))
 
@@ -191,7 +194,7 @@ def curtain_fabric(rng, size=256, base=(0.165, 0.125, 0.105)):
 # --------------------------------------------------------------------------
 def wall_grime_overlay(rng, width=1024, height=256):
     """8 m x 2,8 m: sujeira rente ao piso, fumaça no teto, manchas de infiltração com borda marrom e escorridos."""
-    v, u = T._rows(height), T._cols(width)
+    v = T._rows(height)
     ramp_floor = 0.5 + 0.5 * T.smooth(v / 0.3)
     ramp_ceiling = 1 - 0.22 * T.smooth((v - 0.8) / 0.2)
     haze = 0.84 + 0.26 * T.fbm(rng, width, height, 5, 4)

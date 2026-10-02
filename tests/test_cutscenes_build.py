@@ -50,7 +50,7 @@ def test_objects(scene):
         assert name.startswith("CutLight_")
     clock = scene.objects[scripts.END_CLOCK]
     assert clock.hide_render and clock.hide_viewport
-    assert len(clock.data.polygons) < 120
+    assert sum(len(p.vertices) - 2 for p in clock.data.polygons) < C.BUDGET_TRIS["prop"]
     lights = [o for o in scene.objects if o.type == "LIGHT" and not o.hide_render]
     assert lights == [], "as luzes de cutscene nascem apagadas e ocultas"
     print("  objetos de cutscene criados, ocultos e apagados")

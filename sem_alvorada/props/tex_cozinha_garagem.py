@@ -7,108 +7,12 @@ Alpha do nó de imagem e nunca a liga ao canal alfa do shader (ver `mat_cozinha_
 Convenção de cor do pacote `props`: os valores são sRGB de tela (como as demais texturas de `textures.py`).
 Ruídos são ladrilháveis para a projeção em caixa em escala de mundo não deixar emendas.
 """
-import zlib
-
 import numpy as np
 
-from . import textures
+from . import kg_silhouettes, textures
+from .tex_ruido import (blur, canvas_from, decal_canvas, fbm, generator, mix, radial_falloff, ring_mark, scratches, smooth,
+                        spots, stamp_text)
 from .textures import Canvas
-
-
-# ---------------------------------------------------------------------------
-# Ruídos e máscaras
-# ---------------------------------------------------------------------------
-def generator(name):
-    """Gerador determinístico por nome de textura."""
-    return np.random.default_rng(zlib.crc32(f"kg:{name}".encode("utf-8")))
-
-
-def _fade(t):
-    return t * t * (3 - 2 * t)
-
-
-def value_noise(rng, size, cells_x, cells_y):
-    """Ruído de valor suave e periódico em [0, 1]; células finas e altas dão fibras e escovado."""
-    lattice = rng.random((cells_y, cells_x))
-    xs, ys = np.arange(size) * cells_x / size, np.arange(size) * cells_y / size
-    x0, y0 = np.floor(xs).astype(int), np.floor(ys).astype(int)
-    fx, fy = _fade(xs - x0)[None, :], _fade(ys - y0)[:, None]
-    x0, y0 = x0 % cells_x, y0 % cells_y
-    x1, y1 = (x0 + 1) % cells_x, (y0 + 1) % cells_y
-    top = lattice[np.ix_(y0, x0)] * (1 - fx) + lattice[np.ix_(y0, x1)] * fx
-    bottom = lattice[np.ix_(y1, x0)] * (1 - fx) + lattice[np.ix_(y1, x1)] * fx
-    return top * (1 - fy) + bottom * fy
-
-
-def fbm(rng, size, cells_x, cells_y=None, octaves=4, gain=0.5):
-    """Soma de oitavas de `value_noise`, normalizada para [0, 1]."""
-    cells_y = cells_y or cells_x
-    total, amplitude, norm = np.zeros((size, size)), 1.0, 0.0
-    for octave in range(octaves):
-        total += amplitude * value_noise(rng, size, cells_x * 2 ** octave, cells_y * 2 ** octave)
-        norm += amplitude
-        amplitude *= gain
-    return total / norm
-
-
-def smooth(values, low, high):
-    """Degrau suave: 0 abaixo de `low`, 1 acima de `high`."""
-    return _fade(np.clip((values - low) / (high - low), 0.0, 1.0))
-
-
-def blur(values, passes=1):
-    for _ in range(passes):
-        values = (values * 4 + np.roll(values, 1, 0) + np.roll(values, -1, 0)
-                  + np.roll(values, 1, 1) + np.roll(values, -1, 1)) / 8
-    return values
-
-
-def scratches(rng, size, count, length=(0.05, 0.25), angle_deg=(-8.0, 8.0), strength=(0.3, 1.0)):
-    """Riscos finos (máscara 0..1) com ângulo quase constante, periódicos."""
-    mask = np.zeros((size, size))
-    for _ in range(count):
-        x0, y0 = rng.uniform(0, size, 2)
-        angle = np.radians(rng.uniform(*angle_deg))
-        steps = int(rng.uniform(*length) * size * 2)
-        t = np.arange(steps) / 2.0
-        xs = ((x0 + t * np.cos(angle)) % size).astype(int)
-        ys = ((y0 + t * np.sin(angle)) % size).astype(int)
-        np.maximum.at(mask, (ys, xs), rng.uniform(*strength))
-    return mask
-
-
-def spots(rng, size, count, radius=(2.0, 6.0), strength=(0.5, 1.0)):
-    """Manchas redondas e suaves (respingos, ferrugem, mofo) como máscara 0..1."""
-    yy, xx = np.mgrid[0:size, 0:size]
-    mask = np.zeros((size, size))
-    for _ in range(count):
-        cx, cy = rng.uniform(0, size, 2)
-        r = rng.uniform(*radius)
-        dx = np.minimum(np.abs(xx - cx), size - np.abs(xx - cx))
-        dy = np.minimum(np.abs(yy - cy), size - np.abs(yy - cy))
-        mask = np.maximum(mask, rng.uniform(*strength) * np.clip(1.0 - np.hypot(dx, dy) / r, 0.0, 1.0))
-    return mask
-
-
-def ring_mark(size, cx, cy, radius, width):
-    """Marca de fundo de copo: um aro fino e suave."""
-    yy, xx = np.mgrid[0:size, 0:size]
-    return np.clip(1.0 - np.abs(np.hypot(xx - cx, yy - cy) - radius) / width, 0.0, 1.0)
-
-
-def mix(color_a, color_b, amount):
-    """Mistura duas cores (r, g, b) por uma máscara (h, w)."""
-    a, b = np.array(color_a), np.array(color_b)
-    return a + (b - a) * amount[..., None]
-
-
-def canvas_from(color, height):
-    """Empacota cor (h, w, 3) e altura (h, w) num Canvas RGBA."""
-    size = height.shape[0]
-    canvas = Canvas(size, size)
-    canvas.px[..., :3] = np.clip(color, 0.0, 1.0)
-    canvas.px[..., 3] = np.clip(height, 0.0, 1.0)
-    return canvas
 
 
 # ---------------------------------------------------------------------------
@@ -181,11 +85,11 @@ def enamel(name, size=512, base=(0.66, 0.64, 0.56), yellow=0.5, rust=0.25, strea
     peel = fbm(rng, size, 64, 64, 2)
     drips = fbm(rng, size, 30, 2, 3)
     blotch = fbm(rng, size, 3, 3, 4)
-    luminance = 1.0 + 0.05 * (peel - 0.5) - 0.18 * streaks * smooth(drips, 0.55, 0.85) - 0.08 * blotch
+    luminance = 1.0 + 0.05 * (peel - 0.5) - 0.10 * streaks * smooth(drips, 0.55, 0.9) - 0.04 * blotch
     color = np.array(base) * luminance[..., None]
-    color = mix(color, (0.62, 0.52, 0.28), smooth(blotch, 0.45, 0.85) * yellow)
-    grime = smooth(fbm(rng, size, 5, 5, 4), 0.55, 0.9)
-    color *= (1.0 - 0.28 * grime)[..., None]
+    color = mix(color, (0.62, 0.52, 0.28), smooth(blotch, 0.45, 0.9) * yellow * 0.6)
+    grime = smooth(fbm(rng, size, 7, 7, 4), 0.58, 0.95)
+    color *= (1.0 - 0.16 * grime)[..., None]
     chips = spots(rng, size, int(40 * rust) + 4, (1.2, 3.2), (0.7, 1.0))
     color = mix(color, (0.34, 0.17, 0.08), smooth(chips, 0.35, 0.7) * 0.8)
     wipe = blur(scratches(rng, size, 30, (0.08, 0.3), (-4, 4), (0.1, 0.35)), 1)
@@ -297,6 +201,50 @@ def rubber(name="kg_rubber", size=256, tread=False):
 # ---------------------------------------------------------------------------
 # Tecidos, comida velha, papelão
 # ---------------------------------------------------------------------------
+def vinyl(name, base, size=256):
+    """Vinil de estofado de cadeira: grão fino, trincas no uso, ombros clareados e sujeira de dedo."""
+    rng = generator(name)
+    grain = fbm(rng, size, 48, 48, 2)
+    cracks = 1.0 - smooth(np.abs(fbm(rng, size, 14, 14, 4) - 0.5) * 2.0, 0.0, 0.035)
+    luminance = 0.9 + 0.2 * grain
+    color = np.array(base) * luminance[..., None]
+    color = mix(color, tuple(np.array(base) * 0.35), cracks * 0.8)
+    color = mix(color, tuple(np.minimum(np.array(base) * 1.5, 1.0)), smooth(fbm(rng, size, 3, 3, 3), 0.6, 0.9) * 0.4)
+    grime = smooth(fbm(rng, size, 5, 5, 4), 0.55, 0.9)
+    color *= (1.0 - 0.3 * grime)[..., None]
+    return canvas_from(color, 0.55 + 0.25 * grain - 0.4 * cracks)
+
+
+def pegboard(name="kg_pegboard", size=256):
+    """Chapa de fibra perfurada (furos de 6 mm a cada 25 mm; o ladrilho cobre 25,4 cm a 1 px por milímetro)."""
+    rng = generator(name)
+    spacing = size // 10
+    yy, xx = np.mgrid[0:size, 0:size]
+    centre_x = (xx % spacing) - spacing / 2 + 0.5
+    centre_y = (yy % spacing) - spacing / 2 + 0.5
+    hole = np.clip(3.4 - np.hypot(centre_x, centre_y), 0.0, 1.0)
+    fibre = fbm(rng, size, 48, 48, 2)
+    color = np.array((0.50, 0.38, 0.25)) * (0.85 + 0.3 * fibre)[..., None]
+    color = mix(color, (0.30, 0.22, 0.14), smooth(fbm(rng, size, 3, 3, 4), 0.55, 0.9) * 0.6)
+    color = mix(color, (0.04, 0.03, 0.025), hole)
+    return canvas_from(color, 0.62 - 0.6 * hole + 0.1 * fibre)
+
+
+def tool_outlines(columns=512, rows=272, board=(1.7, 0.9)):
+    """Contorno à caneta de cada ferramenta do painel (decal). A do martelo continua lá, sem o martelo."""
+    rng = generator("kg_outline")
+    canvas = Canvas(columns, rows)
+    canvas.px[..., :3] = np.array((0.03, 0.03, 0.04), np.float32)
+    canvas.px[..., 3] = 0.0
+    px_per_m = columns / board[0]
+    for name, (hang_x, hang_z, outline) in kg_silhouettes.PANEL_SLOTS.items():
+        points = [((hang_x + u) * px_per_m + rng.normal(0, 0.4), (board[1] - (hang_z + v)) * px_per_m + rng.normal(0, 0.4))
+                  for u, v in outline]
+        for start, end in zip(points, points[1:] + points[:1]):
+            canvas.line(*start, *end, (0.03, 0.03, 0.04, 0.92), 3.2)
+    return canvas
+
+
 def towel(name="kg_towel", size=256, checks=6, color_a=(0.58, 0.14, 0.12), color_b=(0.72, 0.70, 0.62)):
     """Pano de prato xadrez, gasto e manchado, com trama visível."""
     rng = generator(name)
@@ -336,10 +284,65 @@ def cardboard(name, size=256, label=None, lines=None):
     if label:
         scale = max(2, min(5, int(size * 0.85 / canvas.text_width(label, 1))))
         x = (size - canvas.text_width(label, scale)) // 2
-        canvas.text(x, int(size * 0.14), label, (0.07, 0.06, 0.05, 1.0), scale)
+        stamp_text(canvas, x, int(size * 0.14), label, (0.07, 0.06, 0.05, 1.0), scale)
     for index, line in enumerate(lines or ()):
-        canvas.text(int(size * 0.08), int(size * 0.64) + index * 18, line, (0.1, 0.09, 0.08, 1.0), 2)
+        stamp_text(canvas, int(size * 0.08), int(size * 0.64) + index * 18, line, (0.1, 0.09, 0.08, 1.0), 2)
     return canvas
+
+
+# ---------------------------------------------------------------------------
+# Marcas com alfa de verdade (decals): gordura, óleo, teia
+# ---------------------------------------------------------------------------
+def grease_mark(size=128):
+    """Mancha de gordura de mão: marrom-escura, mais forte no centro, com bordas irregulares."""
+    rng = generator("kg_grease")
+    alpha = radial_falloff(size, 1.2) * (0.55 + 0.9 * fbm(rng, size, 4, 4, 4))
+    return decal_canvas((0.07, 0.045, 0.02), smooth(alpha, 0.2, 0.9) * 0.55)
+
+
+def smudges(size=256):
+    """Marcas de mãozinhas de criança na porta: manchas acinzentadas em fileiras de dedos, bem suaves."""
+    rng = generator("kg_smudge")
+    alpha = np.zeros((size, size))
+    for palm_x, palm_y, tilt in ((0.34, 0.62, -0.2), (0.62, 0.42, 0.25)):
+        cx, cy = palm_x * size, palm_y * size
+        yy, xx = np.mgrid[0:size, 0:size]
+        palm = np.clip(1.0 - np.hypot(xx - cx, (yy - cy) * 1.15) / (size * 0.075), 0.0, 1.0)
+        alpha = np.maximum(alpha, palm * 0.5)
+        for finger in range(4):
+            angle = tilt + (finger - 1.5) * 0.28
+            fx, fy = cx + np.sin(angle) * size * 0.115, cy - np.cos(angle) * size * 0.115
+            reach = np.clip(1.0 - np.hypot(xx - fx, (yy - fy) * 0.8) / (size * 0.032), 0.0, 1.0)
+            alpha = np.maximum(alpha, reach * 0.45)
+    alpha *= 0.55 + 0.6 * fbm(rng, size, 6, 6, 3)
+    return decal_canvas((0.18, 0.16, 0.13), smooth(alpha, 0.08, 0.55) * 0.45)
+
+
+def oil_stain(size=256):
+    """Poça de óleo de motor: núcleo escuro, borda fina com reflexo arroxeado."""
+    rng = generator("kg_oil_stain")
+    base = radial_falloff(size, 0.7) * (0.5 + 1.0 * fbm(rng, size, 3, 3, 5))
+    core = smooth(base, 0.45, 0.62)
+    rim = smooth(base, 0.28, 0.45) * (1.0 - core)
+    color = mix((0.02, 0.018, 0.015), (0.18, 0.12, 0.22), rim)
+    return decal_canvas(color, np.clip(core * 0.9 + rim * 0.35, 0.0, 1.0))
+
+
+def cobweb(size=256):
+    """Teia de canto: um leque de fios a partir do canto superior esquerdo, ligados por arcos frouxos."""
+    alpha = np.zeros((size, size))
+    yy, xx = np.mgrid[0:size, 0:size].astype(float)
+    angle = np.arctan2(yy, xx)
+    radius = np.hypot(xx, yy) / size
+    spokes = 7
+    for index in range(spokes):
+        direction = (index + 0.5) / spokes * (np.pi / 2)
+        alpha = np.maximum(alpha, np.clip(1.0 - np.abs(angle - direction) * radius * size / 1.4, 0.0, 1.0) * 0.8)
+    for ring in np.linspace(0.18, 0.95, 7):
+        sag = ring * (1.0 - 0.12 * np.sin(angle * 2 * spokes / 1.0) ** 2)
+        alpha = np.maximum(alpha, np.clip(1.0 - np.abs(radius - sag) * size / 1.6, 0.0, 1.0) * 0.55)
+    alpha *= (radius < 1.0)
+    return decal_canvas((0.82, 0.82, 0.78), alpha * 0.55)
 
 
 # ---------------------------------------------------------------------------
@@ -353,19 +356,22 @@ TEXTURES = {
                                       knots=2, grime=0.9, planks=5, stain=(0.10, 0.08, 0.06)),
     "kg_laminate": lambda rng: laminate(),
     "kg_enamel": lambda rng: enamel("kg_enamel"),
-    "kg_enamel_yellow": lambda rng: enamel("kg_enamel_yellow", base=(0.68, 0.62, 0.45), yellow=0.9, rust=0.6),
+    "kg_enamel_black": lambda rng: enamel("kg_enamel_black", base=(0.13, 0.13, 0.14), yellow=0.0, rust=0.12, streaks=0.5),
+    "kg_enamel_yellow": lambda rng: enamel("kg_enamel_yellow", base=(0.66, 0.62, 0.50), yellow=0.45, rust=0.5),
     "kg_steel": lambda rng: brushed_steel(),
     "kg_castiron": lambda rng: cast_iron(),
     "kg_porcelain": lambda rng: porcelain(),
     "kg_porcelain_band": lambda rng: porcelain("kg_porcelain_band", band=(0.88, 0.905)),
     "kg_shelf_paint": lambda rng: painted_metal("kg_shelf_paint", (0.33, 0.37, 0.36), rust=0.7),
-    "kg_bike_pink": lambda rng: painted_metal("kg_bike_pink", (0.70, 0.40, 0.50), rust=0.3, chips=0.8, dust=0.6),
+    "kg_bike_pink": lambda rng: painted_metal("kg_bike_pink", (0.82, 0.38, 0.52), rust=0.25, chips=0.8, dust=0.25),
+    "kg_bike_tube": lambda rng: painted_metal("kg_bike_tube", (0.82, 0.38, 0.52), rust=0.08, chips=0.1, dust=0.08, streak=0.05),
     "kg_mower_red": lambda rng: painted_metal("kg_mower_red", (0.55, 0.12, 0.09), rust=0.35, chips=0.7, dust=0.9),
     "kg_plastic_beige": lambda rng: plastic("kg_plastic_beige", (0.64, 0.59, 0.46), yellow=0.5),
     "kg_plastic_dark": lambda rng: plastic("kg_plastic_dark", (0.17, 0.17, 0.18), yellow=0.0),
     "kg_plastic_white": lambda rng: plastic("kg_plastic_white", (0.70, 0.69, 0.64), yellow=0.6),
     "kg_rubber": lambda rng: rubber(),
     "kg_tire": lambda rng: rubber("kg_tire", tread=True),
+    "kg_vinyl_red": lambda rng: vinyl("kg_vinyl_red", (0.40, 0.08, 0.07)),
     "kg_towel": lambda rng: towel(),
     "kg_food_old": lambda rng: old_food(),
     "kg_box_plain": lambda rng: cardboard("kg_box_plain"),
@@ -374,6 +380,17 @@ TEXTURES = {
     "kg_box_xmas": lambda rng: cardboard("kg_box_xmas", label="NATAL"),
     "kg_box_docs": lambda rng: cardboard("kg_box_docs", label="IMPOSTOS", lines=("2018 - 2022",)),
     "kg_box_kitchen": lambda rng: cardboard("kg_box_kitchen", label="COZINHA"),
+    "kg_grease": lambda rng: grease_mark(),
+    "kg_smudge": lambda rng: smudges(),
+    "kg_oil_stain": lambda rng: oil_stain(),
+    "kg_cobweb": lambda rng: cobweb(),
+    "kg_pegboard": lambda rng: pegboard(),
+    "kg_outline": lambda rng: tool_outlines(),
+    "kg_aluminum": lambda rng: brushed_steel("kg_aluminum", base=(0.62, 0.63, 0.64), smudge=0.9),
+    "kg_tool_steel": lambda rng: painted_metal("kg_tool_steel", (0.30, 0.30, 0.32), rust=0.9, chips=0.2, dust=0.5, streak=0.2),
+    "kg_toolbox_red": lambda rng: painted_metal("kg_toolbox_red", (0.52, 0.10, 0.07), rust=0.6, chips=0.8, dust=0.8),
+    "kg_tin": lambda rng: painted_metal("kg_tin", (0.52, 0.52, 0.50), rust=0.8, chips=0.2, dust=0.4, streak=0.5),
+    "kg_heater": lambda rng: enamel("kg_heater", base=(0.62, 0.60, 0.54), yellow=0.25, rust=0.6, streaks=1.4),
 }
 
 

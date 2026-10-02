@@ -136,4 +136,15 @@ def detergent_bottle(asm, cx, cy, z0, yaw_deg=0.0, level=0.5):
         asm.round.lathe([(0.0, 0.0), (0.03, 0.0), (0.034, 0.02), (0.034, 0.17), (0.026, 0.205), (0.012, 0.215), (0.0, 0.215)],
                         0, 0, 0, "kg_detergent", seg=sides, smooth=True, cap_bottom=False, cap_top=False)
         asm.round.cylinder(0, 0, 0.215, 0.011, 0.02, "kg_plastic_white", seg=8, r_top=0.008)
+        asm.round.wrap([(0.0345, 0.05), (0.0345, 0.15)], 0, 0, 0, "kg_label_soap", seg=sides)
         asm.round.tube((0, 0, 0.233), (0.025, 0, 0.243), 0.005, "kg_plastic_white", seg=6)
+
+
+def kids_cup(asm, cx, cy, z0):
+    """Copinho rosa da Emma com tampa, bico e canudo dobrado: lavado e esquecido no escorredor."""
+    sides = segments(14)
+    asm.round.lathe([(0.0, 0.0), (0.028, 0.0), (0.034, 0.01), (0.038, 0.09), (0.036, 0.1), (0.0, 0.1)], cx, cy, z0, "painted_pink",
+                    seg=sides, smooth=True, cap_bottom=False, cap_top=False)
+    asm.round.cylinder(cx, cy, z0 + 0.1, 0.037, 0.012, "kg_plastic_white", seg=sides)
+    asm.round.tube_path([(cx + 0.008, cy, z0 + 0.1), (cx + 0.008, cy, z0 + 0.16), (cx + 0.03, cy, z0 + 0.175)], 0.004, "toy_blue",
+                        sides=6, resolution=4)

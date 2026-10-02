@@ -336,7 +336,7 @@ def draw_stain(rng, size=256, color=(0.10, 0.025, 0.02)):
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
     dx, dy = (xx - size / 2) / size, (yy - size / 2) / size
     radius, angle = np.hypot(dx, dy), np.arctan2(dy, dx)
-    boundary = 0.22 + 0.05 * np.sin(3 * angle + rng.uniform(0, 6)) + 0.03 * np.sin(7 * angle + rng.uniform(0, 6))
+    boundary = 0.20 + 0.028 * np.sin(2 * angle + rng.uniform(0, 6)) + 0.018 * np.sin(5 * angle + rng.uniform(0, 6))
     boundary = boundary + 0.06 * (noise.fbm(size, size, 6, 6, gen, 3) - 0.5)
     alpha = noise.smoothstep(boundary + 0.02, boundary - 0.03, radius)
     drops = noise.smoothstep(0.80, 0.88, noise.fbm(size, size, 16, 16, gen, 2)) * noise.smoothstep(0.48, 0.24, radius) * 0.7
@@ -346,19 +346,37 @@ def draw_stain(rng, size=256, color=(0.10, 0.025, 0.02)):
     return canvas
 
 
+def draw_damp(rng, size=256):
+    """Mancha de infiltração: miolo ocre claro e uma borda mais escura onde a água secou (marca de maré)."""
+    gen = noise.generator(rng)
+    yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
+    dx, dy = (xx - size / 2) / size, (yy - size * 0.35) / size
+    radius, angle = np.hypot(dx * 1.1, dy), np.arctan2(dy, dx)
+    boundary = 0.30 + 0.03 * np.sin(3 * angle + rng.uniform(0, 6)) + 0.07 * (noise.fbm(size, size, 5, 5, gen, 3) - 0.5)
+    inside = noise.smoothstep(boundary + 0.01, boundary - 0.02, radius)
+    tide = noise.smoothstep(boundary - 0.05, boundary - 0.01, radius) * inside
+    canvas = Canvas(size, size, (0.30, 0.22, 0.10, 0.0))
+    canvas.px[..., :3] = noise.blend((0.34, 0.26, 0.13), (0.20, 0.14, 0.06), tide)
+    canvas.px[..., 3] = np.clip(inside * 0.28 + tide * 0.42, 0, 0.7)
+    return canvas
+
+
 def draw_handprints(rng, size=256):
-    """Duas mãos pequenas, escuras e borradas, arrastadas na parede: palma, cinco dedos e um rastro."""
+    """Duas mãos de criança, escuras e borradas, arrastadas na parede: palma, quatro dedos, polegar e um rastro."""
     canvas = Canvas(size, size, (0.09, 0.025, 0.02, 0.0))
     ink = (0.09, 0.025, 0.02)
-    for cx, cy, tilt in ((size * 0.30, size * 0.62, -0.18), (size * 0.68, size * 0.45, 0.22)):
-        canvas.ellipse(cx, cy + 14, 26, 30, (*ink, 0.85))
-        for finger in range(5):
-            spread = (finger - 2) * 0.33 + tilt
-            length = (34, 44, 48, 44, 32)[finger]
-            base_x, base_y = cx + 17 * math.sin(spread), cy - 10
-            canvas.line(base_x, base_y, base_x + length * math.sin(spread), base_y - length * math.cos(spread), (*ink, 0.85), 9.0)
-        canvas.line(cx - 4, cy + 36, cx - 8, cy + 92, (*ink, 0.42), 12.0)
-    canvas.blur(2)
+    for cx, cy, tilt in ((size * 0.30, size * 0.58, -0.18), (size * 0.70, size * 0.42, 0.22)):
+        canvas.ellipse(cx, cy, 21, 25, (*ink, 0.82))
+        for finger, (spread, length) in enumerate(((-0.55, 32), (-0.20, 42), (0.12, 45), (0.45, 36))):
+            angle = spread + tilt
+            base_x, base_y = cx + 15 * math.sin(spread), cy - 20
+            tip_x, tip_y = base_x + length * math.sin(angle), base_y - length * math.cos(angle)
+            canvas.line(base_x, base_y, tip_x, tip_y, (*ink, 0.82), 11.0)
+            canvas.ellipse(tip_x, tip_y, 5.5, 5.5, (*ink, 0.82))
+        thumb_angle = 1.15 + tilt
+        canvas.line(cx + 16, cy + 2, cx + 16 + 27 * math.sin(thumb_angle), cy + 2 - 27 * math.cos(thumb_angle), (*ink, 0.82), 12.0)
+        canvas.line(cx - 3, cy + 26, cx - 7, cy + 96, (*ink, 0.38), 14.0)
+    canvas.blur(1)
     canvas.px[..., 3] = np.clip(canvas.px[..., 3] * 1.1, 0, 0.9)
     return canvas
 
@@ -418,7 +436,26 @@ def draw_curtain_vinyl(rng, size=256):
     return _opaque(canvas)
 
 
+def draw_globe_map(rng, width=256, height=128):
+    """Planisfério do globo: oceano azul-acinzentado, continentes ocres e os polos claros, ampliado e suavizado."""
+    return _opaque(_upscale(textures.draw_globe(rng, 64, 32), 4, 2))
+
+
+def draw_letter_block(rng, letter, base, size=128):
+    """Cubo de alfabeto: face creme com a letra em cor, bordas gastas de quem foi muito usado."""
+    gen = noise.generator(rng)
+    canvas = Canvas(size, size, (*base, 1.0))
+    _fill(canvas, 7, 7, size - 7, size - 7, (0.78, 0.72, 0.56, 1.0))
+    _text(canvas, (size - 50) // 2, (size - 70) // 2, letter, (*base, 1.0), 10)
+    canvas.px[..., :3] *= (0.88 + 0.18 * noise.fbm(size, size, 10, 10, gen, 3))[..., None]
+    return _opaque(canvas)
+
+
 TEXTURES = {
+    "up_globe": draw_globe_map,
+    "up_block_e": lambda rng: draw_letter_block(rng, "E", (0.62, 0.12, 0.10)),
+    "up_block_m": lambda rng: draw_letter_block(rng, "M", (0.14, 0.24, 0.55)),
+    "up_block_a": lambda rng: draw_letter_block(rng, "A", (0.16, 0.42, 0.20)),
     "up_books": draw_books_atlas,
     "up_paper_policy": draw_paper_policy,
     "up_paper_report": draw_paper_report,
@@ -439,6 +476,7 @@ TEXTURES = {
     "up_crayon_family": lambda rng: draw_crayon(rng, "family"),
     "up_crayon_rabbit": lambda rng: draw_crayon(rng, "rabbit"),
     "up_stain": draw_stain,
+    "up_damp": draw_damp,
     "up_stain_ring": draw_ring_stain,
     "up_handprints": draw_handprints,
     "up_cobweb": draw_cobweb,

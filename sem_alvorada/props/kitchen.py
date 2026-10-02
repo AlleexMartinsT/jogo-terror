@@ -1,14 +1,22 @@
-"""Cozinha: geladeira, fogão, balcões, pia, frigobar, armários altos, mesinha e a louça por lavar."""
+"""Cozinha: peças públicas (`make_*`) que montam e colocam os móveis; o desenho fica nos módulos `kitchen_*`.
+
+Altura do tampo (0,90 m) e posição do frigobar são lidas por `items.py` (pilha 4 no balcão, nota 5 no frigobar).
+"""
 import math
 
-from . import parts
-from .kit import MeshBuilder
-from .placement import against_wall, flush_center, place, room_bounds
+from . import kitchen_appliances as appliances
+from . import kitchen_cabinets as cabinets
+from . import kitchen_decor as decor
+from . import kitchen_cloth, kitchen_sink, kitchen_small as small, kitchen_table as dining
+from . import kitchen_ware as ware
+from .kg_shapes import Assembly, front_limited_box
+from .placement import against_wall, flush_center, floor_z, place, room_bounds
 
-COUNTER_HEIGHT = 0.90
-MINI_FRIDGE_DEPTH = 0.58
+COUNTER_HEIGHT = cabinets.TOP_Z
+MINI_FRIDGE_DEPTH = appliances.MINI_DEPTH
 MINI_FRIDGE_ALONG = 6.40        # posição do frigobar ao longo da parede oeste (y)
-MINI_FRIDGE_FRONT_PLATE = 0.012
+MINI_FRIDGE_FRONT_PLATE = appliances.MINI_PLATE
+TOP_OVERHANG = 0.022
 
 
 def mini_fridge_front():
@@ -17,171 +25,170 @@ def mini_fridge_front():
     return (bounds.x0 + MINI_FRIDGE_DEPTH + MINI_FRIDGE_FRONT_PLATE, MINI_FRIDGE_ALONG, 0.50)
 
 
-def _cabinet_body(m, width, depth, top_mat="laminate", doors=2, body="wood_mid", front="veneer_mid"):
-    """Módulo de balcão: caixa, rodapé recuado, portas com puxador e tampo que avança na frente."""
-    m.box(0, 0.02, 0.0, width, depth - 0.04, 0.08, "black")
-    m.box(0, 0, 0.08, width, depth, 0.78, body, mats={"front": front})
-    door_w = (width - 0.03 * (doors + 1)) / doors
-    for i in range(doors):
-        cx = -width / 2 + 0.03 + door_w / 2 + i * (door_w + 0.03)
-        m.box(cx, depth / 2 + 0.006, 0.11, door_w, 0.014, 0.72, "wood_dark")
-        parts.knob(m, cx + (door_w / 2 - 0.05 if i % 2 == 0 else -door_w / 2 + 0.05), depth / 2 + 0.018, 0.75, "chrome")
-    m.box(0, 0.02, 0.86, width + 0.02, depth + 0.02, 0.04, top_mat)
-
-
-def make_base_cabinet(ctx, room, wall, along, length, *, depth=0.6, doors=2, name=None):
+def make_base_cabinet(ctx, room, wall, along, length, *, depth=0.6, doors=2, drawer=False, name=None):
     """Módulo de balcão com `length` metros ao longo da parede `wall`."""
     x, y, yaw = against_wall(room, wall, along, depth)
-    m = MeshBuilder(name or "base_cabinet")
-    with m.at(0, 0, 0):
-        _cabinet_body(m, length, depth, doors=doors)
-    return place(ctx, m, room, "counter", x, y, yaw, name=name)
+    asm = Assembly(name or "base_cabinet", wear={"grime_height": 0.4, "seed": 11})
+    cabinets.base_cabinet(asm, length, depth, doors=doors, drawer=drawer)
+    return place(ctx, asm, room, "counter", x, y, yaw, name=name,
+                 collision=front_limited_box(asm, depth / 2 + TOP_OVERHANG, COUNTER_HEIGHT))
 
 
 def make_sink_unit(ctx, room, x, y, yaw, *, anchor=None, z=None):
-    """Balcão com pia dupla de aço sob a janela norte; louça suja empilhada e a torneira giratória."""
-    width, depth = 1.3, 0.6
-    cy = flush_center(room, x, y, yaw, depth)
-    m = MeshBuilder("kitchen_counter")
-    with m.at(0, cy, 0):
-        m.box(0, 0.02, 0.0, width, depth - 0.04, 0.08, "black")
-        m.box(0, 0, 0.08, width, depth, 0.78, "wood_mid", mats={"front": "veneer_mid"})
-        for i, cx in enumerate((-0.32, 0.32)):
-            m.box(cx, depth / 2 + 0.006, 0.11, 0.58, 0.014, 0.72, "wood_dark")
-            parts.knob(m, cx + (0.22 if i == 0 else -0.22), depth / 2 + 0.018, 0.75, "chrome")
-        parts.counter_top_with_basin(m, -width / 2 - 0.01, width / 2 + 0.01, -depth / 2, depth / 2 + 0.02, 0.86, 0.04,
-                                     -0.08, 0.0, 0.72, 0.42, 0.16, "laminate", "metal", "steel_dark")
-        m.box(-0.08, -0.06, 0.86, 0.02, 0.44, 0.02, "metal")
-        m.tube((0.0, -0.22, 0.90), (0.0, -0.22, 1.10), 0.014, "chrome", seg=6)
-        m.tube((0.0, -0.22, 1.10), (0.0, -0.06, 1.14), 0.012, "chrome", seg=5)
-        parts.dirty_dishes(m, ctx.rng, -0.28, 0.0, 0.73, count=5, radius=0.11)
-        m.box(0.55, 0.05, 0.90, 0.15, 0.25, 0.012, "steel_dark")
-        for i in range(5):
-            m.box(0.49 + i * 0.03, 0.05, 0.912, 0.008, 0.2, 0.09, "ceramic_cream")
-    return place(ctx, m, room, "kitchen_counter", x, y, yaw, z, name="kitchen_counter", anchor=anchor)
+    """Balcão com pia dupla de aço sob a janela norte; louça suja empilhada, torneira alta e escorredor."""
+    cy = flush_center(room, x, y, yaw, kitchen_sink.DEPTH)
+    asm = Assembly("kitchen_counter", wear={"grime_height": 0.4, "seed": 7})
+    with asm.at(0, cy, 0):
+        kitchen_sink.build_sink_unit(asm, ctx.rng)
+    return place(ctx, asm, room, "kitchen_counter", x, y, yaw, z, name="kitchen_counter", anchor=anchor,
+                 collision=front_limited_box(asm, cy + kitchen_sink.DEPTH / 2 + TOP_OVERHANG, COUNTER_HEIGHT))
 
 
 def make_corner_counter(ctx, room, x0, y0, x1, y1, *, name="counter_corner"):
-    """Balcão em L do canto nordeste: uma perna ao longo do norte (frente para sul) e outra ao longo do leste."""
+    """Balcão em L do canto nordeste: uma perna ao longo do norte (frente para sul) e outra ao longo do leste.
+
+    A perna norte tem só um módulo com porta no trecho visível; o resto é o canto cego atrás da perna leste.
+    """
     depth = 0.6
-    yaw_north = math.pi
     north_len = x1 - x0
     nx, ny, _ = against_wall(room, "N", (x0 + x1) / 2, depth)
-    m = MeshBuilder(name)
-    with m.at(0, 0, 0):
-        _cabinet_body(m, north_len, depth, doors=2)
-    north = place(ctx, m, room, "counter", nx, ny, yaw_north, name=name + "_north")
-    east_len = (y1 - y0) - depth - 0.04
+    north = Assembly(name + "_north", wear={"grime_height": 0.4, "seed": 13})
+    visible = 0.425
+    with north.at(north_len / 2 - visible / 2, 0, 0):
+        cabinets.base_cabinet(north, visible, depth, doors=1, top=False)
+    cabinets.blind_filler(north, -north_len / 2, north_len / 2 - visible, depth)
+    cabinets.laminate_top(north, -north_len / 2, north_len / 2, depth)
+    north_obj = place(ctx, north, room, "counter", nx, ny, math.pi, name=name + "_north",
+                      collision=front_limited_box(north, depth / 2 + TOP_OVERHANG, COUNTER_HEIGHT))
+    east_len = (y1 - y0) - depth - TOP_OVERHANG - 0.012
     ex, ey, yaw_east = against_wall(room, "E", y0 + east_len / 2, depth)
-    east_mesh = MeshBuilder(name + "_east")
-    _cabinet_body(east_mesh, east_len, depth, doors=2)
-    east = place(ctx, east_mesh, room, "counter", ex, ey, yaw_east, name=name + "_east")
-    return north, east
+    east = Assembly(name + "_east", wear={"grime_height": 0.4, "seed": 17})
+    cabinets.base_cabinet(east, east_len, depth, doors=2)
+    east_obj = place(ctx, east, room, "counter", ex, ey, yaw_east, name=name + "_east",
+                     collision=front_limited_box(east, depth / 2 + TOP_OVERHANG, COUNTER_HEIGHT))
+    return north_obj, east_obj
 
 
 def make_fridge(ctx, room, x, y, yaw, *, anchor=None, z=None):
-    """Geladeira com freezer em cima, ímãs de letra, desenhos da Emma e o calendário parado."""
-    width, depth, height = 0.74, 0.70, 1.78
-    cy = flush_center(room, x, y, yaw, depth)
-    m = MeshBuilder("fridge")
-    with m.at(0, cy, 0):
-        m.soft_box(0, 0, 0.03, width, depth, height - 0.03, "appliance_panel", radius=0.04, edge=0.02)
-        m.panel(0, depth / 2 + 0.003, 0.03 + (height - 0.03) / 2, width - 0.02, height - 0.06, "fridge_front", "front")
-        m.box(0, 0, 0.0, width - 0.06, depth - 0.06, 0.04, "black")
-        for z_handle, tall in ((height * 0.74, 0.30), (height * 0.5, 0.42)):
-            m.box(width / 2 - 0.07, depth / 2 + 0.03, z_handle - tall / 2, 0.03, 0.03, tall, "chrome")
-        m.box(0.0, depth / 2 + 0.008, 0.03 + 0.18, 0.16, 0.01, 0.05, "paper_white")
-    return place(ctx, m, room, "fridge", x, y, yaw, z, name="fridge", anchor=anchor)
+    """Geladeira de freezer em cima, cantos arredondados, ímãs, desenhos da Emma e recados."""
+    cy = flush_center(room, x, y, yaw, appliances.FRIDGE_D)
+    asm = Assembly("fridge", wear={"grime_height": 0.55, "seed": 3})
+    with asm.at(0, cy, 0):
+        appliances.build_fridge(asm, ctx.rng)
+    return place(ctx, asm, room, "fridge", x, y, yaw, z, name="fridge", anchor=anchor,
+                 collision=front_limited_box(asm, cy + appliances.FRIDGE_D / 2))
 
 
-def make_mini_fridge(ctx, room, wall, along, *, width=0.62, depth=MINI_FRIDGE_DEPTH):
+def make_mini_fridge(ctx, room, wall, along, *, width=appliances.MINI_W, depth=MINI_FRIDGE_DEPTH):
     """Frigobar embutido no balcão da parede oeste."""
     x, y, yaw = against_wall(room, wall, along, depth)
-    m = MeshBuilder("mini_fridge")
-    m.box(0, 0, 0.0, width, depth, 0.86, "appliance_panel")
-    m.box(0, depth / 2 + MINI_FRIDGE_FRONT_PLATE / 2, 0.04, width - 0.04, MINI_FRIDGE_FRONT_PLATE, 0.78, "plastic_beige")
-    m.box(width / 2 - 0.07, depth / 2 + 0.03, 0.42, 0.025, 0.03, 0.26, "chrome")
-    m.box(0, 0.02, 0.86, width + 0.02, depth + 0.02, 0.04, "laminate")
-    front = depth / 2 + MINI_FRIDGE_FRONT_PLATE         # o puxador fica de fora: o post-it não pode cair dentro
-    return place(ctx, m, room, "mini_fridge", x, y, yaw, collision=[(-width / 2, -depth / 2, 0.0, width / 2, front, 0.90)])
+    asm = Assembly("mini_fridge", wear={"grime_height": 0.5, "seed": 5})
+    appliances.build_mini_fridge(asm, ctx.rng)
+    front = depth / 2 + MINI_FRIDGE_FRONT_PLATE       # o puxador fica de fora: o post-it não pode cair dentro
+    return place(ctx, asm, room, "mini_fridge", x, y, yaw,
+                 collision=[(-width / 2, -depth / 2, 0.0, width / 2, front, 0.90)])
 
 
 def make_stove(ctx, room, wall, along):
-    """Fogão de quatro bocas com uma panela e a chaleira frias sobre as bocas."""
-    width, depth, height = 0.76, 0.65, 0.90
+    """Fogão de quatro bocas com a chaleira, a frigideira e uma panela frios sobre as bocas."""
+    x, y, yaw = against_wall(room, wall, along, appliances.STOVE_D)
+    asm = Assembly("stove", wear={"grime_height": 0.5, "seed": 19})
+    appliances.build_stove(asm, ctx.rng)
+    return place(ctx, asm, room, "stove", x, y, yaw, collision=front_limited_box(asm, appliances.STOVE_D / 2))
+
+
+def make_oven_towel(ctx, room, stove):
+    """Pano de prato xadrez jogado sobre a barra do forno: metade pende para a sala, metade fica colada na porta."""
+    bar_x = stove.location.x - (appliances.STOVE_D / 2 + 0.012 + 0.045)
+    bar_y, bar_z = stove.location.y + 0.06, 0.675
+    size = (0.42, 0.30)
+    return kitchen_cloth.hang_cloth(ctx, room, "dish_towel_kitchen", [stove], (bar_x - size[0] / 2, bar_y - size[1] / 2, bar_z + 0.07),
+                                    size, "kg_towel", repeat=2.0)
+
+
+def make_range_hood(ctx, room, wall, along):
+    """Coifa de aço sobre o fogão, da copa ao forro."""
+    depth = 0.46
     x, y, yaw = against_wall(room, wall, along, depth)
-    m = MeshBuilder("stove")
-    m.box(0, 0, 0.0, width, depth, height, "appliance_panel", mats={"front": "plastic_beige"})
-    m.panel(0, depth / 2 + 0.002, 0.40, width - 0.1, 0.42, "black", "front")
-    m.panel(0, depth / 2 + 0.004, 0.44, width - 0.24, 0.26, "glass_dark", "front")
-    m.box(0, depth / 2 + 0.03, 0.66, width - 0.12, 0.024, 0.024, "chrome")
-    m.box(0, -depth / 2 + 0.04, height, width, 0.08, 0.24, "plastic_beige")
-    m.box(0, 0, height, width, depth, 0.02, "black")
-    for i, (bx, by) in enumerate(((-0.19, -0.14), (0.19, -0.14), (-0.19, 0.14), (0.19, 0.14))):
-        m.cylinder(bx, by, height + 0.02, 0.085, 0.012, "steel_dark", seg=8)
-        m.cylinder(bx, by, height + 0.032, 0.055, 0.006, "black", seg=8)
-        with m.at(-0.27 + i * 0.18, depth / 2 - 0.005, 0.78, rx=-90):
-            m.cylinder(0, 0, 0, 0.022, 0.03, "black", seg=6)
-    m.lathe([(0.11, 0), (0.12, 0.16), (0.12, 0.2)], -0.19, -0.14, height + 0.03, "steel_dark", seg=8, smooth=False)
-    m.cylinder(-0.19, -0.14, height + 0.23, 0.12, 0.012, "steel_dark", seg=8)
-    m.cylinder(0.19, 0.14, height + 0.03, 0.09, 0.14, "brass", seg=8, r_top=0.06)
-    return place(ctx, m, room, "stove", x, y, yaw)
+    asm = Assembly("range_hood", wear={"grime_height": 2.6, "seed": 23})
+    with asm.at(0, -depth / 2, 0):
+        appliances.build_hood(asm, ctx.rng)
+    return place(ctx, asm, room, "range_hood", x, y, yaw, mode="wall")
 
 
 def make_wall_cabinets(ctx, room, wall, along, length, *, z0=1.5, height=0.7, depth=0.34, ajar=True):
-    """Armários altos pendurados na parede, com uma porta entreaberta."""
+    """Armários altos pendurados na parede, com uma porta entreaberta mostrando a louça."""
     x, y, yaw = against_wall(room, wall, along, depth)
-    m = MeshBuilder("wall_cabinets")
-    m.box(0, 0, z0, length, depth, height, "wood_mid")
-    doors = max(2, int(length / 0.5))
-    door_w = length / doors
-    for i in range(doors):
-        cx = -length / 2 + door_w / 2 + i * door_w
-        if ajar and i == 1:
-            with m.at(cx - door_w / 2 + 0.01, depth / 2, z0 + 0.02, rz=-22):
-                m.box(door_w / 2, 0.008, 0, door_w - 0.02, 0.016, height - 0.04, "wood_dark")
-            m.box(cx, depth / 2 - 0.05, z0 + 0.02, door_w - 0.06, 0.02, height - 0.04, "black")
-            plate_z = z0 + height / 2
-            m.box(cx, depth / 2 - 0.12, plate_z, door_w - 0.1, 0.12, 0.012, "wood_dark")
-            parts.plate(m, cx, depth / 2 - 0.12, plate_z + 0.012, 0.09, "ceramic_cream")
-        else:
-            m.box(cx, depth / 2 + 0.006, z0 + 0.02, door_w - 0.02, 0.016, height - 0.04, "wood_dark")
-            parts.knob(m, cx + (door_w / 2 - 0.05 if i % 2 == 0 else -door_w / 2 + 0.05), depth / 2 + 0.02, z0 + 0.08, "chrome")
-    return place(ctx, m, room, "wall_cabinets", x, y, yaw, mode="wall")
+    asm = Assembly("wall_cabinets", wear={"grime_height": 3.0, "seed": 29})
+
+    def stock(builder, shelf_z, x_left, x_right):
+        count = max(2, round(length / 0.5))
+        door_x0, door_x1 = cabinets.door_openings(length, count)[1]
+        cx = (door_x0 + door_x1) / 2
+        ware.plate_stack(builder, ctx.rng, cx - 0.05, 0.0, shelf_z, 6, 0.1)
+        ware.mug(builder, cx + 0.13, 0.03, shelf_z, 0.038, 0.09, handle_deg=20.0)
+
+    cabinets.wall_cabinet(asm, length, depth, z0, height, open_door=1 if ajar else None, open_deg=30.0,
+                          stock=stock if ajar else None)
+    return place(ctx, asm, room, "wall_cabinets", x, y, yaw, mode="wall")
 
 
 def make_microwave(ctx, room, x, y, z, yaw):
-    m = MeshBuilder("microwave")
-    m.soft_box(0, 0, 0, 0.46, 0.34, 0.27, "plastic_beige", radius=0.02, edge=0.012)
-    m.panel(-0.06, 0.171, 0.135, 0.28, 0.20, "glass_dark", "front")
-    m.box(0.17, 0.171, 0.06, 0.08, 0.006, 0.20, "plastic_gray")
-    m.box(0.17, 0.176, 0.20, 0.06, 0.004, 0.03, "led_red")
-    return place(ctx, m, room, "microwave", x, y, yaw, z, mode="decor")
+    """Micro-ondas na bancada leste, com o display parado em 6:12."""
+    return _decor(ctx, room, "microwave", small.build_microwave, x, y, z, yaw)
 
 
 def make_coffee_maker(ctx, room, x, y, z, yaw):
     """Cafeteira com a jarra ainda cheia de café frio de ontem."""
-    m = MeshBuilder("coffee_maker")
-    m.soft_box(0, -0.06, 0, 0.20, 0.20, 0.06, "plastic_gray", radius=0.02, edge=0.01)
-    m.box(0, -0.13, 0.06, 0.18, 0.08, 0.28, "plastic_gray")
-    m.box(0, -0.06, 0.32, 0.20, 0.20, 0.03, "plastic_gray")
-    m.cylinder(0, 0.0, 0.06, 0.07, 0.14, "glass_clear", seg=8, r_top=0.08)
-    m.cylinder(0, 0.0, 0.06, 0.065, 0.06, "water_dark", seg=8, r_top=0.075)
-    return place(ctx, m, room, "coffee_maker", x, y, yaw, z, mode="decor")
+    return _decor(ctx, room, "coffee_maker", small.build_coffee_maker, x, y, z, yaw)
 
 
 def make_kitchen_table(ctx, room, x, y):
-    """Mesinha do café da manhã, com duas tigelas de cereal secas, a caixa de cereal e o jornal de ontem."""
-    m = MeshBuilder("kitchen_table")
-    m.box(0, 0, 0.71, 0.80, 0.80, 0.04, "laminate")
-    m.box(0, 0, 0.68, 0.74, 0.74, 0.03, "wood_mid")
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            m.tube((sx * 0.34, sy * 0.34, 0), (sx * 0.36, sy * 0.36, 0.69), 0.02, "chrome", seg=5)
-    parts.plate(m, -0.20, 0.22, 0.75, 0.10, "ceramic_cream", food="food_dried")
-    parts.plate(m, 0.16, -0.24, 0.75, 0.10, "ceramic_cream", food="food_dried")
-    parts.mug(m, 0.24, 0.22, 0.75, 0.04, 0.09, "ceramic_cream")
-    m.box(-0.20, -0.20, 0.75, 0.16, 0.06, 0.26, "toy_yellow")
-    m.box(-0.20, -0.17, 0.90, 0.10, 0.02, 0.06, "toy_red")
-    parts.paper_sheet(m, 0.02, 0.0, 0.751, 0.28, 0.20, "linen_dirty", 0.3)
-    return place(ctx, m, room, "kitchen_table", x, y, 0.0, name="kitchen_table")
+    """Mesinha do café da manhã: tigelas de cereal secas, a caixa de cereal, o jornal de ontem e o remédio."""
+    asm = Assembly("kitchen_table", wear={"grime_height": 0.8, "seed": 31})
+    dining.build_table(asm, ctx.rng)
+    half = dining.TABLE_SIZE / 2
+    return place(ctx, asm, room, "kitchen_table", x, y, 0.0, name="kitchen_table",
+                 collision=[(-half, -half, 0.0, half, half, dining.TABLE_TOP)])
+
+
+def make_kitchen_chair(ctx, room, x, y, yaw, *, tucked=True):
+    """Cadeira de tubo cromado com vinil vermelho; `tucked` a deixa enfiada sob a mesa."""
+    asm = Assembly("kitchen_chair", wear={"grime_height": 0.5, "seed": 37})
+    dining.build_chair(asm, ctx.rng)
+    return place(ctx, asm, room, "chair_kitchen", x, y, yaw, tucked=tucked)
+
+
+def make_trash_bin(ctx, room, x, y):
+    """Lixeira de pedal transbordando, na entrada da cozinha."""
+    asm = Assembly("trash_bin", wear={"grime_height": 0.4, "seed": 41})
+    dining.build_trash_bin(asm, ctx.rng)
+    return place(ctx, asm, room, "trash_bin", x, y, -math.pi / 2, name="trash_bin_kitchen",
+                 collision=[(-0.175, -0.175, 0.0, 0.175, 0.175, 0.62)])
+
+
+def _decor(ctx, room, kind, build, x, y, z, yaw, wear=None, name=None):
+    """Peça pequena apoiada em `z` (sem colisão)."""
+    asm = Assembly(name or kind, wear=wear)
+    build(asm, ctx.rng)
+    return place(ctx, asm, room, kind, x, y, yaw, z, mode="decor", name=name)
+
+
+def make_ambience(ctx, room):
+    """Bancadas e paredes: o que a casa guardou do dia em que ela parou."""
+    top = COUNTER_HEIGHT
+    _decor(ctx, room, "toaster", small.build_toaster, 8.36, 5.45, top, -math.pi / 2)
+    _decor(ctx, room, "bread_board", small.build_bread_board, 8.36, 5.82, top, -math.pi / 2 + 0.2)
+    _decor(ctx, room, "fruit_bowl", small.build_fruit_bowl, 8.37, 6.40, top, 0.0)
+    _decor(ctx, room, "knife_block", small.build_knife_block, 8.30, 6.88, top, -math.pi / 2)
+    _decor(ctx, room, "spice_rack", small.build_spice_rack, 8.17, 7.22, top, -math.pi / 2)
+    _decor(ctx, room, "paper_towel", small.build_paper_towel, 8.30, 7.50, top, 0.0)
+    asm = Assembly("wall_clock_kitchen")
+    decor.wall_clock(asm, 0.0, 0.0, 0.0)
+    x, y, yaw = against_wall(room, "S", 8.55, 0.0)
+    place(ctx, asm, room, "wall_clock", x, y, yaw, floor_z(room) + 2.05, mode="wall", name="wall_clock_kitchen")
+    asm = Assembly("calendar_kitchen")
+    decor.paper_sheet(asm, 0.0, 0.0, 0.004, 0.30, 0.41, "kg_calendar", 0.0)
+    asm.round.cylinder(0.0, 0.0, 0.2, 0.004, 0.004, "toy_red", seg=6)
+    x, y, yaw = against_wall(room, "S", 8.55, 0.0)
+    place(ctx, asm, room, "calendar", x, y, yaw, floor_z(room) + 1.5, mode="wall", name="calendar_kitchen")

@@ -122,10 +122,15 @@ def _pile(canvas, gen, wear=0.5):
     return canvas
 
 
-def draw_rug_persian(rng, size=512):
-    """Tapete de sala em bordô e azul-marinho: moldura de três faixas, medalhão em losangos e cantos."""
+def draw_rug_persian(rng, size=512, swap=False):
+    """Tapete de sala em bordô e azul-marinho: moldura de três faixas, medalhão em losangos e cantos.
+
+    `swap` troca o campo (bordô vira azul-marinho e vice-versa) para variar o mesmo desenho em outro cômodo.
+    """
     gen = noise.generator(rng)
     burgundy, navy, cream, olive = (0.20, 0.060, 0.065), (0.060, 0.075, 0.140), (0.46, 0.40, 0.28), (0.15, 0.17, 0.09)
+    if swap:
+        burgundy, navy = navy, burgundy
     canvas = Canvas(size, size, (*burgundy, 1.0))
     margin = size * 0.05
     for inset, color in ((0, navy), (margin * 0.9, cream), (margin * 1.2, navy), (margin * 2.4, burgundy), (margin * 2.8, cream),
@@ -201,6 +206,7 @@ TEXTURES = {
     "up_tartan": draw_tartan,
     "up_stars_fabric": draw_stars_fabric,
     "up_rug_persian": draw_rug_persian,
+    "up_rug_study": lambda rng: draw_rug_persian(rng, 512, swap=True),
     "up_rug_kids": draw_rug_kids,
     "up_rug_runner": draw_rug_runner,
     "up_rug_cotton": draw_rug_cotton,

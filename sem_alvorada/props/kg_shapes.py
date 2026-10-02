@@ -26,6 +26,7 @@ ROUND = craft.Finish(bevel=0.0, smooth_angle=52.0)
 HARD = craft.Finish(bevel=0.004, bevel_segments=2, smooth_angle=44.0)
 CHAMFER = craft.Finish(bevel=0.003, bevel_segments=1, smooth_angle=40.0)
 FINE = craft.Finish(bevel=0.0018, bevel_segments=1, smooth_angle=40.0)
+PADDED = craft.Finish(bevel=0.008, bevel_segments=2, smooth_angle=75.0)         # estofado e miolo mole, sem subdivisão
 
 WEAR_ATTRIBUTE = "sa_wear"
 
@@ -89,6 +90,21 @@ class ShapeBuilder(kit.MeshBuilder):
                 self._face([ids[key][index] for key, index in corners], [rings[key][index] for key, index in corners],
                            material, uv_scale=uv)
 
+    def wrap(self, profile, cx, cy, z0, material, seg=16):
+        """Faixa torneada com UV de 0 a 1 em volta e ao longo do perfil: rótulos de lata, garrafa e frasco."""
+        rings = [kit.circle_points(cx, cy, z0 + z, r, seg) for r, z in profile]
+        self.loft(rings, material, False, False, True, uv_grid=True)
+
+    def dial(self, cx, y, cz, radius, material, sides=28):
+        """Disco no plano XZ olhando para +Y, com UV centrado (0 a 1): mostradores, tampas pintadas, rótulos."""
+        points, uv = [], []
+        for index in range(sides):
+            angle = 2 * math.pi * index / sides
+            dx, dz = radius * math.sin(angle), radius * math.cos(angle)
+            points.append((cx + dx, y, cz + dz))
+            uv.append((0.5 - dx / (2 * radius), 0.5 + dz / (2 * radius)))
+        self.poly(points, material, uv=uv)
+
     def rounded_loft(self, sections, material, corner_points=4, caps=(True, True), uv=1.0):
         """Sólido de seções retangulares arredondadas.
 
@@ -132,7 +148,7 @@ class PrebuiltMesh:
 class Assembly:
     """Uma peça feita de várias malhas com acabamentos diferentes, unidas num só objeto."""
 
-    ROLES = {"hard": HARD, "crisp": craft.CRISP, "round": ROUND, "soft": craft.SOFT}
+    ROLES = {"hard": HARD, "crisp": craft.CRISP, "round": ROUND, "soft": PADDED}
 
     def __init__(self, name, hard=None, wear=None):
         self.name = name
@@ -232,3 +248,10 @@ def _edge_wear(mesh, count):
     worst = np.ones(count, np.float32)
     np.minimum.at(worst, loop_vertex, alignment)
     return np.clip((1.0 - worst) * 2.2, 0.0, 1.0)
+
+
+def front_limited_box(asm, front_y, top=None):
+    """Caixa de colisão (x0, y0, z0, x1, y1, z1) da montagem cortada em `front_y` (ferragens e puxadores que saem
+    da frente não aumentam o proxy) e, com `top`, na altura do tampo (itens apoiados em cima ficam fora do volume)."""
+    low, high = asm.bounds()
+    return [(low[0], low[1], 0.0, high[0], min(high[1], front_y), high[2] if top is None else min(high[2], top))]

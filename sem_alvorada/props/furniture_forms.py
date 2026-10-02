@@ -6,8 +6,24 @@ geradas direto por anéis de seção; as demais usam `loft`, `lathe` e `extrude`
 """
 import math
 
+from .. import craft
 from . import kit
-from .kit import circle_points, rounded_rect
+from . import tex_sala  # noqa: F401  (registra as texturas e os materiais de tudo que usa estas formas)
+from .kit import rounded_rect
+
+
+# Receitas de acabamento das partes de uma `Composite` (ver `composite.py`). Só a marcenaria de caixas leva chanfro:
+# peças torneadas, lajes moldadas e ferragens já têm o perfil curvo, e um chanfro em cima multiplicaria os triângulos.
+WOOD = craft.Finish(bevel=0.004, bevel_segments=1, smooth_angle=48)
+WOOD_HERO = craft.Finish(bevel=0.005, bevel_segments=2, smooth_angle=48)
+SMOOTH = craft.Finish(bevel=0.0, smooth_angle=55)
+PADDING = craft.Finish(bevel=0.0, subsurf=1, smooth_angle=70)
+
+
+def smooth01(t):
+    """Degrau suave de 0 a 1 (zero abaixo de 0 e um acima de 1)."""
+    t = min(1.0, max(0.0, t))
+    return t * t * (3 - 2 * t)
 
 
 def seg(count):
@@ -22,6 +38,7 @@ OGEE_EDGE = ((0.0, 0.026), (0.006, 0.012), (0.012, 0.004), (0.017, 0.0), (0.031,
              (0.038, 0.008), (0.040, 0.014))                       # tampo de 40 mm, borda em S
 BULLNOSE_EDGE = ((0.0, 0.006), (0.004, 0.001), (0.010, 0.0), (0.026, 0.0), (0.032, 0.001), (0.036, 0.004),
                  (0.038, 0.009))
+THIN_EDGE = ((0.0, 0.018), (0.004, 0.006), (0.010, 0.0), (0.025, 0.0), (0.031, 0.003), (0.035, 0.008))
 CORNICE = ((0.0, 0.0), (0.012, 0.0), (0.016, -0.006), (0.024, -0.010), (0.034, -0.012), (0.040, -0.012),
            (0.044, -0.008), (0.048, 0.0))                          # cornija que avança (inset negativo)
 
@@ -190,8 +207,3 @@ def mitred_frame(m, cx, cy, cz, width, height, profile, mat):
         rings.append([(cx + half_w, cy + depth, cz - half_h), (cx + half_w, cy + depth, cz + half_h),
                       (cx - half_w, cy + depth, cz + half_h), (cx - half_w, cy + depth, cz - half_h)])
     m.loft(rings, mat, False, False, False, orient=False)
-
-
-def point_ring(cx, cy, z, radius, count):
-    """Contorno circular como lista de pontos 3D (atalho para `circle_points`)."""
-    return circle_points(cx, cy, z, radius, count)

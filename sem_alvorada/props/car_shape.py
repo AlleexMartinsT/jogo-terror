@@ -21,8 +21,9 @@ COWL_Y = 0.98               # base do para-brisa
 REAR_GLASS_BASE_Y = -1.60   # base do vidro traseiro, onde começa o porta-malas
 
 FRONT_DOOR = (0.82, -0.24)       # (borda dianteira, borda traseira) em y
-REAR_DOOR = (-0.24, -1.06)
+REAR_DOOR = (-0.24, -1.03)
 DOOR_BOTTOM_Z = 0.30
+HANDLE_Y = (-0.10, -0.92)         # y das maçanetas das portas dianteira e traseira
 GROOVE_WIDTH = 0.0050
 GROOVE_DEPTH = 0.0075
 
@@ -72,7 +73,15 @@ def deck_z(y):
 def half_width(y):
     """Meia-largura máxima da chapa: reta no meio e arredondada nos cantos em planta."""
     t = np.clip((np.abs(np.asarray(y, float)) - 1.92) / (HALF_LENGTH - 1.92), 0.0, 1.0)
-    return 0.94 - 0.30 * (1.0 - np.sqrt(1.0 - t ** 2))
+    hip = 0.011 * np.exp(-(((np.abs(np.asarray(y, float)) - WHEEL_Y) / 0.55) ** 2))     # volume do para-lama sobre a roda
+    return 0.94 + hip - 0.30 * (1.0 - np.sqrt(1.0 - t ** 2))
+
+
+def nose_y(x):
+    """y (positivo) do fim da chapa na frente/traseira em |x|: reto no centro e contornando o canto."""
+    x = np.abs(np.asarray(x, float))
+    u = np.clip((x - 0.64) / 0.30, 0.0, 1.0)
+    return np.where(x <= 0.64, HALF_LENGTH, 1.92 + 0.34 * np.sqrt(1.0 - u * u))
 
 
 def bottom_z(y):
@@ -89,7 +98,8 @@ def crown(y):
 def side_offset(z):
     """Quanto a lateral se afasta da largura máxima em cada altura: barriga em z=0,7 e tumblehome acima."""
     z = np.asarray(z, float)
-    return np.where(z >= 0.70, 0.78 * (z - 0.70) ** 2, 0.30 * (0.70 - z) ** 2)
+    shoulder = 0.011 * np.exp(-(((z - 0.80) / 0.05) ** 2))                  # vinco suave na altura do ombro
+    return np.where(z >= 0.70, 0.78 * (z - 0.70) ** 2, 0.30 * (0.70 - z) ** 2) - shoulder
 
 
 def side_x(y, z):
@@ -135,8 +145,8 @@ def _round_path(points, setbacks, steps=4):
     return np.array(out)
 
 
-SIDE_FRACTIONS = (0.0, 0.10, 0.24, 0.40, 0.58, 0.75, 0.89)
-DECK_FRACTIONS = (0.14, 0.28, 0.45, 0.62, 0.80, 1.0)
+SIDE_FRACTIONS = (0.0, 0.08, 0.18, 0.29, 0.40, 0.52, 0.64, 0.75, 0.84, 0.92)
+DECK_FRACTIONS = (0.10, 0.20, 0.31, 0.43, 0.56, 0.70, 0.85, 1.0)
 
 
 def _crest(y):
@@ -177,35 +187,54 @@ def stations():
     """Posições y dos anéis do loft: densas nas pontas, onde a curvatura muda depressa."""
     ends = np.array([0.0, 0.006, 0.02, 0.045, 0.08, 0.13, 0.20])
     near_ends = HALF_LENGTH - ends
-    middle = np.arange(-(HALF_LENGTH - 0.28), (HALF_LENGTH - 0.28) + 1e-6, 0.07)
+    middle = np.arange(-(HALF_LENGTH - 0.28), (HALF_LENGTH - 0.28) + 1e-6, 0.06)
     return np.unique(np.round(np.concatenate([-near_ends, middle, near_ends]), 4))
 
 
 # --------------------------------------------------------------------------------------------
-# Cabine (greenhouse)
+# Cabine (teto, colunas e vidros)
 # --------------------------------------------------------------------------------------------
-def cabin_half_width(z):
-    """Meia-largura da cabine na altura z: pende para dentro 0,40 m a cada metro (tumblehome)."""
-    return 0.885 - 0.40 * (np.asarray(z, float) - BELT_Z)
-
-
-WINDSHIELD_BASE = (COWL_Y, BELT_Z)       # (y, z)
+WINDSHIELD_BASE = (COWL_Y, BELT_Z)       # (y, z) da linha do para-brisa
 WINDSHIELD_TOP = (0.28, ROOF_Z)
 REAR_GLASS_TOP = (-1.00, ROOF_Z - 0.005)
 REAR_GLASS_BASE = (REAR_GLASS_BASE_Y, 1.035)
 PILLAR_B = (-0.215, -0.265)               # (borda dianteira, borda traseira) do pilar B
+GLASS_RECESS = 0.022                      # quanto o vidro entra na casca da cabine
+
+
+def cabin_half_width(z):
+    """Meia-largura da cabine na altura z: pende para dentro 0,40 m a cada metro (tumblehome)."""
+    return 0.872 - 0.40 * (np.asarray(z, float) - BELT_Z)
+
+
+def cabin_taper(y):
+    """Fator de largura da cabine em y: afunila para trás (coluna C) e levemente para a frente."""
+    y = np.asarray(y, float)
+    return 1.0 - 0.07 * smoothstep(-0.9, -1.7, y) - 0.03 * smoothstep(0.45, 1.05, y)
+
+
+def _line_y(top, base, z):
+    return top[0] + (base[0] - top[0]) * (z - top[1]) / (base[1] - top[1])
 
 
 def a_pillar_y(z):
-    """y da linha do pilar A na altura z."""
-    (y0, z0), (y1, z1) = WINDSHIELD_BASE, WINDSHIELD_TOP
-    return y0 + (y1 - y0) * (z - z0) / (z1 - z0)
+    """y da linha do pilar A / plano do para-brisa na altura z."""
+    return _line_y(WINDSHIELD_TOP, WINDSHIELD_BASE, z)
 
 
 def c_pillar_y(z):
-    """y da linha do pilar C (borda do vidro traseiro) na altura z."""
-    (y0, z0), (y1, z1) = REAR_GLASS_TOP, REAR_GLASS_BASE
-    return y0 + (y1 - y0) * (z - z0) / (z1 - z0)
+    """y da linha do pilar C / plano do vidro traseiro na altura z."""
+    return _line_y(REAR_GLASS_TOP, REAR_GLASS_BASE, z)
+
+
+def _inward(top, base):
+    """Deslocamento (dy, dz) de GLASS_RECESS para dentro da cabine, perpendicular à linha base-topo."""
+    direction = np.array([top[0] - base[0], top[1] - base[1]], float)
+    direction /= np.linalg.norm(direction)
+    outward = np.array([-direction[1], direction[0]])
+    if outward[1] < 0:
+        outward = -outward
+    return -outward * GLASS_RECESS
 
 
 def side_window_polygons():
@@ -220,4 +249,28 @@ def side_window_polygons():
 
 def side_window_surface_x(z):
     """x do plano do vidro lateral (um pouco para dentro da chapa)."""
-    return cabin_half_width(z) - 0.022
+    return cabin_half_width(z) - GLASS_RECESS
+
+
+def _sloped_glass(top, base, z_low, z_high, inset_x, line_y):
+    """Quadrilátero 3D no plano inclinado entre `base` e `top`: (-x, baixo), (+x, baixo), (+x, alto), (-x, alto)."""
+    dy, dz = _inward(top, base)
+    corners = []
+    for z, sign in ((z_low, -1), (z_low, 1), (z_high, 1), (z_high, -1)):
+        y_on_plane = float(line_y(z))
+        half = float(cabin_half_width(z)) * float(cabin_taper(y_on_plane)) - inset_x
+        corners.append((sign * half, y_on_plane + dy, z + dz))
+    return np.array(corners)
+
+
+def glass_polygons():
+    """Vidros planos (4 cantos 3D cada): para-brisa, vidro traseiro e os quatro laterais (p = passageiro, d = motorista)."""
+    glass = {
+        "windshield": _sloped_glass(WINDSHIELD_TOP, WINDSHIELD_BASE, BELT_Z + 0.025, ROOF_Z - 0.075, 0.062, a_pillar_y),
+        "rear": _sloped_glass(REAR_GLASS_TOP, REAR_GLASS_BASE, REAR_GLASS_BASE[1] + 0.03, REAR_GLASS_TOP[1] - 0.055,
+                              0.115, c_pillar_y),
+    }
+    for name, polygon in side_window_polygons().items():
+        for sign, tag in ((1, "p"), (-1, "d")):
+            glass[f"side_{name}_{tag}"] = np.array([(sign * float(side_window_surface_x(z)), y, z) for y, z in polygon])
+    return glass

@@ -36,27 +36,33 @@ PROFILED = craft.Finish(bevel=0.0, smooth_angle=38.0)
 FINE = craft.Finish(bevel=0.0012, bevel_segments=1, bevel_angle=30.0, smooth_angle=40.0)
 
 
+def detail(ctx, segments):
+    """Número de lados de uma peça torneada conforme `ctx.quality` ('low' usa 60%, 'high' 130%)."""
+    factor = {"low": 0.6, "medium": 1.0, "high": 1.3}.get(ctx.quality, 1.0)
+    return max(5, round(segments * factor))
+
+
+def _per_segment(vectors, count):
+    """Aceita um vetor (repetido) ou uma lista com um vetor por segmento."""
+    if len(vectors) == 3 and all(isinstance(c, (int, float)) for c in vectors):
+        return [Vector(vectors)] * count
+    return [Vector(v) for v in vectors]
+
+
+def _mitre(vectors, index, segments):
+    """Vetor de deslocamento e fator de esticamento do anel `index` entre os segmentos vizinhos."""
+    if index == 0:
+        return vectors[0], 1.0
+    if index == segments:
+        return vectors[-1], 1.0
+    before, after = vectors[index - 1], vectors[index]
+    return before + after, 1.0 / max(1e-6, 1.0 + before.dot(after))
+
+
 def circle(radius, segments, phase=0.0):
     """Pontos (x, y) anti-horários de um círculo centrado na origem."""
     return [(radius * math.cos(phase + 2 * math.pi * i / segments),
              radius * math.sin(phase + 2 * math.pi * i / segments)) for i in range(segments)]
-
-
-def arc_profile(points, resolution=6):
-    """Suaviza uma polilinha [(r, h), ...] por Catmull-Rom: perfis torneados sem quinas."""
-    if len(points) < 3:
-        return list(points)
-    padded = [points[0]] + list(points) + [points[-1]]
-    out = []
-    for i in range(1, len(padded) - 2):
-        p0, p1, p2, p3 = (Vector(padded[i + k]) for k in (-1, 0, 1, 2))
-        for step in range(resolution):
-            t = step / resolution
-            point = 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
-                           + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
-            out.append((point.x, point.y))
-    out.append(tuple(points[-1]))
-    return out
 
 
 class ModelBuilder:
@@ -130,6 +136,14 @@ class ModelBuilder:
 
     def quad(self, a, b, c, d, material, uv=None):
         self.poly((a, b, c, d), material, uv)
+
+    def facing(self, points, toward, material, uv=None):
+        """Polígono solto voltado para `toward`: se a normal calculada aponta para o outro lado, inverte a ordem."""
+        a, b, c = (self._transform @ Vector(p) for p in points[:3])
+        if (b - a).cross(c - a).dot(self._transform.to_3x3() @ Vector(toward)) < 0:
+            points = list(points)[::-1]
+            uv = list(uv)[::-1] if uv is not None else None
+        self.poly(points, material, uv)
 
     def box(self, x0, y0, z0, x1, y1, z1, material, skip=(), face_materials=None):
         """Caixa alinhada ao sistema atual. `skip` omite faces (chaves de FACES) escondidas."""
@@ -210,25 +224,20 @@ class ModelBuilder:
     def sweep(self, profile, points, sides, depth, material, caps=(True, True)):
         """Varre o perfil fechado [(u, v), ...] ao longo da trilha `points`, com quinas em meia-esquadria.
 
-        `sides[i]` é o vetor unitário de `u` no trecho i (um por segmento) e `depth` o de `v`, ambos
-        perpendiculares à trilha. Em cada quina o anel é deslocado pela média dos dois lados, o que
-        desenha a esquadria de uma guarnição sem recortar nada.
+        `sides[i]` é o vetor unitário de `u` no trecho i (um por segmento) e `depth` o de `v`: um vetor só
+        (constante) ou uma lista por segmento, quando o "para cima" da moldura gira com a trilha (corrimão
+        inclinado). Ambos devem ser perpendiculares à trilha. Em cada quina o anel é deslocado pela média
+        dos dois lados, o que desenha a esquadria de uma guarnição sem recortar nada.
         """
-        depth = Vector(depth)
-        side_vectors = [Vector(s) for s in sides]
+        segments = len(points) - 1
+        side_vectors = _per_segment(sides, segments)
+        depth_vectors = _per_segment(depth, segments)
         rings = []
         for index, point in enumerate(points):
-            if index == 0:
-                lateral = side_vectors[0]
-                stretch = 1.0
-            elif index == len(points) - 1:
-                lateral = side_vectors[-1]
-                stretch = 1.0
-            else:
-                before, after = side_vectors[index - 1], side_vectors[index]
-                lateral = before + after
-                stretch = 1.0 / max(1e-6, 1.0 + before.dot(after))
-            rings.append([tuple(Vector(point) + lateral * (u * stretch) + depth * v) for u, v in profile])
+            lateral, stretch_u = _mitre(side_vectors, index, segments)
+            vertical, stretch_v = _mitre(depth_vectors, index, segments)
+            rings.append([tuple(Vector(point) + lateral * (u * stretch_u) + vertical * (v * stretch_v))
+                          for u, v in profile])
         self.loft(rings, material, caps)
 
     def prism(self, profile, start, end, side, depth, material):
@@ -281,3 +290,21 @@ class ModelBuilder:
         """Só a malha acabada (para juntar com outra, como a cortina simulada)."""
         mesh = self.to_mesh(origin)
         return craft.finish_mesh(mesh, self.finish, quality) if self.finish is not None else mesh
+
+
+def build_combined(ctx, collection, name, builders, origin=(0.0, 0.0, 0.0), collision=False):
+    """Um único objeto a partir de vários construtores, cada um com o seu acabamento (chanfro ou perfil)."""
+    meshes = [builder.build_mesh(origin, ctx.quality) for builder in builders if builder._polygons]
+    if not meshes:
+        return None
+    joined = craft.join_meshes(meshes, name) if len(meshes) > 1 else meshes[0]
+    joined.name = name
+    for mesh in meshes:
+        if mesh is not joined and mesh.users == 0:
+            bpy.data.meshes.remove(mesh)
+    obj = bpy.data.objects.new(name, joined)
+    obj.location = origin
+    ctx.link(obj, collection)
+    if collision:
+        obj["sa_col"] = 1
+    return obj

@@ -3,9 +3,7 @@
 Todas desenham num `MeshBuilder` já em andamento, nas coordenadas locais do móvel (frente = +Y, base em Z=0).
 O veio da madeira corre ao longo do eixo U do material; peças verticais usam a variante `_v` (veio girado).
 """
-import math
-
-from .assembly import segments
+from .assembly_quartos import segments
 
 FINE = 0.004
 
@@ -40,7 +38,7 @@ def turned(m, x, y, z0, profile, height, mat, seg=18, radius_scale=1.0):
 def knob(m, cx, y, cz, mat="brass", scale=1.0):
     """Puxador de bola apontando para +Y, saindo de uma frente em `y`."""
     with m.at(cx, y, cz, rx=-90):
-        m.lathe([(r * scale, z * scale) for r, z in KNOB_PROFILE], 0, 0, 0, mat, seg=segments(12), smooth=True)
+        m.lathe([(r * scale, z * scale) for r, z in KNOB_PROFILE], 0, 0, 0, mat, seg=segments(9), smooth=True)
 
 
 def pull(m, cx, y, cz, length, mat="brass", vertical=False):

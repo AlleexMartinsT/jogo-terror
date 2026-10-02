@@ -37,7 +37,7 @@ def brick(rng, size=480, base=(0.225, 0.095, 0.065)):
 
 
 def clapboard(rng, size=256, boards=4, base=(0.305, 0.315, 0.275)):
-    """Revestimento de tábuas sobrepostas (16 cm de exposição): fio de luz em cima, sombra embaixo, veios, tinta lascada."""
+    """Revestimento de tábuas sobrepostas (16 cm de exposição): fio de luz, sombra embaixo, veios, tinta lascada."""
     board = size // boards
     xs, ys = T.pixel_grid(size, size)
     within, board_id = ys % board, ys // board
@@ -73,8 +73,10 @@ def shingles(rng, size=480, base=(0.075, 0.075, 0.08)):
     image = T.gain(image, np.where(slot & (within > course * 0.22), 0.30, 1.0))
     image = T.gain(image, 1 + T.speckle(rng, size, size, 0.30))
     moss = T.fbm(rng, size, size, 3, 4)
-    image = T.lerp(image, np.array((0.055, 0.075, 0.05), np.float32) * (0.7 + 0.6 * moss[..., None]), (moss > 0.72) * 0.55)
-    height = 0.35 + 0.5 * (within / course) - 0.3 * slot * (within > course * 0.22) + 0.08 * T.speckle(rng, size, size, 1.0)
+    moss_color = np.array((0.055, 0.075, 0.05), np.float32) * (0.7 + 0.6 * moss[..., None])
+    image = T.lerp(image, moss_color, (moss > 0.72) * 0.55)
+    height = (0.35 + 0.5 * (within / course) - 0.3 * slot * (within > course * 0.22)
+              + 0.08 * T.speckle(rng, size, size, 1.0))
     return Maps(T.finish(image), T.height_map(height), T.rough_map(np.full((size, size), 0.93)))
 
 
@@ -121,11 +123,7 @@ def dead_grass(rng, size=256, base=(0.095, 0.09, 0.055)):
 
 
 def sidewalk(rng, size=512, base=(0.235, 0.235, 0.22)):
-    maps = concrete_like(rng, size, base)
-    return maps
-
-
-def concrete_like(rng, size, base):
+    """Calçada de concreto com juntas de dilatação, trincas e poros."""
     image = T.gain(T.solid(size, size, base), 0.78 + 0.4 * T.fbm(rng, size, size, 4, 5))
     pores = rng.random((size, size)) < 0.025
     crack = np.clip(T.blur(T.branching_cracks(rng, size, size, 3, 120, 0.35, 0.03), 0.55) * 2.5, 0, 1)
@@ -167,7 +165,8 @@ def grit(rng, size=256):
 def wood_grain(rng, size=256):
     """Veio de madeira em tons de cinza para os móveis (multiplica a cor da paleta)."""
     grain = T.value_noise(rng, size, size, 4, size // 2)
-    rings = 0.5 + 0.5 * np.sin(2 * np.pi * (T.unit_grid(size, size)[1] * 14 + T.fbm(rng, size, size, 2, 3, cells_y=5) * 3))
+    drift = T.fbm(rng, size, size, 2, 3, cells_y=5) * 3
+    rings = 0.5 + 0.5 * np.sin(2 * np.pi * (T.unit_grid(size, size)[1] * 14 + drift))
     image = (0.6 + 0.6 * grain) * (0.88 + 0.2 * T.fbm(rng, size, size, 3, 3)) * (0.9 + 0.12 * rings)
     height = 0.5 + 0.2 * (rings - 0.5) + 0.2 * (grain - 0.5)
     return Maps(T.finish(np.repeat(np.clip(image, 0, 1.1)[..., None], 3, axis=2)), T.height_map(height), None)

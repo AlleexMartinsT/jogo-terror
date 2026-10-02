@@ -6,7 +6,6 @@ móveis). Medidas de referência de uma cozinha americana: rodapé de armário 1
 """
 import math
 
-from . import kg_shapes
 from .kg_shapes import arc_points, segments
 
 TOE_H = 0.10
@@ -121,8 +120,8 @@ def door_openings(width, count):
     return [(-width / 2 + GAP + i * (each + GAP), -width / 2 + GAP + i * (each + GAP) + each) for i in range(count)]
 
 
-def base_cabinet(asm, width, depth, doors=2, drawer=False, open_door=None, open_deg=0.0):
-    """Módulo de balcão completo com tampo. `open_door` é o índice da porta entreaberta, se houver."""
+def base_cabinet(asm, width, depth, doors=2, drawer=False, open_door=None, open_deg=0.0, top=True):
+    """Módulo de balcão completo; com `top` leva o tampo. `open_door` é o índice da porta entreaberta."""
     base_carcass(asm, width, depth)
     z0, z1 = TOE_H + GAP, BODY_TOP - GAP
     y_front = depth / 2 + DOOR_T
@@ -139,7 +138,14 @@ def base_cabinet(asm, width, depth, doors=2, drawer=False, open_door=None, open_
         if angle == 0.0:
             grease_mark(asm, handle_x, handle_z, y_front)
             bar_pull(asm, handle_x, handle_z, y_front, 0.1, vertical=True)
-    laminate_top(asm, -width / 2 - 0.0, width / 2, depth)
+    if top:
+        laminate_top(asm, -width / 2, width / 2, depth)
+
+
+def blind_filler(asm, x0, x1, depth):
+    """Trecho de balcão sem porta (canto cego atrás de outra perna do L): caixa de carvalho e rodapé."""
+    asm.hard.box((x0 + x1) / 2, -0.03, 0.0, x1 - x0, depth - 0.07, TOE_H, "kg_toe")
+    asm.hard.box((x0 + x1) / 2, 0, TOE_H, x1 - x0, depth, BODY_TOP - TOE_H, "kg_oak_v")
 
 
 def wall_cabinet(asm, width, depth, z0, height, open_door=None, open_deg=0.0, stock=None):
@@ -152,7 +158,7 @@ def wall_cabinet(asm, width, depth, z0, height, open_door=None, open_deg=0.0, st
     m.box(width / 2 - thick / 2, 0, z0, thick, depth, height, "kg_pine")
     m.box(0, 0, z1 - thick, width, depth, thick, "kg_pine")
     m.box(0, 0, z0, width, depth, thick, "kg_pine")
-    m.box(0, -depth / 2 + 0.004, z0, width, 0.008, height, "kg_toe")
+    m.box(0, -depth / 2 + 0.004, z0, width, 0.008, height, "kg_pine")
     shelf_z = z0 + height * 0.48
     m.box(0, -0.01, shelf_z, width - 2 * thick, depth - 0.03, 0.016, "kg_pine")
     if stock:

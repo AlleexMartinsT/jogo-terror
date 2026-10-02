@@ -11,17 +11,11 @@ from mathutils import Vector
 from .. import compat
 from .. import conventions as C
 from .. import layout
+from ..props import bedroom_master as bedroom
+from ..props import textures
 from . import scripts as sc
 
 CAMERA_FOV_DEG = 60.0
-
-SEGMENTS = {          # segmentos de um display de sete: (x0, z0, x1, z1) numa célula 1 x 2
-    "top": (0.1, 1.8, 0.9, 2.0), "mid": (0.1, 0.9, 0.9, 1.1), "bot": (0.1, 0.0, 0.9, 0.2),
-    "tl": (0.0, 1.0, 0.2, 1.9), "tr": (0.8, 1.0, 1.0, 1.9),
-    "bl": (0.0, 0.1, 0.2, 1.0), "br": (0.8, 0.1, 1.0, 1.0),
-}
-DIGITS = {"6": ("top", "mid", "bot", "tl", "bl", "br"), "1": ("tr", "br"),
-          "2": ("top", "tr", "mid", "bl", "bot")}
 
 
 def _place(obj, ctx, hidden=False):
@@ -87,73 +81,29 @@ def create_lights(ctx):
     _light(ctx, sc.CORRIDOR_RIM, "POINT", (0.55, 0.68, 1.0), (sight[0], sight[1] + 0.9, sight[2] + 2.3), size=0.2)
 
 
-def _emissive_material(name, color, strength):
+def _display_material(name="cut_clock_digits", strength=7.0):
+    """Mostrador 6:12 do relógio final: a mesma imagem do despertador, emissiva e mais forte (é o foco do plano)."""
     mat = compat.new_material(name)
-    compat.set_bsdf(compat.bsdf_of(mat), base_color=color, roughness=1.0, emission=color,
-                    emission_strength=strength)
+    bsdf = compat.bsdf_of(mat)
+    image = mat.node_tree.nodes.new("ShaderNodeTexImage")
+    image.image = textures.image("digits_612")
+    image.interpolation = "Closest"           # mostrador digital: pixel de propósito
+    mat.node_tree.links.new(image.outputs["Color"], bsdf.inputs["Base Color"])
+    mat.node_tree.links.new(image.outputs["Color"], bsdf.inputs["Emission Color"])
+    compat.set_bsdf(bsdf, base_color=(0, 0, 0), roughness=0.4, emission_strength=strength)
     return mat
-
-
-def _flat_material(name, color):
-    mat = compat.new_material(name)
-    compat.set_bsdf(compat.bsdf_of(mat), base_color=color, roughness=0.6)
-    return mat
-
-
-def _digit_quads(glyph, x0, z0, width, height):
-    """Retângulos (x0, z0, x1, z1) dos segmentos acesos de um dígito posicionado em (x0, z0).
-
-    Quem olha para a frente do objeto (+Y) vê o eixo X crescer para a ESQUERDA, então espelhamos em X.
-    """
-    quads = []
-    for name in DIGITS[glyph]:
-        a, b, c, d = SEGMENTS[name]
-        quads.append((-(x0 + c * width), z0 + b * height / 2, -(x0 + a * width), z0 + d * height / 2))
-    return quads
 
 
 def create_end_clock(ctx):
-    """Despertador digital marcando 6:12, no lugar do da cabeceira, para o plano final."""
+    """Despertador marcando 6:12, no lugar exato do da cabeceira (que o roteiro esconde), para o plano final."""
     anchor = layout.ANCHORS["nightstand_clock"]
-    width, depth, height = 0.17, 0.06, 0.085
+    x, y, yaw = bedroom.ALARM_CLOCK_POSE
     top = 0.55
-    y_front = depth / 2
-    verts, faces = [], []
-
-    def box(x0, x1, y0, y1, z0, z1):
-        base = len(verts)
-        verts.extend((x, y, z) for x in (x0, x1) for y in (y0, y1) for z in (z0, z1))
-        faces.extend(tuple(base + i for i in f) for f in
-                     [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)])
-
-    box(-width / 2, width / 2, -depth / 2, y_front, 0.0, height)
-    body_faces = list(faces)
-    glyph_x = {"6": -0.052, "1": -0.002, "2": 0.030}      # 6 : 1 2  (o ":" vai à parte; tudo é espelhado em X)
-    digit_w, digit_h, digit_z = 0.022, 0.048, 0.018
-    lit = []
-    for glyph, gx in glyph_x.items():
-        for x0, z0, x1, z1 in _digit_quads(glyph, gx, digit_z, digit_w, digit_h):
-            base = len(verts)
-            verts.extend([(x0, y_front + 0.001, z0), (x1, y_front + 0.001, z0),
-                          (x1, y_front + 0.001, z1), (x0, y_front + 0.001, z1)])
-            lit.append((base, base + 1, base + 2, base + 3))
-    for dz in (0.028, 0.048):                        # os dois pontos do ":"
-        base = len(verts)
-        cx, cz = 0.014, digit_z + dz
-        verts.extend([(cx - 0.003, y_front + 0.001, cz - 0.003), (cx + 0.003, y_front + 0.001, cz - 0.003),
-                      (cx + 0.003, y_front + 0.001, cz + 0.003), (cx - 0.003, y_front + 0.001, cz + 0.003)])
-        lit.append((base, base + 1, base + 2, base + 3))
-
-    mesh = bpy.data.meshes.new(sc.END_CLOCK)
-    mesh.from_pydata(verts, [], body_faces + lit)
-    mesh.materials.append(_flat_material("cut_clock_case", (0.03, 0.03, 0.035)))
-    mesh.materials.append(_emissive_material("cut_clock_digits", (1.0, 0.05, 0.03), 9.0))
-    for index, poly in enumerate(mesh.polygons):
-        poly.material_index = 1 if index >= len(body_faces) else 0
-    mesh.update()
+    _display_material()
+    mesh = bedroom.alarm_clock_assembly("cut_clock_digits", sc.END_CLOCK).to_mesh(sc.END_CLOCK)
     obj = bpy.data.objects.new(sc.END_CLOCK, mesh)
-    obj.location = (anchor.x, anchor.y, anchor.z + top)
-    obj.rotation_euler = (0.0, 0.0, math.radians(anchor.yaw_deg))
+    obj.location = (x, y, anchor.z + top + 0.001)
+    obj.rotation_euler = (0.0, 0.0, yaw)
     return _place(obj, ctx, hidden=True)
 
 

@@ -2,13 +2,15 @@
 
 `build(ctx)` cria tudo em ordem; cada parte registra o que fez com `ctx.log`.
 """
-from . import exterior, lighting, openings, quality, roof, shell, sky, stairs
+from . import decals, details, exterior, lighting, openings, quality, roof, shell, sky, stairs
 
 
 def build(ctx):
     shell.build(ctx)
     openings.build(ctx)
     stairs.build(ctx)
+    details.build(ctx)
+    decals.build(ctx)
     roof.build(ctx)
     lighting.build(ctx)
     exterior.build(ctx)

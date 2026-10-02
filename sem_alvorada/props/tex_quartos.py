@@ -36,22 +36,27 @@ def draw_wood(rng, size=512, dark=(0.085, 0.050, 0.030), light=(0.250, 0.150, 0.
     y = np.arange(size, dtype=np.float32)[:, None] / size
     ring = 0.5 + 0.5 * np.sin((y * rings + warp * 1.7) * 2 * np.pi)
     fibre = noise.stretched(size, size, gen, True, 2, 128, 3)
-    pattern = 0.40 * ring + 0.60 * fibre
+    pattern = 0.22 * ring + 0.78 * fibre
     color = noise.blend(dark, light, noise.smoothstep(0.15, 0.85, pattern))
     pores = noise.stretched(size, size, gen, True, 24, 320, 1) > 0.78
     color = color * (1 - 0.40 * pores[..., None])
     return _canvas(noise.grime(color, gen, wear))
 
 
-def draw_paint(rng, size=256, wear=0.35):
-    """Tinta clara sobre madeira, em tons de cinza para receber a cor do material: pincelada e lascas escuras."""
+def draw_paint(rng, size=256, wear=0.18):
+    """Tinta clara sobre madeira, em tons de cinza para receber a cor do material: pinceladas e lascas miúdas.
+
+    As lascas deixam à mostra a madeira (marrom-quente), que depois de multiplicada pela tinta vira um
+    marrom escuro, não um buraco preto.
+    """
     gen = noise.generator(rng)
-    strokes = noise.stretched(size, size, gen, True, 3, 40, 3)
-    shade = 0.80 + 0.20 * strokes
-    chipped = noise.smoothstep(0.78, 0.86, noise.fbm(size, size, 14, 14, gen, 3))
-    shade = shade * (1 - 0.62 * chipped)
+    strokes = noise.stretched(size, size, gen, True, 3, 48, 3)
+    shade = 0.90 + 0.10 * strokes
     color = np.repeat(shade[..., None], 3, axis=2)
-    return _canvas(noise.grime(color, gen, wear, tone=(0.20, 0.18, 0.14)))
+    chips = noise.smoothstep(0.82, 0.88, noise.fbm(size, size, 26, 26, gen, 3)) * noise.speckle(size, size, gen, 0.5)
+    chips = np.maximum(chips, noise.smoothstep(0.90, 0.95, noise.fbm(size, size, 40, 40, gen, 2)))
+    color = noise.blend(color, (0.42, 0.30, 0.18), chips * 0.85)
+    return _canvas(noise.grime(color, gen, wear, tone=(0.30, 0.27, 0.22)))
 
 
 # ---------------------------------------------------------------------------
@@ -62,10 +67,10 @@ def draw_porcelain(rng, size=256):
     gen = noise.generator(rng)
     base = noise.blend((0.50, 0.50, 0.46), (0.58, 0.57, 0.52), noise.fbm(size, size, 3, 3, gen, 3))
     level = noise.fbm(size, size, 10, 10, gen, 3)
-    crazing = noise.smoothstep(0.010, 0.0, np.abs(level - 0.5)) * 0.55
+    crazing = noise.smoothstep(0.008, 0.0, np.abs(level - 0.5)) * 0.32
     color = base * (1 - crazing[..., None])
-    streaks = noise.smoothstep(0.62, 0.9, noise.stretched(size, size, gen, False, 2, 40, 2))
-    color = noise.blend(color, (0.30, 0.20, 0.10), streaks * 0.45)
+    streaks = noise.smoothstep(0.78, 0.95, noise.stretched(size, size, gen, False, 2, 40, 2))
+    color = noise.blend(color, (0.34, 0.24, 0.13), streaks * 0.30)
     return _canvas(noise.grime(color, gen, 0.18, (0.16, 0.15, 0.11)))
 
 
@@ -102,7 +107,26 @@ def draw_plastic(rng, size=128):
     return _canvas(noise.grime(color, gen, 0.12, (0.2, 0.18, 0.14)))
 
 
+def draw_wicker(rng, size=256, strand=16):
+    """Cesto de vime trançado em xadrez de dois fios: cada fio é um cilindro achatado com fibras no sentido do fio."""
+    gen = noise.generator(rng)
+    index = np.arange(size)
+    cell = strand * 2
+    horizontal = ((index[None, :] // cell) + (index[:, None] // cell)) % 2 == 0
+    across = np.where(horizontal, index[:, None] % strand, index[None, :] % strand)
+    along = np.where(horizontal, index[None, :], index[:, None])
+    roundness = np.sin(np.pi * (across + 0.5) / strand)
+    fibre_h = noise.stretched(size, size, gen, True, 3, 90, 2)
+    fibre_v = noise.stretched(size, size, gen, False, 3, 90, 2)
+    fibre = np.where(horizontal, fibre_h, fibre_v)
+    ends = 0.82 + 0.18 * np.sin(np.pi * ((along % cell) + 0.5) / cell)
+    tone = (0.32 + 0.68 * roundness) * ends * (0.78 + 0.34 * fibre)
+    color = noise.blend((0.06, 0.04, 0.02), (0.42, 0.29, 0.15), np.clip(tone, 0, 1))
+    return _canvas(noise.grime(color, gen, 0.3, (0.05, 0.04, 0.03)))
+
+
 TEXTURES = {
+    "up_wicker": draw_wicker,
     "up_wood_dark": lambda rng: draw_wood(rng, 512, (0.075, 0.042, 0.026), (0.215, 0.128, 0.070), 9),
     "up_wood_mid": lambda rng: draw_wood(rng, 512, (0.150, 0.092, 0.050), (0.360, 0.232, 0.125), 6),
     "up_paint": draw_paint,

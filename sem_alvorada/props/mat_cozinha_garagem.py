@@ -15,10 +15,8 @@ Importar este módulo registra texturas e materiais; `kg_shapes` o importa, ent�
 from collections import namedtuple
 from functools import partial
 
-import bpy
-
 from .. import compat
-from . import materials, textures, tex_cozinha_garagem
+from . import materials, tex_cozinha_garagem, tex_cozinha_papeis, textures
 
 Surface = namedtuple("Surface", "texture roughness metallic bump distance specular grime edge_color viewport",
                      defaults=(None, (0.5, 0.8), 0.0, 0.3, 0.003, 0.4, 0.6, None, (0.4, 0.4, 0.4)))
@@ -38,11 +36,13 @@ SURFACES = {
                            viewport=(0.36, 0.38, 0.34)),
     "kg_enamel": Surface("kg_enamel", (0.22, 0.48), bump=0.08, distance=0.001, specular=0.55, grime=0.7,
                          edge_color=(0.30, 0.28, 0.26), viewport=(0.6, 0.58, 0.5)),
+    "kg_enamel_black": Surface("kg_enamel_black", (0.18, 0.40), bump=0.08, distance=0.001, specular=0.6, grime=0.8,
+                               edge_color=(0.30, 0.30, 0.31), viewport=(0.12, 0.12, 0.13)),
     "kg_enamel_yellow": Surface("kg_enamel_yellow", (0.25, 0.55), bump=0.1, distance=0.001, specular=0.5, grime=0.8,
                                 edge_color=(0.30, 0.27, 0.22), viewport=(0.62, 0.56, 0.4)),
     "kg_steel": Surface("kg_steel", (0.26, 0.50), metallic=0.85, bump=0.10, distance=0.0008, specular=0.5, grime=0.5,
                         edge_color=(0.75, 0.75, 0.74), viewport=(0.5, 0.5, 0.5)),
-    "kg_chrome": Surface("kg_steel", (0.10, 0.30), metallic=1.0, bump=0.0, specular=0.5, grime=0.3,
+    "kg_chrome": Surface("kg_steel", (0.14, 0.34), metallic=0.8, bump=0.0, specular=0.5, grime=0.3,
                          edge_color=None, viewport=(0.6, 0.6, 0.6)),
     "kg_castiron": Surface("kg_castiron", (0.55, 0.85), metallic=0.55, bump=0.4, distance=0.0015, grime=0.5,
                            viewport=(0.08, 0.08, 0.08)),
@@ -54,6 +54,8 @@ SURFACES = {
                               edge_color=(0.20, 0.18, 0.17), viewport=(0.3, 0.34, 0.33)),
     "kg_bike_pink": Surface("kg_bike_pink", (0.30, 0.62), bump=0.25, distance=0.0012, grime=0.6,
                             edge_color=(0.22, 0.18, 0.17), viewport=(0.6, 0.35, 0.45)),
+    "kg_bike_tube": Surface("kg_bike_tube", (0.30, 0.62), bump=0.15, distance=0.0008, grime=0.5,
+                            edge_color=(0.30, 0.22, 0.2), viewport=(0.6, 0.35, 0.45)),
     "kg_mower_red": Surface("kg_mower_red", (0.35, 0.75), bump=0.25, distance=0.0015, grime=0.9,
                             edge_color=(0.22, 0.17, 0.15), viewport=(0.5, 0.1, 0.08)),
     "kg_plastic_beige": Surface("kg_plastic_beige", (0.35, 0.65), bump=0.15, distance=0.0008, grime=0.7,
@@ -62,8 +64,22 @@ SURFACES = {
                                edge_color=(0.35, 0.35, 0.36), viewport=(0.15, 0.15, 0.16)),
     "kg_plastic_white": Surface("kg_plastic_white", (0.35, 0.65), bump=0.15, distance=0.0008, grime=0.7,
                                 edge_color=(0.7, 0.68, 0.62), viewport=(0.65, 0.64, 0.6)),
+    "kg_pegboard": Surface("kg_pegboard", (0.7, 0.95), bump=0.9, distance=0.002, specular=0.1, grime=0.8,
+                           viewport=(0.5, 0.38, 0.25)),
+    "kg_aluminum": Surface("kg_aluminum", (0.30, 0.55), metallic=0.8, bump=0.1, distance=0.0008, specular=0.5, grime=0.7,
+                           edge_color=(0.8, 0.8, 0.78), viewport=(0.6, 0.6, 0.6)),
+    "kg_tool_steel": Surface("kg_tool_steel", (0.35, 0.7), metallic=0.8, bump=0.25, distance=0.0012, grime=0.6,
+                             edge_color=(0.65, 0.65, 0.66), viewport=(0.3, 0.3, 0.32)),
+    "kg_toolbox_red": Surface("kg_toolbox_red", (0.35, 0.7), bump=0.25, distance=0.0012, grime=0.8,
+                              edge_color=(0.30, 0.25, 0.22), viewport=(0.5, 0.1, 0.07)),
+    "kg_tin": Surface("kg_tin", (0.35, 0.7), metallic=0.7, bump=0.25, distance=0.0012, grime=0.7,
+                      edge_color=(0.7, 0.7, 0.68), viewport=(0.5, 0.5, 0.5)),
+    "kg_heater": Surface("kg_heater", (0.25, 0.55), bump=0.1, distance=0.001, specular=0.5, grime=0.9,
+                         edge_color=(0.3, 0.28, 0.26), viewport=(0.6, 0.58, 0.52)),
     "kg_rubber": Surface("kg_rubber", (0.70, 0.95), bump=0.2, distance=0.001, grime=0.2, viewport=(0.05, 0.05, 0.05)),
     "kg_tire": Surface("kg_tire", (0.75, 0.95), bump=0.9, distance=0.003, grime=0.4, viewport=(0.05, 0.05, 0.05)),
+    "kg_vinyl_red": Surface("kg_vinyl_red", (0.30, 0.55), bump=0.45, distance=0.0015, specular=0.5, grime=0.7,
+                            edge_color=(0.50, 0.25, 0.20), viewport=(0.35, 0.07, 0.06)),
     "kg_towel": Surface("kg_towel", (0.85, 1.0), bump=0.5, distance=0.0008, specular=0.1, grime=0.5,
                         viewport=(0.5, 0.3, 0.25)),
     "kg_food_old": Surface("kg_food_old", (0.55, 0.9), bump=0.9, distance=0.004, specular=0.2, grime=0.0,
@@ -79,9 +95,25 @@ FLATS = {
     "kg_copper": ((0.60, 0.30, 0.15), 0.34, 0.9),
     "kg_toe": ((0.10, 0.075, 0.055), 0.85, 0.0),
     "kg_gasket": ((0.035, 0.035, 0.035), 0.7, 0.0),
-    "kg_sponge_yellow": ((0.62, 0.54, 0.17), 0.95, 0.0),
-    "kg_sponge_green": ((0.20, 0.34, 0.16), 0.95, 0.0),
-    "kg_detergent": ((0.30, 0.56, 0.28), 0.3, 0.0),
+    "kg_sponge_yellow": ((0.50, 0.40, 0.06), 0.95, 0.0),
+    "kg_sponge_green": ((0.06, 0.18, 0.05), 0.95, 0.0),
+    "kg_detergent": ((0.12, 0.40, 0.12), 0.3, 0.0),
+    "kg_vinyl_black": ((0.06, 0.055, 0.06), 0.45, 0.0),
+    "kg_gauge": ((0.80, 0.78, 0.70), 0.35, 0.0),
+    "kg_speaker": ((0.09, 0.09, 0.10), 0.7, 0.0),
+    "kg_tarp": ((0.035, 0.05, 0.04), 0.7, 0.0),
+    "kg_oil_yellow": ((0.50, 0.36, 0.03), 0.35, 0.0),
+    "kg_hose": ((0.035, 0.09, 0.035), 0.55, 0.0),
+    "kg_cord_orange": ((0.50, 0.17, 0.02), 0.5, 0.0),
+    "kg_amber_glass": ((0.35, 0.18, 0.05), 0.08, 0.0),
+    "kg_trash_bag": ((0.08, 0.08, 0.09), 0.35, 0.0),
+    "kg_coffee": ((0.07, 0.04, 0.025), 0.12, 0.0),
+    "kg_bread_crust": ((0.42, 0.28, 0.14), 0.9, 0.0),
+    "kg_rotten_fruit": ((0.14, 0.04, 0.025), 0.55, 0.0),
+    "kg_mold_orange": ((0.42, 0.22, 0.04), 0.8, 0.0),
+    "kg_banana_black": ((0.05, 0.035, 0.02), 0.6, 0.0),
+    "kg_spice": ((0.45, 0.19, 0.08), 0.9, 0.0),
+    "kg_cardboard_tube": ((0.42, 0.32, 0.20), 0.9, 0.0),
 }
 
 
@@ -173,18 +205,39 @@ def _build_flat(name, color, roughness, metallic):
     return mat
 
 
+PAPERS = ("kg_label_blue", "kg_label_green", "kg_label_red", "kg_label_oil", "kg_label_soap", "kg_drawing_house", "kg_drawing_family", "kg_postit_remedio", "kg_postit_doutor", "kg_calendar", "kg_clock_face")
+
+
+def _build_paper(name):
+    """Papel ou mostrador: textura filtrada, relevo leve do traço (cera, caneta) e brilho fosco."""
+    mat = compat.new_material(name)
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    bsdf = compat.bsdf_of(mat)
+    compat.set_bsdf(bsdf, roughness=0.85, specular=0.2)
+    tex = nodes.new("ShaderNodeTexImage")
+    tex.image = textures.image(name)
+    tex.interpolation = "Linear"
+    links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    compat.add_relief(mat, tex.outputs["Color"], 0.25, 0.0006)
+    return mat
+
+
 DECALS = {
     "kg_oil_stain": ("kg_oil_stain", 0.25),
     "kg_cobweb": ("kg_cobweb", 0.9),
     "kg_grease": ("kg_grease", 0.35),
+    "kg_smudge": ("kg_smudge", 0.45),
     "kg_outline": ("kg_outline", 0.6),
 }
 
 
 def register():
     tex_cozinha_garagem.register()
+    tex_cozinha_papeis.register()
     for name, spec in SURFACES.items():
         materials.register_builder(name, partial(_build_surface, name, spec))
+    for name in PAPERS:
+        materials.register_builder(name, partial(_build_paper, name))
     for name, (color, roughness, metallic) in FLATS.items():
         materials.register_builder(name, partial(_build_flat, name, color, roughness, metallic))
     for name, (texture, roughness) in DECALS.items():

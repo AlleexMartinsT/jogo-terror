@@ -35,7 +35,7 @@ class Field:
 
 @dataclass(frozen=True)
 class LeafSpec:
-    kind: str                # 'six_panel' | 'glazed' | 'screen' | 'flush'
+    kind: str                # 'six_panel' | 'glazed' (vidros na fileira de cima) | 'screen' (tela em cima) | 'flush'
     width: float
     height: float
     fields: tuple
@@ -50,24 +50,28 @@ def _columns(width, count):
 def leaf_spec(kind, width, height):
     """Disposição dos vãos de cada tipo de folha."""
     top = height - TOP_RAIL
-    rows_below = (BOTTOM_RAIL, LOCK_RAIL[0])
+    lowest_row = (BOTTOM_RAIL, LOCK_RAIL[0])
     if kind == "flush":
         return LeafSpec(kind, width, height, ())
-    if kind == "six_panel":
-        rows = [rows_below, (LOCK_RAIL[1], height - TOP_RAIL - 0.315 - MID_RAIL), (height - TOP_RAIL - 0.315, top)]
-        columns = _columns(width, 2)
-        return LeafSpec(kind, width, height, tuple(Field(x0, z0, x1, z1, "panel")
-                                                   for z0, z1 in rows for x0, x1 in columns))
-    upper_kind = "glass" if kind == "glazed" else "screen"
-    lower = tuple(Field(x0, rows_below[0], x1, rows_below[1], "panel") for x0, x1 in _columns(width, 2))
-    upper = (Field(STILE + 0.02, LOCK_RAIL[1], width - STILE - 0.02, top, upper_kind),)
-    return LeafSpec(kind, width, height, lower + upper)
+    columns = _columns(width, 2)
+    if kind == "screen":
+        lower = tuple(Field(x0, lowest_row[0], x1, lowest_row[1], "panel") for x0, x1 in columns)
+        upper = Field(STILE + 0.02, LOCK_RAIL[1], width - STILE - 0.02, top, "screen")
+        return LeafSpec(kind, width, height, lower + (upper,))
+    short_row = (top - 0.315, top)
+    rows = [(lowest_row, "panel"), ((LOCK_RAIL[1], short_row[0] - MID_RAIL), "panel"),
+            (short_row, "glass" if kind == "glazed" else "panel")]
+    return LeafSpec(kind, width, height, tuple(Field(x0, z0, x1, z1, material)
+                                               for (z0, z1), material in rows for x0, x1 in columns))
 
 
-def rail_rects(spec):
-    """Retângulos de travessas e longarinas (para a textura reconhecer fibra horizontal e vertical)."""
-    if not spec.fields:
-        return [(0.0, 0.0, spec.width, spec.height)]
-    return [(0.0, 0.0, STILE, spec.height), (spec.width - STILE, 0.0, spec.width, spec.height),
-            (0.0, 0.0, spec.width, BOTTOM_RAIL), (0.0, LOCK_RAIL[0], spec.width, LOCK_RAIL[1]),
-            (0.0, spec.height - TOP_RAIL, spec.width, spec.height)]
+def rail_bands(spec):
+    """Faixas horizontais (z0, z1) sem vão: onde a fibra da madeira corre ao longo da largura da folha."""
+    bands, cursor = [], 0.0
+    for z0, z1 in sorted({(f.z0, f.z1) for f in spec.fields}):
+        if z0 > cursor + 1e-6:
+            bands.append((cursor, z0))
+        cursor = max(cursor, z1)
+    if cursor < spec.height - 1e-6:
+        bands.append((cursor, spec.height))
+    return bands

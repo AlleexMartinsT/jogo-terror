@@ -22,12 +22,14 @@ class Maps:
     """Conjunto de mapas de uma superfície, todos do mesmo tamanho.
 
     `color`: (h, w, 3) linear. `height`: (h, w) em [0, 1], o branco é o mais alto (a distância real em
-    metros vem da `Surface`). `rough`: (h, w) rugosidade absoluta em [0, 1]. Os dois últimos são opcionais:
-    sem altura o relevo sai da luminância da cor; sem rugosidade vale a constante da superfície.
+    metros vem da `Surface`). `rough`: (h, w) rugosidade absoluta em [0, 1]. `alpha`: (h, w) opacidade,
+    só para vidro e tela. Os três últimos são opcionais: sem altura o relevo sai da luminância da cor;
+    sem rugosidade vale a constante da superfície.
     """
     color: np.ndarray
     height: Optional[np.ndarray] = None
     rough: Optional[np.ndarray] = None
+    alpha: Optional[np.ndarray] = None
 
 
 def rng_for(name):

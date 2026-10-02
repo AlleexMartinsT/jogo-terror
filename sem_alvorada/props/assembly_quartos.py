@@ -10,8 +10,18 @@ import numpy as np
 from mathutils import Matrix
 
 from .. import craft
-from . import kit, materials
+from . import kit, mat_quartos, materials  # noqa: F401  (mat_quartos registra os materiais up_* ao ser importado)
 from .kit import MeshBuilder
+
+
+# receitas de acabamento dos quartos (ver `craft.Finish`). Chanfro de 1 segmento já pega luz e custa um quarto do de 3.
+WOOD = craft.Finish(bevel=0.004, bevel_segments=1, bevel_angle=45.0, smooth_angle=50.0)        # móvel comum
+HERO_WOOD = craft.Finish(bevel=0.006, bevel_segments=2, bevel_angle=45.0, smooth_angle=50.0)    # cama, guarda-roupa
+PAINTED = craft.Finish(bevel=0.005, bevel_segments=1, bevel_angle=45.0, smooth_angle=50.0)
+METAL = craft.Finish(bevel=0.0025, bevel_segments=1, bevel_angle=45.0, smooth_angle=45.0)
+UPHOLSTERY = craft.Finish(bevel=0.0, subsurf=1, smooth_angle=80.0)       # `soft_box` já arredonda; a subdivisão suaviza
+CLOTH = craft.Finish(bevel=0.0, subsurf=0, smooth_angle=65.0)            # pano e papel: só sombreamento
+PLUSH = craft.Finish(bevel=0.0, subsurf=0, smooth_angle=180.0)           # pelúcia e roupa pendurada: tudo liso
 
 
 def segments(count):
@@ -29,9 +39,9 @@ class Assembly:
         self.baked = []
         self._bounds = None
 
-    def part(self, finish=craft.FURNITURE, name=None):
+    def part(self, finish=craft.FURNITURE, name=None, builder_class=MeshBuilder):
         """Novo builder da peça com a receita `finish` (None = malha crua)."""
-        builder = MeshBuilder(name or f"{self.name}_{len(self.builders)}")
+        builder = builder_class(name or f"{self.name}_{len(self.builders)}")
         builder.finish = finish
         self.builders.append(builder)
         return builder
@@ -58,7 +68,7 @@ class Assembly:
                 coords = np.empty(len(mesh.vertices) * 3, np.float32)
                 mesh.vertices.foreach_get("co", coords)
                 coords = coords.reshape(-1, 3)
-                corners.extend((tuple(coords.min(axis=0)), tuple(coords.max(axis=0))))
+                corners.extend((tuple(float(c) for c in coords.min(axis=0)), tuple(float(c) for c in coords.max(axis=0))))
             xs, ys, zs = zip(*corners)
             self._bounds = ((min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs)))
         return self._bounds

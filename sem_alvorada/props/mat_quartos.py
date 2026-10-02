@@ -30,6 +30,7 @@ class Surface:
     relief: tuple = (0.4, 0.002)         # (força, altura em m do branco sobre o preto); None desliga
     dirt: float = 0.0                    # 0..1: manchas de sujeira em ruído 3D por cima
     dirt_color: tuple = (0.08, 0.07, 0.05)
+    dust: float = 0.0                    # 0..1: poeira nas faces voltadas para cima (prateleiras, tampos), em manchas
     alpha: float = 1.0                   # < 1 deixa o material translúcido
     use_texture_alpha: bool = False      # decals e teias: o canal alfa da imagem recorta
     emission: float = 0.0
@@ -40,7 +41,7 @@ SURFACES = {}
 
 
 def _paint(tint, **extra):
-    return Surface("up_paint", tint=tint, scale=2.0, roughness=(0.50, 0.85), relief=(0.35, 0.0012), **extra)
+    return Surface("up_paint", tint=tint, scale=2.0, roughness=(0.50, 0.85), relief=(0.35, 0.0012), dust=0.35, **extra)
 
 
 def _cloth(tint, texture="up_weave", **extra):
@@ -55,10 +56,10 @@ def _fur(tint):
 
 SURFACES.update({
     # madeira (o sufixo _v gira a textura: veio vertical em pernas e montantes)
-    "up_walnut": Surface("up_wood_dark", roughness=(0.32, 0.62), relief=(0.55, 0.0020)),
-    "up_walnut_v": Surface("up_wood_dark", rotate=90, roughness=(0.32, 0.62), relief=(0.55, 0.0020)),
-    "up_oak": Surface("up_wood_mid", roughness=(0.36, 0.66), relief=(0.55, 0.0020)),
-    "up_oak_v": Surface("up_wood_mid", rotate=90, roughness=(0.36, 0.66), relief=(0.55, 0.0020)),
+    "up_walnut": Surface("up_wood_dark", roughness=(0.32, 0.62), relief=(0.55, 0.0020), dust=0.5),
+    "up_walnut_v": Surface("up_wood_dark", rotate=90, roughness=(0.32, 0.62), relief=(0.55, 0.0020), dust=0.5),
+    "up_oak": Surface("up_wood_mid", roughness=(0.36, 0.66), relief=(0.55, 0.0020), dust=0.5),
+    "up_oak_v": Surface("up_wood_mid", rotate=90, roughness=(0.36, 0.66), relief=(0.55, 0.0020), dust=0.5),
     "up_paint_cream": _paint((0.78, 0.70, 0.52)),
     "up_paint_cream_v": _paint((0.78, 0.70, 0.52), rotate=90),
     "up_paint_pink": _paint((0.72, 0.42, 0.50)),
@@ -97,20 +98,26 @@ SURFACES.update({
     "up_rug_runner": Surface("up_rug_runner", roughness=(0.95, 1.0), relief=(0.9, 0.004)),
     "up_rug_cotton": Surface("up_rug_cotton", roughness=(0.95, 1.0), relief=(0.9, 0.004), scale=1.0),
     # duros
-    "up_porcelain": Surface("up_porcelain", scale=1.5, roughness=(0.10, 0.34), relief=(0.12, 0.0004)),
+    "up_porcelain": Surface("up_porcelain", scale=1.5, roughness=(0.10, 0.34), relief=(0.12, 0.0004), dust=0.25),
     "up_ceramic": Surface("up_porcelain", tint=(1.15, 1.02, 0.80), scale=3.0, roughness=(0.14, 0.38), relief=(0.1, 0.0004)),
-    "up_steel": Surface("up_steel", scale=1.5, roughness=(0.38, 0.62), relief=(0.35, 0.0008), metallic=0.25),
-    "up_leather": Surface("up_leather", scale=2.0, roughness=(0.38, 0.70), relief=(0.6, 0.0012)),
+    "up_steel": Surface("up_steel", scale=1.5, roughness=(0.38, 0.62), relief=(0.35, 0.0008), metallic=0.25, dust=0.5),
+    "up_wicker": Surface("up_wicker", scale=3.0, roughness=(0.65, 0.9), relief=(0.9, 0.003)),
+    "up_leather": Surface("up_leather", scale=2.0, roughness=(0.38, 0.70), relief=(0.6, 0.0012), dust=0.3),
     "up_plastic_beige": Surface("up_plastic", tint=(0.62, 0.56, 0.42), scale=2.0, roughness=(0.38, 0.55), relief=(0.15, 0.0004)),
     "up_plastic_black": Surface("up_plastic", tint=(0.07, 0.07, 0.075), scale=2.0, roughness=(0.30, 0.50), relief=(0.15, 0.0004)),
     "up_plastic_gray": Surface("up_plastic", tint=(0.26, 0.26, 0.28), scale=2.0, roughness=(0.35, 0.55), relief=(0.15, 0.0004)),
     "up_plastic_white": Surface("up_plastic", tint=(0.66, 0.65, 0.60), scale=2.0, roughness=(0.30, 0.50), relief=(0.15, 0.0004)),
+    "up_rubber_yellow": Surface(color=(0.62, 0.52, 0.07), roughness=(0.28, 0.28), relief=None),
+    "up_wood_stem": Surface(color=(0.22, 0.15, 0.08), roughness=(0.9, 0.9), relief=None),
+    "up_rug_study": Surface("up_rug_study", roughness=(0.95, 1.0), relief=(0.9, 0.004), sheen=0.2),
     "up_rubber": Surface(color=(0.035, 0.035, 0.04), roughness=(0.85, 0.85)),
     "up_water": Surface(color=(0.004, 0.011, 0.012), roughness=(0.02, 0.02), relief=None),
     "up_glass": Surface(color=(0.55, 0.60, 0.62), roughness=(0.04, 0.04), alpha=0.22, relief=None),
     "up_glass_amber": Surface(color=(0.30, 0.16, 0.04), roughness=(0.05, 0.05), alpha=0.55, relief=None),
     "up_pill_bottle": Surface(color=(0.62, 0.28, 0.04), roughness=(0.18, 0.18), alpha=0.88, relief=None),
     # papéis, livros, quadros, espelhos
+    **{f"up_block_{letter}": Surface(f"up_block_{letter}", roughness=(0.45, 0.7), relief=(0.3, 0.0008)) for letter in "ema"},
+    "up_globe": Surface("up_globe", roughness=(0.3, 0.5), relief=(0.2, 0.001)),
     "up_books": Surface("up_books", roughness=(0.55, 0.85), relief=(0.5, 0.0008)),
     "up_paper_policy": Surface("up_paper_policy", roughness=(0.85, 0.95), relief=(0.15, 0.0003)),
     "up_paper_report": Surface("up_paper_report", roughness=(0.85, 0.95), relief=(0.15, 0.0003)),
@@ -121,11 +128,12 @@ SURFACES.update({
        for kind in ("photo_trio", "photo_mother_child", "photo_father_child", "photo_portrait", "painting_lake",
                     "painting_barn", "painting_still", "wall_map", "calendar", "crayon_house", "crayon_family",
                     "crayon_rabbit")},
-    "up_mirror_cracked": Surface("up_mirror_cracked", roughness=(0.04, 0.3), metallic=0.6, relief=(0.2, 0.0005)),
-    "up_mirror_plain": Surface("up_mirror_plain", roughness=(0.05, 0.35), metallic=0.6, relief=None),
+    "up_mirror_cracked": Surface("up_mirror_cracked", roughness=(0.04, 0.3), metallic=0.3, relief=(0.2, 0.0005)),
+    "up_mirror_plain": Surface("up_mirror_plain", roughness=(0.05, 0.35), metallic=0.3, relief=None),
     "up_curtain_vinyl": Surface("up_curtain_vinyl", scale=1.0, roughness=(0.25, 0.5), relief=(0.2, 0.001), alpha=0.92),
     # decals com alfa
     "up_stain": Surface("up_stain", roughness=(0.35, 0.35), relief=None, use_texture_alpha=True),
+    "up_damp": Surface("up_damp", roughness=(0.9, 0.9), relief=None, use_texture_alpha=True),
     "up_stain_ring": Surface("up_stain_ring", roughness=(0.4, 0.4), relief=None, use_texture_alpha=True),
     "up_handprints": Surface("up_handprints", roughness=(0.45, 0.45), relief=None, use_texture_alpha=True),
     "up_cobweb": Surface("up_cobweb", roughness=(0.9, 0.9), relief=None, use_texture_alpha=True),
@@ -187,6 +195,43 @@ def _dirty(mat, color_socket, coords, spec):
     return _socket(mix, "Result_Color", outputs=True)
 
 
+def _dusty(mat, color_socket, coords, spec):
+    """Poeira só nas faces que olham para cima (normal de mundo · Z), em manchas de ruído: tampos e prateleiras."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    geometry = nodes.new("ShaderNodeNewGeometry")
+    facing_up = nodes.new("ShaderNodeVectorMath")
+    facing_up.operation = "DOT_PRODUCT"
+    facing_up.inputs[1].default_value = (0.0, 0.0, 1.0)
+    top_only = nodes.new("ShaderNodeMapRange")
+    top_only.inputs["From Min"].default_value = 0.75
+    top_only.inputs["From Max"].default_value = 0.98
+    patches = nodes.new("ShaderNodeTexNoise")
+    patches.inputs["Scale"].default_value = 14.0
+    patches.inputs["Detail"].default_value = 4.0
+    patchy = nodes.new("ShaderNodeMapRange")
+    patchy.inputs["From Min"].default_value = 0.30
+    patchy.inputs["From Max"].default_value = 0.70
+    patchy.inputs["To Min"].default_value = 0.25
+    amount = nodes.new("ShaderNodeMath")
+    amount.operation = "MULTIPLY"
+    scaled = nodes.new("ShaderNodeMath")
+    scaled.operation = "MULTIPLY"
+    scaled.inputs[1].default_value = spec.dust
+    mix = nodes.new("ShaderNodeMix")
+    mix.data_type = "RGBA"
+    links.new(geometry.outputs["Normal"], facing_up.inputs[0])
+    links.new(facing_up.outputs["Value"], top_only.inputs["Value"])
+    links.new(coords.outputs["Object"], patches.inputs["Vector"])
+    links.new(patches.outputs["Fac"], patchy.inputs["Value"])
+    links.new(top_only.outputs["Result"], amount.inputs[0])
+    links.new(patchy.outputs["Result"], amount.inputs[1])
+    links.new(amount.outputs["Value"], scaled.inputs[0])
+    links.new(scaled.outputs["Value"], _socket(mix, "Factor_Float"))
+    links.new(color_socket, _socket(mix, "A_Color"))
+    _socket(mix, "B_Color").default_value = (0.36, 0.34, 0.30, 1.0)
+    return _socket(mix, "Result_Color", outputs=True)
+
+
 def _roughness_from_brightness(mat, bsdf, image_color, spec):
     nodes, links = mat.node_tree.nodes, mat.node_tree.links
     gray = nodes.new("ShaderNodeRGBToBW")
@@ -212,6 +257,8 @@ def build_surface(name, spec):
             color = _multiply(mat, color, spec.tint)
         if spec.dirt > 0:
             color = _dirty(mat, color, coords, spec)
+        if spec.dust > 0:
+            color = _dusty(mat, color, coords, spec)
         links.new(color, bsdf.inputs["Base Color"])
         if spec.roughness[0] != spec.roughness[1]:
             _roughness_from_brightness(mat, bsdf, image.outputs["Color"], spec)

@@ -25,6 +25,8 @@ STATIC_TRIANGLE_BUDGET = C.BUDGET_TRIS["scene_total"]
 WORLD_TRIANGLE_BUDGET = C.BUDGET_TRIS["world_total"]
 RAY_HEIGHT = 1.0
 STAIR_TOLERANCE = 0.02
+MAX_TEXTURE_SIDE = 1024
+MAX_TEXTURE_PIXELS = 512 * 512 * 2
 
 
 _STATE = {}
@@ -278,11 +280,23 @@ def test_every_canonical_material_is_built():
     assert materials.build_material("nao_existe") is None
     images = [i for i in bpy.data.images if i.name != "Render Result"]
     assert images and all(i.packed_file is not None for i in images), "imagens precisam estar empacotadas"
-    for mat in bpy.data.materials:
+
+
+def test_world_textures_are_smooth_and_sized():
+    """Texturas do mundo: filtro Linear, no máximo 1024 px de lado e 0,5 Mpx; imagens de canais em Non-Color.
+    (Materiais de outros módulos, como os dos props, têm regras próprias e ficam de fora.)"""
+    world_scene()
+    for name in materials.all_names():
+        mat = bpy.data.materials[name]
         for node in (mat.node_tree.nodes if mat.node_tree else []):
-            if node.bl_idname == "ShaderNodeTexImage":
-                assert node.interpolation == "Closest", f"{mat.name}: interpolação {node.interpolation}"
-                assert max(node.image.size) <= 256, f"{mat.name}: textura {tuple(node.image.size)}"
+            if node.bl_idname != "ShaderNodeTexImage":
+                continue
+            assert node.interpolation == "Linear", f"{name}: interpolação {node.interpolation}"
+            width, height = node.image.size
+            assert max(width, height) <= MAX_TEXTURE_SIDE and width * height <= MAX_TEXTURE_PIXELS, \
+                f"{name}: textura {width}x{height}"
+            if node.image.name.endswith("_channels"):
+                assert node.image.colorspace_settings.name == "Non-Color", node.image.name
 
 
 def test_ceiling_lights():
@@ -305,6 +319,94 @@ def test_ceiling_lights():
     assert all(o.data.energy == o[C.P_LIGHT_ENERGY] for o in lights)
 
 
+INTERIOR_PREFIXES = ("Door", "Window_", "Curtain_", "Stairs_", "Fixture", "Floor_", "Ceiling_", "Walls_", "Trim_",
+                     "WallDetails_", "Decals_", "Webs_", "Peeling_", "Slab_", "ArchFrame_")
+INTERIOR_TRIANGLE_BUDGET = 250_000
+
+
+def interior_objects(scene):
+    return [o for o in scene.objects if o.type == "MESH" and not o.hide_render and o.name.startswith(INTERIOR_PREFIXES)]
+
+
+def test_interior_shell_budget():
+    scene = world_scene()
+    total = sum(triangles(o) for o in interior_objects(scene))
+    print(f"  casca interna: {total} triângulos em {len(interior_objects(scene))} objetos")
+    assert total < INTERIOR_TRIANGLE_BUDGET, total
+
+
+def test_doors_are_built_not_boxed():
+    """Folha com almofadas, três dobradiças e maçanetas torneadas: nada de caixa com relevo."""
+    scene = world_scene()
+    for op in layout.doors():
+        leaf, handle = scene.objects[f"DoorLeaf_{op.id}"], scene.objects[f"DoorHandle_{op.id}"]
+        assert triangles(leaf) >= 300, f"{op.id}: folha com {triangles(leaf)} triângulos"
+        assert triangles(handle) >= 800, f"{op.id}: ferragens com {triangles(handle)} triângulos"
+        assert any(m.name.startswith("brass") for m in handle.data.materials), op.id
+        assert triangles(scene.objects[f"DoorFrame_{op.id}"]) >= 150, f"{op.id}: batente"
+
+
+def test_windows_have_sashes_and_coverings():
+    scene = world_scene()
+    from sem_alvorada.world import windows
+    for op in layout.windows():
+        window = scene.objects[C.N_WINDOW + op.id]
+        assert triangles(window) >= 400, f"{op.id}: janela com {triangles(window)} triângulos"
+        style = windows.STYLES.get(op.id, windows.WindowStyle())
+        curtain = scene.objects.get(f"Curtain_{op.id}")
+        assert (curtain is not None) == (style.covering != "none"), op.id
+        if curtain is not None:
+            assert curtain.parent is window
+
+
+def test_fixtures_come_in_pairs():
+    """O engine esconde todo `Fixture_*` na queda de energia: a peça apagada precisa ficar num objeto à parte."""
+    scene = world_scene()
+    for room, spots in layout.CEILING_LIGHTS.items():
+        for index in range(len(spots)):
+            glow = scene.objects[f"Fixture_{room}_c{index}"]
+            base = scene.objects[f"FixtureBase_{room}_c{index}"]
+            assert glow["sa_glow"] == 1.0 and glow[C.P_ROOM] == room
+            assert "sa_glow" not in base and triangles(base) >= 30
+            assert not base.name.startswith("Fixture_")
+
+
+def test_wood_floors_are_individual_boards():
+    scene = world_scene()
+    for name in ("Floor_L0_wood", "Floor_L1_wood"):
+        floor = scene.objects[name]
+        assert len(floor.data.polygons) > 400, f"{name}: {len(floor.data.polygons)} faces"
+        assert floor.data.uv_layers, f"{name} sem UV (cada tábua sorteia o seu veio)"
+        heights = [(floor.matrix_world @ v.co).z for v in floor.data.vertices]
+        level = layout.LEVEL_Z[1 if name.endswith("L1_wood") else 0]
+        assert max(heights) - level < 0.001 and level - min(heights) < 0.006
+
+
+def test_stairs_have_runner_railing_and_turned_balusters():
+    scene = world_scene()
+    stairs = layout.STAIRS
+    runner = bvh_of(scene, "Stairs_Runner")
+    for i in (2, 7, 12):
+        y = stairs.y0 + (i - 0.5) * stairs.tread_depth
+        hit = runner.ray_cast(Vector((5.6, y, 5.0)), Vector((0, 0, -1)), 6.0)[0]
+        assert hit is not None, f"passadeira ausente no degrau {i}"
+        top = stairs.z0 + i * stairs.rise
+        assert top - 0.001 <= hit.z <= top + 0.04, f"degrau {i}: passadeira a {hit.z - top:.3f} m do topo"
+    railing = scene.objects["Stairs_Railing"]
+    assert triangles(railing) > 8000 and any(m.name == "wood_dark" for m in railing.data.materials)
+    assert not scene.objects["Stairs_Railing"].get(C.P_COL), "balaústres não colidem (os proxies COL_ cuidam disso)"
+
+
+def test_every_textured_material_has_relief():
+    """Superfície visível sem relevo está incompleta: cada material com imagem liga um Bump à textura."""
+    world_scene()
+    for name in materials.all_names():
+        mat = bpy.data.materials[name]
+        if not mat.node_tree or not any(n.bl_idname == "ShaderNodeTexImage" for n in mat.node_tree.nodes):
+            continue
+        assert any(n.bl_idname == "ShaderNodeBump" for n in mat.node_tree.nodes), f"{name} sem Bump"
+
+
 def test_quality_levels():
     scene = world_scene()
     for level in quality.LEVELS:
@@ -320,9 +422,8 @@ def test_quality_levels():
 
 
 def main():
-    tests = [function for name, function in sorted(globals().items(), key=lambda item: _ORDER.index(item[0])
-                                                    if item[0] in _ORDER else 99)
-             if name.startswith("test_") and callable(function)]
+    ranked = sorted(globals().items(), key=lambda item: _ORDER.index(item[0]) if item[0] in _ORDER else 99)
+    tests = [function for name, function in ranked if name.startswith("test_") and callable(function)]
     for function in tests:
         function()
         print(f"ok  {function.__name__}")
@@ -332,6 +433,10 @@ def main():
 _ORDER = ["test_doors", "test_door_leaf_closes_the_gap", "test_windows_garage_and_sun", "test_collision_exists",
           "test_openings_are_passable_and_walls_solid", "test_stairs_match_layout", "test_floor_hole_and_landing",
           "test_normals_face_outward", "test_budget_and_materials", "test_every_canonical_material_is_built",
+          "test_world_textures_are_smooth_and_sized", "test_interior_shell_budget", "test_doors_are_built_not_boxed",
+          "test_windows_have_sashes_and_coverings", "test_fixtures_come_in_pairs",
+          "test_wood_floors_are_individual_boards", "test_stairs_have_runner_railing_and_turned_balusters",
+          "test_every_textured_material_has_relief",
           "test_ceiling_lights", "test_quality_levels"]
 
 

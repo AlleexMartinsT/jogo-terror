@@ -4,7 +4,10 @@ Todas desenham dentro de um `MeshBuilder` já em andamento, nas coordenadas loca
 (ou do bloco `with builder.at(...)` em que forem chamadas).
 """
 import math
+import random
 
+from . import bookcase
+from . import furniture_forms as forms
 
 
 def four_legs(m, x0, y0, x1, y1, height, thickness, mat, z0=0.0):
@@ -30,57 +33,99 @@ def frame_bars(m, cx, cy, cz, width, height, border, depth, mat, facing="front")
     bar(width / 2 + border / 2, 0, border, height)
 
 
+FRAME_PROFILE = ((0.0, 0.0), (0.0, 0.34), (0.22, 0.46), (0.30, 1.0), (0.72, 1.0), (0.84, 0.72), (1.0, 0.55), (1.0, 0.0))
+
+
 def picture(m, cx, cy, cz, width, height, art_mat, facing="front", frame_mat="wood_dark", border=0.035, depth=0.03):
-    """Quadro pendurado: arte dentro de moldura. (cx, cy, cz) é o centro no plano da parede."""
-    offset = {"front": (0, depth / 2 - 0.004), "back": (0, -(depth / 2 - 0.004)),
-              "right": (depth / 2 - 0.004, 0), "left": (-(depth / 2 - 0.004), 0)}[facing]
-    m.panel(cx + offset[0], cy + offset[1], cz, width, height, art_mat, facing)
-    frame_bars(m, cx, cy, cz, width, height, border, depth, frame_mat, facing)
-    back_offset = (-offset[0], -offset[1])
-    m.panel(cx + back_offset[0], cy + back_offset[1], cz, width + 2 * border, height + 2 * border,
-            "wood_dark", {"front": "back", "back": "front", "right": "left", "left": "right"}[facing])
+    """Quadro pendurado: arte atrás de uma moldura de perfil em degraus, com esquadria a 45 graus.
+
+    (cx, cy, cz) é o centro no plano da parede; `depth` é a espessura total; `facing` para onde a frente aponta.
+    """
+    turn = {"front": 0, "right": -90, "back": 180, "left": 90}[facing]
+    with m.at(cx, cy, cz, rz=turn):
+        m.panel(0, -depth / 2 + depth * 0.30, 0, width, height, art_mat, "front")
+        profile = [(border * u, -depth / 2 + depth * v) for u, v in FRAME_PROFILE]
+        forms.mitred_frame(m, 0, 0, 0, width, height, profile, frame_mat)
+        m.panel(0, -depth / 2 + 0.001, 0, width + 2 * border, height + 2 * border, "wood_dark", "back")
 
 
 def table_lamp(m, cx, cy, z0, height, shade_mat="lampshade_lit", base_mat="brass", shade=0.32):
-    """Abajur de mesa: pé torneado e cúpula em tronco."""
-    m.lathe([(0.07, 0), (0.06, 0.01), (0.035, 0.06), (0.05, 0.13 * height / 0.45), (0.018, 0.3 * height / 0.45),
-             (0.014, 0.42 * height / 0.45)], cx, cy, z0, base_mat, seg=8, smooth=False)
-    m.frustum(cx, cy, z0 + height * 0.55, shade, shade, shade * 0.62, shade * 0.62, height * 0.45, shade_mat)
+    """Abajur de mesa: pé torneado em balaústre, soquete e cúpula plissada em tronco de cone."""
+    scale = height / 0.45
+    m.lathe([(0.07, 0.0), (0.072, 0.012), (0.045, 0.03), (0.032, 0.06), (0.058, 0.12 * scale), (0.066, 0.16 * scale),
+             (0.05, 0.21 * scale), (0.022, 0.26 * scale), (0.020, 0.31 * scale), (0.028, 0.325 * scale),
+             (0.012, 0.335 * scale)], cx, cy, z0, base_mat, seg=forms.seg(16), smooth=True)
+    bottom, top, shade_h = shade / 2, shade * 0.31, height * 0.46
+    z_bottom = z0 + height * 0.54
+    pleats = 36
+    rings = []
+    for z, radius in ((z_bottom, bottom), (z_bottom + shade_h, top)):
+        rings.append([(cx + (radius * (1 + 0.025 * (-1) ** i)) * math.cos(2 * math.pi * i / pleats),
+                       cy + (radius * (1 + 0.025 * (-1) ** i)) * math.sin(2 * math.pi * i / pleats), z) for i in range(pleats)])
+    m.loft(rings, shade_mat, False, False, True, orient=False)
+    m.cylinder(cx, cy, z_bottom + shade_h - 0.002, 0.012, 0.014, base_mat, seg=forms.seg(10), smooth=True)
 
 
 def book_row(m, x0, x1, y, z0, depth, height, spine_mat="book_spines"):
-    """Fileira de livros como um bloco com a textura de lombadas na frente (barato e legível)."""
-    m.box((x0 + x1) / 2, y, z0, x1 - x0, depth, height, "wood_dark", mats={"front": spine_mat}, uv=1.0)
+    """Fileira de livros individuais de x0 a x1 sobre uma prateleira em z0 (a altura é o vão disponível)."""
+    rng = random.Random(f"book_row:{x0:.3f}:{x1:.3f}:{z0:.3f}")
+    bookcase.fill_shelf(m, rng, x0, x1, y, z0, height, depth, density=1.0)
 
 
 def lean_book(m, cx, cy, z0, width, height, depth, mat, lean_deg=14):
     """Livro em pé inclinado, para quebrar a linha reta das prateleiras."""
-    with m.at(cx, cy, z0, ry=lean_deg):
-        m.box(0, 0, 0, width, depth, height, mat)
+    rng = random.Random(f"lean_book:{cx:.3f}:{z0:.3f}")
+    bookcase.book(m, cx, cy, z0, width, depth, height, rng, lean=lean_deg)
 
 
 def plate(m, cx, cy, z0, radius=0.12, mat="ceramic_cream", food=None):
-    """Prato raso; `food` acrescenta restos secos no centro."""
-    m.cylinder(cx, cy, z0, radius * 0.62, 0.012, mat, seg=10, r_top=radius)
+    """Prato raso torneado: pé, fundo plano, aba larga com borda enrolada; `food` acrescenta restos secos."""
+    r = radius
+    m.lathe([(0.0, 0.0), (0.56 * r, 0.0), (0.60 * r, 0.004), (0.92 * r, 0.014), (r, 0.0185), (0.985 * r, 0.0205),
+             (0.93 * r, 0.0185), (0.80 * r, 0.0115), (0.58 * r, 0.0062), (0.0, 0.0062)], cx, cy, z0, mat,
+            seg=forms.seg(24), smooth=True)
     if food:
-        m.cylinder(cx, cy, z0 + 0.012, radius * 0.45, 0.006, food, seg=7, r_top=radius * 0.3)
+        m.lathe([(0.0, 0.0), (0.42 * r, 0.0), (0.40 * r, 0.006), (0.25 * r, 0.011), (0.0, 0.012)], cx, cy, z0 + 0.0062, food,
+                seg=forms.seg(12), smooth=True)
 
 
-def mug(m, cx, cy, z0, radius=0.04, height=0.09, mat="ceramic_cream", handle_dir=1):
-    m.cylinder(cx, cy, z0, radius, height, mat, seg=8)
-    m.box(cx + handle_dir * (radius + 0.012), cy, z0 + height * 0.25, 0.024, 0.014, height * 0.5, mat)
+def mug(m, cx, cy, z0, radius=0.04, height=0.09, mat="ceramic_cream", handle_dir=1, coffee=False):
+    """Caneca oca com borda enrolada e alça em C; `coffee=True` deixa um café frio, com película, até o meio."""
+    r, h = radius, height
+    m.lathe([(0.0, 0.0), (0.82 * r, 0.0), (0.88 * r, 0.004), (r, 0.12 * h), (r * 1.03, 0.95 * h), (r * 1.04, h),
+             (r * 0.93, h), (r * 0.90, 0.96 * h), (r * 0.88, 0.12 * h), (0.0, 0.10 * h)], cx, cy, z0, mat,
+            seg=forms.seg(18), smooth=True)
+    for point_a, point_b in _handle_segments(cx, cy, z0, r, h, handle_dir):
+        m.tube(point_a, point_b, 0.0055, mat, seg=6, smooth=True)
+    if coffee:
+        m.cylinder(cx, cy, z0 + h * 0.62, r * 0.89, 0.002, "coffee_cold", seg=forms.seg(18))
+
+
+def _handle_segments(cx, cy, z0, r, h, direction):
+    """Alça em C: cinco trechos de arco entre o corpo e o lado."""
+    points = []
+    for step in range(6):
+        angle = math.radians(-70 + 140 * step / 5)
+        points.append((cx + direction * (r * 0.98 + 0.026 * math.cos(angle)), cy, z0 + h * 0.52 + 0.30 * h * math.sin(angle)))
+    return list(zip(points, points[1:]))
 
 
 def bottle(m, cx, cy, z0, radius, height, mat, cap_mat="black"):
-    m.lathe([(radius, 0), (radius, height * 0.55), (radius * 0.4, height * 0.8), (radius * 0.35, height)],
-            cx, cy, z0, mat, seg=8, smooth=False)
-    m.cylinder(cx, cy, z0 + height, radius * 0.4, height * 0.08, cap_mat, seg=6)
+    """Garrafa de vidro: base chanfrada, corpo, ombro, gargalo com lábio e tampa."""
+    r, h = radius, height
+    m.lathe([(0.0, 0.0), (0.84 * r, 0.0), (r, 0.02 * h), (r, 0.52 * h), (0.86 * r, 0.64 * h), (0.40 * r, 0.76 * h),
+             (0.30 * r, 0.80 * h), (0.30 * r, 0.93 * h), (0.38 * r, 0.945 * h), (0.38 * r, 0.965 * h),
+             (0.0, 0.965 * h)], cx, cy, z0, mat, seg=forms.seg(16), smooth=True)
+    m.cylinder(cx, cy, z0 + 0.945 * h, 0.40 * r, 0.06 * h, cap_mat, seg=forms.seg(12), smooth=True)
 
 
 def candle(m, cx, cy, z0, height=0.2):
-    m.cylinder(cx, cy, z0, 0.05, 0.02, "brass", seg=8, r_top=0.03)
-    m.cylinder(cx, cy, z0 + 0.02, 0.018, height, "candle", seg=6)
-    m.cylinder(cx, cy, z0 + 0.02 + height, 0.002, 0.012, "black", seg=3)
+    """Castiçal de latão com vela de cera apagada: pavio queimado e pingos secos."""
+    m.lathe([(0.0, 0.0), (0.05, 0.0), (0.05, 0.008), (0.02, 0.016), (0.014, 0.03), (0.02, 0.036), (0.028, 0.045),
+             (0.0, 0.045)], cx, cy, z0, "brass_aged", seg=forms.seg(14), smooth=True)
+    m.cylinder(cx, cy, z0 + 0.045, 0.0165, height, "candle", seg=forms.seg(12), r_top=0.0155, smooth=True)
+    m.cylinder(cx, cy, z0 + 0.045 + height, 0.0016, 0.014, "black", seg=5)
+    m.sphere(cx + 0.015, cy, z0 + 0.045 + height * 0.85, 0.0045, "candle", seg=6, rings=4)
 
 
 def paper_sheet(m, cx, cy, z0, width, depth, mat, yaw=0.0, thickness=0.002):
@@ -95,17 +140,19 @@ def handle_bar(m, cx, cy, z, width, mat="brass", outward=1.0):
 
 
 def knob(m, cx, cy, z, mat="brass", outward=1.0):
-    with m.at(cx, cy, z, rx=-90 * outward):
-        m.cylinder(0, 0, 0, 0.013, 0.022, mat, seg=6)
+    forms.round_knob(m, cx, cy, z, 0.016, mat, outward)
 
 
 def drawer_stack(m, cx, front_y, z0, width, height, rows, mat, handle_mat="brass", gap=0.012, outward=1.0):
-    """Frentes de gaveta empilhadas (uma caixa fina por gaveta) com puxador central."""
+    """Frentes de gaveta empilhadas, cada uma com almofada em relevo e puxador de alça."""
     row_h = (height - gap * (rows + 1)) / rows
     for row in range(rows):
         z = z0 + gap + row * (row_h + gap)
         m.box(cx, front_y, z, width - 2 * gap, 0.018, row_h, mat)
-        handle_bar(m, cx, front_y + outward * 0.009, z + row_h / 2 - 0.007, min(0.12, width * 0.25), handle_mat, outward)
+        with m.at(cx, front_y + outward * 0.009, z + row_h / 2, rx=-90 * outward):
+            m.frustum(0, 0, 0, width - 0.09, row_h - 0.05, width - 0.11, row_h - 0.07, 0.005, mat)
+        forms.bail_pull(m, cx, front_y + outward * 0.014, z + row_h / 2 + 0.006, min(0.09, width * 0.28), handle_mat,
+                        facing=outward)
 
 
 def soft_toy_body(m, cx, cy, z0, radius, mat, seg=8):

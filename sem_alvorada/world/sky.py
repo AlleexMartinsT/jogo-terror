@@ -70,6 +70,34 @@ def _math(tree, operation, a, b=None, clamp=False):
     return node.outputs[0]
 
 
+def _cloud_cover(tree, direction):
+    """Fator 0,45..1,3 de nuvens baixas: faixas de neblina que apagam e acendem o brilho do horizonte, sem relevo no céu alto."""
+    noise = tree.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 2.6
+    noise.inputs["Detail"].default_value = 5.0
+    noise.inputs["Distortion"].default_value = 0.6
+    stretch = tree.nodes.new("ShaderNodeVectorMath")
+    stretch.operation = "MULTIPLY"
+    stretch.inputs[1].default_value = (1.0, 1.0, 3.5)
+    tree.links.new(direction, stretch.inputs[0])
+    tree.links.new(stretch.outputs["Vector"], noise.inputs["Vector"])
+    remap = tree.nodes.new("ShaderNodeMapRange")
+    remap.inputs["From Min"].default_value = 0.35
+    remap.inputs["From Max"].default_value = 0.68
+    remap.inputs["To Min"].default_value = 0.45
+    remap.inputs["To Max"].default_value = 1.3
+    tree.links.new(noise.outputs["Fac"], remap.inputs["Value"])
+    return remap.outputs["Result"]
+
+
+def _scaled_color(tree, color, factor):
+    node = tree.nodes.new("ShaderNodeVectorMath")
+    node.operation = "SCALE"
+    tree.links.new(color, node.inputs[0])
+    tree.links.new(factor, node.inputs["Scale"])
+    return node.outputs["Vector"]
+
+
 def build_world(scene):
     world = bpy.data.worlds.get("SA_World") or bpy.data.worlds.new("SA_World")
     scene.world = world
@@ -84,7 +112,7 @@ def build_world(scene):
     tree.links.new(heading.outputs["Vector"], split.inputs["Vector"])
 
     elevation = _math(tree, "POWER", _math(tree, "ABSOLUTE", split.outputs["Z"]), 0.5)
-    horizon = _ramp(tree, HORIZON_RAMP, elevation)
+    horizon = _scaled_color(tree, _ramp(tree, HORIZON_RAMP, elevation), _cloud_cover(tree, heading.outputs["Vector"]))
 
     toward_sun = tree.nodes.new("ShaderNodeVectorMath")
     toward_sun.operation = "DOT_PRODUCT"

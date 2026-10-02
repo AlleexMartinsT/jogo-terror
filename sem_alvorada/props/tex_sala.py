@@ -13,7 +13,6 @@ material, que gira o mapeamento em 90 graus.
 """
 import math
 import random
-import zlib
 from dataclasses import dataclass
 
 import numpy as np
@@ -141,7 +140,7 @@ class WoodLook:
     pores: float          # profundidade dos poros
 
 
-WALNUT = WoodLook(dark=(0.10, 0.055, 0.03), light=(0.36, 0.21, 0.11), rings=46, wander=7.0, pores=0.7)
+WALNUT = WoodLook(dark=(0.12, 0.065, 0.036), light=(0.33, 0.19, 0.105), rings=46, wander=7.0, pores=0.7)
 OAK = WoodLook(dark=(0.26, 0.16, 0.085), light=(0.60, 0.43, 0.25), rings=34, wander=6.0, pores=0.9)
 
 
@@ -156,7 +155,7 @@ def wood_veneer(gen, look, size=512):
     late_wood = smoothstep(0.35, 0.9, ring) * (1 - smoothstep(0.9, 1.0, ring))
     fibre = fbm(gen, shape, size // 4, 2, 3)
     pore = smoothstep(0.58, 0.85, fbm(gen, shape, size // 2, 4, 2)) * look.pores
-    tone = np.clip(0.28 + 0.50 * late_wood + 0.55 * (fibre - 0.5), 0, 1)
+    tone = np.clip(0.30 + 0.40 * late_wood + 0.50 * (fibre - 0.5), 0, 1)
     color = mix(look.light, look.dark, tone) * (1 - 0.40 * pore)[..., None]
     color *= (0.90 + 0.20 * fbm(gen, shape, 3, 2, 3))[..., None]          # uma tábua mais clara que a vizinha
     scratches = scratch_mask(gen, shape, 34)
@@ -212,15 +211,15 @@ def velvet_cloth(gen, size=512):
 def aged_leather(gen, size=512):
     """Couro com grão de seixos, dobras suaves onde se senta e desgaste claro nas áreas de apoio."""
     shape = (size, size)
-    f1, f2 = worley(gen, shape, 72)
+    f1, f2 = worley(gen, shape, 96)
     grain = smoothstep(0.0, 0.35, f2 - f1)                       # 0 nas juntas entre seixos
     folds = np.abs(fbm(gen, shape, 3, 6, 3) - 0.5) * 2           # vales longos e rasos
-    crease = 1 - smoothstep(0.0, 0.10, folds)
-    worn = smoothstep(0.5, 0.78, fbm(gen, shape, 3, 3, 4))
-    luminance = 0.62 + 0.08 * grain - 0.16 * crease + 0.20 * worn + 0.12 * (fbm(gen, shape, 6, 6, 3) - 0.5)
-    greasy = blotches(gen, shape, 5, 0.66, 0.86)
-    rgb = mix(np.ones(3), (0.62, 0.52, 0.42), greasy * 0.45) * np.clip(luminance, 0, 1)[..., None]
-    return Raster(rgb, 0.55 + 0.25 * grain - 0.3 * crease)
+    crease = 1 - smoothstep(0.0, 0.18, folds)
+    worn = smoothstep(0.55, 0.8, fbm(gen, shape, 3, 3, 4))
+    luminance = 0.66 + 0.10 * grain - 0.07 * crease + 0.12 * worn + 0.07 * (fbm(gen, shape, 5, 5, 3) - 0.5)
+    greasy = blotches(gen, shape, 5, 0.68, 0.88)
+    rgb = mix(np.ones(3), (0.66, 0.58, 0.50), greasy * 0.30) * np.clip(luminance, 0, 1)[..., None]
+    return Raster(rgb, 0.55 + 0.25 * grain - 0.25 * crease)
 
 
 def plaid_wool(gen, size=256):
@@ -374,6 +373,21 @@ def book_atlas(gen, size=ATLAS_SIZE):
     return Raster(rgb, height)
 
 
+def table_linen(gen, size=512):
+    """Linho de toalha de mesa: trama fina cor de creme, bordado em listra, anel de copo e uma queimadura."""
+    shape = (size, size)
+    weave = _weave_height(shape, 170)
+    v, u = _grid(shape)
+    luminance = 0.80 + 0.10 * weave + 0.06 * (fbm(gen, shape, size // 2, size // 2, 1) - 0.5)
+    stripe = ((np.abs(((v * 4) % 1.0) - 0.5) < 0.012) | (np.abs(((v * 4) % 1.0) - 0.42) < 0.004)).astype(np.float32)
+    rgb = np.repeat(luminance[..., None], 3, axis=2) * np.array([1.0, 0.97, 0.88], np.float32)
+    rgb = mix(rgb, (0.46, 0.40, 0.30), stripe * 0.65)
+    ring = np.abs(np.hypot(u - 0.3, v - 0.62) - 0.07)
+    rgb *= (1 - 0.16 * (1 - smoothstep(0.0, 0.010, ring)))[..., None] * np.array([1.0, 0.97, 0.92], np.float32)
+    rgb *= (1 - 0.16 * blotches(gen, shape, 5, 0.70, 0.88))[..., None]
+    return Raster(rgb, 0.25 + 0.55 * weave)
+
+
 def china_porcelain(gen, size=256):
     """Louça de casa de família: branco encardido, filete dourado desbotado e rachaduras finas de esmalte."""
     shape = (size, size)
@@ -421,6 +435,81 @@ def coir_doormat(gen, shape=(340, 512)):
     return Raster(rgb, 0.3 + 0.6 * fibre)
 
 
+# traços (x, y) de 0 a 1, com y para baixo, de cada algarismo romano numa caixa de 0,6 x 1
+_ROMAN_STROKES = {
+    "I": (((0.3, 0.0), (0.3, 1.0)),),
+    "V": (((0.0, 0.0), (0.3, 1.0)), ((0.6, 0.0), (0.3, 1.0))),
+    "X": (((0.0, 0.0), (0.6, 1.0)), ((0.6, 0.0), (0.0, 1.0))),
+}
+
+
+def clock_dial(gen, size=512):
+    """Mostrador de relógio de pé: marfim envelhecido, algarismos romanos, trilho dos minutos e florões nos cantos."""
+    canvas = textures.Canvas(size, size, (0.70, 0.64, 0.46, 1.0))
+    ink, gilt = (0.09, 0.07, 0.05, 1.0), (0.55, 0.42, 0.16, 1.0)
+    center = size / 2
+    canvas.rect(0, 0, size, 14, gilt)
+    canvas.rect(0, size - 14, size, size, gilt)
+    canvas.rect(0, 0, 14, size, gilt)
+    canvas.rect(size - 14, 0, size, size, gilt)
+    for corner_x, corner_y in ((0, 0), (size, 0), (0, size), (size, size)):
+        canvas.ellipse(corner_x, corner_y, size * 0.17, size * 0.17, gilt)
+        canvas.ellipse(corner_x, corner_y, size * 0.13, size * 0.13, (0.66, 0.60, 0.44, 1.0))
+    canvas.ellipse(center, center, center * 0.80, center * 0.80, ink)
+    canvas.ellipse(center, center, center * 0.795, center * 0.795, (0.74, 0.68, 0.50, 1.0))
+    canvas.ellipse(center, center, center * 0.60, center * 0.60, ink)
+    canvas.ellipse(center, center, center * 0.595, center * 0.595, (0.74, 0.68, 0.50, 1.0))
+    for minute in range(60):
+        angle = math.radians(minute * 6)
+        long = minute % 5 == 0
+        inner, outer = (0.72 if long else 0.75) * center, 0.79 * center
+        canvas.line(center + inner * math.sin(angle), center - inner * math.cos(angle),
+                    center + outer * math.sin(angle), center - outer * math.cos(angle), ink, 4.5 if long else 2.2)
+    numerals = ["XII", "I", "II", "III", "IIII", "V", "VI", "VII", "VIII", "IX", "X", "XI"]
+    for hour, text in enumerate(numerals):
+        angle = math.radians(hour * 30)
+        cx, cy = center + 0.66 * center * math.sin(angle), center - 0.66 * center * math.cos(angle)
+        glyph_h = 0.088 * size
+        glyph_w = 0.6 * glyph_h
+        for index, glyph in enumerate(text):
+            offset_x = (index - (len(text) - 1) / 2) * glyph_w * 1.45
+            for (x0, y0), (x1, y1) in _ROMAN_STROKES[glyph]:
+                local = [((x0 - 0.3) * glyph_h + offset_x, (y0 - 0.5) * glyph_h),
+                         ((x1 - 0.3) * glyph_h + offset_x, (y1 - 0.5) * glyph_h)]
+                rotated = [(cx + px * math.cos(angle) - py * math.sin(angle), cy + px * math.sin(angle) + py * math.cos(angle))
+                           for px, py in local]
+                canvas.line(*rotated[0], *rotated[1], ink, 5.5 if glyph == "I" else 4.2)
+    canvas.px[..., :3] *= (0.92 + 0.14 * fbm(gen, (size, size), 5, 5, 3))[..., None]
+    canvas.px[..., :3] *= (1 - 0.35 * blotches(gen, (size, size), 4, 0.62, 0.85))[..., None]
+    height = 0.6 + 0.0 * canvas.px[..., 0]
+    return Raster(canvas.px[..., :3], height)
+
+
+def hires_art(small, gen, factor=4):
+    """Foto ou quadro do kit (64 x 48 px) ampliado e suavizado: papel desbotado sob o vidro, sem degraus de pixel."""
+    pixels = np.repeat(np.repeat(small.px, factor, axis=0), factor, axis=1)
+    canvas = textures.Canvas(pixels.shape[1], pixels.shape[0])
+    canvas.px = pixels.copy()
+    canvas.blur(factor // 2 + 1)
+    rgb = canvas.px[..., :3] * (0.94 + 0.10 * gen.random(canvas.px.shape[:2]))[..., None]
+    height, width = rgb.shape[:2]
+    streak = np.clip(1 - np.abs((np.arange(width)[None, :] / width) * 1.2 - (np.arange(height)[:, None] / height) - 0.25) * 9, 0, 1)
+    rgb = rgb + 0.05 * streak[..., None]                                   # reflexo do vidro
+    return Raster(rgb)
+
+
+ART_SOURCES = {"photo_trio": ("photo", "trio"), "photo_mother_child": ("photo", "mother_child"),
+               "photo_father_child": ("photo", "father_child"), "photo_portrait": ("photo", "portrait"),
+               "painting_lake": ("painting", "lake"), "painting_barn": ("painting", "barn"),
+               "painting_still": ("painting", "still")}
+
+
+def _hires(name):
+    kind, variant = ART_SOURCES[name]
+    draw = textures.draw_family_photo if kind == "photo" else textures.draw_painting
+    return lambda rng: hires_art(draw(rng, variant), numpy_generator(rng))
+
+
 # ---------------------------------------------------------------------------
 # Registro de texturas
 # ---------------------------------------------------------------------------
@@ -444,7 +533,10 @@ textures.TEXTURES.update({
     "sala_rug_pile": _seeded(pile_texture),
     "sala_book_atlas": _seeded(book_atlas),
     "sala_porcelain": _seeded(china_porcelain),
+    "sala_linen": _seeded(table_linen),
     "sala_envelope": _seeded(envelope_front),
+    "sala_clock_dial": _seeded(clock_dial),
+    **{f"art_{name}": _hires(name) for name in ART_SOURCES},
 })
 
 
@@ -469,10 +561,50 @@ class Surface:
     coat: float = 0.0                 # verniz sobre a madeira
     sheen: float = 0.0                # penugem do veludo
     rotate: bool = False              # veio na vertical
+    box: bool = False                 # projeção em caixa pelas coordenadas do objeto (peças orgânicas, sem UV útil)
+    dust: float = 0.0                 # quanto de poeira clara assenta nas faces voltadas para cima (0 a 1)
 
 
 def _input(bsdf, names):
     return next((bsdf.inputs[n] for n in names if n in bsdf.inputs), None)
+
+
+def _add_dust(tree, color, roughness, coords, amount):
+    """Poeira: nas faces voltadas para cima (normal do mundo) e em manchas, clareia a cor e deixa a superfície áspera."""
+    links = tree.links
+    normal = tree.nodes.new("ShaderNodeNewGeometry")
+    split = tree.nodes.new("ShaderNodeSeparateXYZ")
+    links.new(normal.outputs["Normal"], split.inputs["Vector"])
+    upward = tree.nodes.new("ShaderNodeMapRange")
+    upward.inputs["From Min"].default_value, upward.inputs["From Max"].default_value = 0.78, 0.98
+    links.new(split.outputs["Z"], upward.inputs["Value"])
+    patches = tree.nodes.new("ShaderNodeTexNoise")
+    patches.inputs["Scale"].default_value, patches.inputs["Detail"].default_value = 14.0, 5.0
+    links.new(coords.outputs["Object"], patches.inputs["Vector"])
+    patchy = tree.nodes.new("ShaderNodeMapRange")
+    patchy.inputs["From Min"].default_value, patchy.inputs["From Max"].default_value = 0.35, 0.65
+    patchy.inputs["To Min"].default_value = 0.35
+    links.new(patches.outputs["Fac"], patchy.inputs["Value"])
+    mask = tree.nodes.new("ShaderNodeMath")
+    mask.operation = "MULTIPLY"
+    links.new(upward.outputs["Result"], mask.inputs[0])
+    links.new(patchy.outputs["Result"], mask.inputs[1])
+    strength = tree.nodes.new("ShaderNodeMath")
+    strength.operation = "MULTIPLY"
+    strength.inputs[1].default_value = amount
+    links.new(mask.outputs["Value"], strength.inputs[0])
+    dusty = tree.nodes.new("ShaderNodeMix")
+    dusty.data_type = "RGBA"
+    dusty.inputs[7].default_value = (0.40, 0.38, 0.34, 1.0)
+    links.new(strength.outputs["Value"], dusty.inputs[0])
+    links.new(color, dusty.inputs[6])
+    rough = tree.nodes.new("ShaderNodeMath")
+    rough.operation = "MULTIPLY_ADD"
+    rough.use_clamp = True
+    rough.inputs[1].default_value = 0.35
+    links.new(strength.outputs["Value"], rough.inputs[0])
+    links.new(roughness, rough.inputs[2])
+    return dusty.outputs[2], rough.outputs["Value"]
 
 
 def build_surface(name, spec):
@@ -482,14 +614,17 @@ def build_surface(name, spec):
     bsdf = compat.bsdf_of(mat)
     coords = tree.nodes.new("ShaderNodeTexCoord")
     mapping = tree.nodes.new("ShaderNodeMapping")
-    mapping.inputs["Scale"].default_value = (1 / spec.tile, 1 / spec.tile, 1.0)
+    scale = 1 / spec.tile
+    mapping.inputs["Scale"].default_value = (scale, scale, scale if spec.box else 1.0)
     if spec.rotate:
         mapping.inputs["Rotation"].default_value = (0.0, 0.0, math.radians(90))
-    links.new(coords.outputs["UV"], mapping.inputs["Vector"])
+    links.new(coords.outputs["Object" if spec.box else "UV"], mapping.inputs["Vector"])
     image = tree.nodes.new("ShaderNodeTexImage")
     image.image = textures.image(spec.texture)
     image.interpolation = "Linear"
     image.extension = "REPEAT"
+    if spec.box:
+        image.projection, image.projection_blend = "BOX", 0.25
     links.new(mapping.outputs["Vector"], image.inputs["Vector"])
 
     color = image.outputs["Color"]
@@ -500,8 +635,6 @@ def build_surface(name, spec):
         links.new(color, tinted.inputs[6])
         tinted.inputs[7].default_value = (*spec.tint, 1.0)
         color = tinted.outputs[2]
-    links.new(color, bsdf.inputs["Base Color"])
-
     gray = tree.nodes.new("ShaderNodeRGBToBW")
     links.new(image.outputs["Color"], gray.inputs["Color"])
     ranged = tree.nodes.new("ShaderNodeMapRange")
@@ -509,7 +642,11 @@ def build_surface(name, spec):
     ranged.inputs["To Min"].default_value = min(1.0, spec.roughness + spec.rough_swing)
     ranged.inputs["To Max"].default_value = max(0.05, spec.roughness - spec.rough_swing)
     links.new(gray.outputs["Val"], ranged.inputs["Value"])
-    links.new(ranged.outputs["Result"], bsdf.inputs["Roughness"])
+    roughness = ranged.outputs["Result"]
+    if spec.dust:
+        color, roughness = _add_dust(tree, color, roughness, coords, spec.dust)
+    links.new(color, bsdf.inputs["Base Color"])
+    links.new(roughness, bsdf.inputs["Roughness"])
 
     compat.set_bsdf(bsdf, specular=spec.specular, metallic=spec.metallic)
     coat = _input(bsdf, ("Coat Weight", "Clearcoat"))
@@ -561,44 +698,77 @@ def build_rug(name, pattern, size):
     return mat
 
 
+def build_scuffed_metal(name, color, roughness, metallic=1.0, scale=70.0, bump=0.12):
+    """Metal riscado sem imagem: ruído fino no relevo e na rugosidade, para o brilho não ser uma cor chapada."""
+    mat = compat.new_material(name)
+    tree, links = mat.node_tree, mat.node_tree.links
+    bsdf = compat.bsdf_of(mat)
+    coords = tree.nodes.new("ShaderNodeTexCoord")
+    noise = tree.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = scale
+    noise.inputs["Detail"].default_value = 6.0
+    noise.inputs["Roughness"].default_value = 0.7
+    links.new(coords.outputs["Object"], noise.inputs["Vector"])
+    ranged = tree.nodes.new("ShaderNodeMapRange")
+    ranged.inputs["To Min"].default_value, ranged.inputs["To Max"].default_value = roughness + 0.18, max(0.05, roughness - 0.12)
+    links.new(noise.outputs["Fac"], ranged.inputs["Value"])
+    links.new(ranged.outputs["Result"], bsdf.inputs["Roughness"])
+    bump_node = tree.nodes.new("ShaderNodeBump")
+    bump_node.inputs["Strength"].default_value, bump_node.inputs["Distance"].default_value = bump, 0.0006
+    links.new(noise.outputs["Fac"], bump_node.inputs["Height"])
+    links.new(bump_node.outputs["Normal"], bsdf.inputs["Normal"])
+    compat.set_bsdf(bsdf, base_color=color, metallic=metallic, specular=0.5)
+    mat.diffuse_color = (*color, 1.0)
+    return mat
+
+
 SURFACES = {
-    "walnut": Surface("sala_walnut", 0.6, roughness=0.42, specular=0.45, bump=0.45, coat=0.25),
-    "walnut_v": Surface("sala_walnut", 0.6, roughness=0.42, specular=0.45, bump=0.45, coat=0.25, rotate=True),
-    "oak": Surface("sala_oak", 0.6, roughness=0.5, specular=0.4, bump=0.5, coat=0.18),
-    "oak_v": Surface("sala_oak", 0.6, roughness=0.5, specular=0.4, bump=0.5, coat=0.18, rotate=True),
+    "walnut": Surface("sala_walnut", 0.6, roughness=0.42, specular=0.45, bump=0.45, coat=0.25, dust=0.2),
+    "walnut_v": Surface("sala_walnut", 0.6, roughness=0.42, specular=0.45, bump=0.45, coat=0.25, rotate=True, dust=0.2),
+    "oak": Surface("sala_oak", 0.6, roughness=0.5, specular=0.4, bump=0.5, coat=0.18, dust=0.2),
+    "oak_v": Surface("sala_oak", 0.6, roughness=0.5, specular=0.4, bump=0.5, coat=0.18, rotate=True, dust=0.2),
     "sofa_fabric": Surface("sala_upholstery", 0.45, tint=(0.34, 0.42, 0.56), roughness=0.9, rough_swing=0.12,
-                           specular=0.12, bump=1.1, bump_distance=0.0025, sheen=0.35),
+                           specular=0.12, bump=0.7, bump_distance=0.002, sheen=0.35, box=True, dust=0.12),
     "armchair_fabric": Surface("sala_upholstery", 0.45, tint=(0.38, 0.41, 0.30), roughness=0.9, rough_swing=0.12,
-                               specular=0.12, bump=1.1, bump_distance=0.0025, sheen=0.3),
-    "velvet_burgundy": Surface("sala_velvet", 0.4, tint=(0.52, 0.12, 0.12), roughness=0.85, rough_swing=0.1,
-                               specular=0.2, bump=0.5, sheen=0.9),
-    "velvet_pink": Surface("sala_velvet", 0.4, tint=(0.68, 0.40, 0.46), roughness=0.85, rough_swing=0.1,
-                           specular=0.2, bump=0.5, sheen=0.9),
+                               specular=0.12, bump=0.7, bump_distance=0.002, sheen=0.3, box=True, dust=0.12),
+    "velvet_burgundy": Surface("sala_velvet", 0.4, tint=(0.28, 0.03, 0.05), roughness=0.9, rough_swing=0.1,
+                               specular=0.15, bump=0.5, sheen=0.25, box=True),
+    "velvet_pink": Surface("sala_velvet", 0.4, tint=(0.55, 0.30, 0.36), roughness=0.9, rough_swing=0.1,
+                           specular=0.15, bump=0.5, sheen=0.25, box=True),
     "leather_aged": Surface("sala_leather", 0.5, tint=(0.52, 0.30, 0.18), roughness=0.5, rough_swing=0.25,
-                            specular=0.4, bump=0.9, bump_distance=0.002, coat=0.15),
+                            specular=0.4, bump=0.9, bump_distance=0.002, coat=0.15, box=True, dust=0.12),
     "leather_black": Surface("sala_leather", 0.5, tint=(0.16, 0.15, 0.15), roughness=0.45, rough_swing=0.25,
-                             specular=0.45, bump=0.9, bump_distance=0.002, coat=0.2),
-    "wool_plaid": Surface("sala_plaid", 0.32, roughness=0.95, rough_swing=0.05, specular=0.05, bump=1.2,
-                          bump_distance=0.003, sheen=0.5),
+                             specular=0.45, bump=0.9, bump_distance=0.002, coat=0.2, box=True),
+    "wool_plaid": Surface("sala_plaid", 0.32, roughness=0.95, rough_swing=0.05, specular=0.05, bump=1.0,
+                          bump_distance=0.003, sheen=0.5, box=True),
     "book_atlas": Surface("sala_book_atlas", 1.0, roughness=0.6, rough_swing=0.2, specular=0.3, bump=0.8,
                           bump_distance=0.0015),
+    "tablecloth": Surface("sala_linen", 0.5, roughness=0.95, rough_swing=0.05, specular=0.05, bump=0.8, bump_distance=0.002,
+                          box=True),
     "porcelain_old": Surface("sala_porcelain", 0.45, roughness=0.2, rough_swing=0.1, specular=0.6, bump=0.15,
                              bump_distance=0.0005, coat=0.4),
     "envelope": Surface("sala_envelope", 1.0, roughness=0.85, specular=0.1, bump=0.0),
+    **{f"art_{name}": Surface(f"art_{name}", 1.0, roughness=0.3, rough_swing=0.0, specular=0.6, bump=0.0) for name in ART_SOURCES},
+    "clock_dial": Surface("sala_clock_dial", 1.0, roughness=0.55, specular=0.3, bump=0.0),
 }
 
 materials.SPECS.update({
     "dust_cloth": materials.Spec(color=(0.015, 0.014, 0.013), roughness=0.95),
-    "gilt": materials.Spec(color=(0.55, 0.42, 0.16), roughness=0.28, metallic=1.0),
-    "brass_aged": materials.Spec(color=(0.38, 0.27, 0.10), roughness=0.4, metallic=1.0),
     "lampshade_pleated": materials.Spec(color=(0.52, 0.42, 0.26), roughness=0.9, emission=1.4,
                                         emit_color=(1.0, 0.70, 0.36)),
-    "glass_green": materials.Spec(color=(0.05, 0.28, 0.14), roughness=0.08, emission=0.5, emit_color=(0.25, 0.9, 0.4)),
+    "glass_green": materials.Spec(color=(0.01, 0.07, 0.03), roughness=0.08, emission=0.10, emit_color=(0.20, 0.8, 0.35)),
     "wine_dark": materials.Spec(color=(0.025, 0.004, 0.008), roughness=0.1),
     "cut_crystal": materials.Spec(color=(0.62, 0.66, 0.68), roughness=0.04, alpha=0.3),
     "napkin_cloth": materials.Spec(color=(0.55, 0.50, 0.40), roughness=0.95),
+    "rug_fringe": materials.Spec(color=(0.45, 0.40, 0.30), roughness=0.95),
+    "food_old": materials.Spec(color=(0.085, 0.06, 0.03), roughness=0.85),
+    "coffee_cold": materials.Spec(color=(0.045, 0.022, 0.010), roughness=0.22),
 })
 
+for _name, _color, _roughness in (("brass_aged", (0.42, 0.30, 0.11), 0.38), ("gilt", (0.58, 0.44, 0.17), 0.3),
+                                  ("steel_filing", (0.17, 0.19, 0.17), 0.5)):
+    materials.register_builder(_name, lambda n=_name, c=_color, r=_roughness: build_scuffed_metal(
+        n, c, r, metallic=0.7 if n == "steel_filing" else 1.0))
 for _name, _spec in SURFACES.items():
     materials.register_builder(_name, lambda n=_name, s=_spec: build_surface(n, s))
 for _name, _pattern in (("rug_living", "sala_rug_living"), ("rug_den", "sala_rug_den"), ("rug_dining", "sala_rug_dining")):

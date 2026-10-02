@@ -1,158 +1,127 @@
-"""Garagem: bancada, painel de ferramentas, prateleiras, freezer, bicicleta da Emma, cortador de grama."""
+"""Garagem: peças públicas (`make_*`) que montam e colocam bancada, painel, estante, freezer, bicicleta e o resto.
+
+O desenho de cada peça fica nos módulos `garage_*`. Alturas lidas por outros módulos: o tampo da bancada (0,90 m,
+pilha 5) e a tábua do degrau de 1 m da estante (guia do reboque, nota 7).
+"""
 import math
 
-from . import parts
-from .kit import MeshBuilder
+from . import garage_bench as bench
+from . import garage_bicycle as bicycle
+from . import garage_clutter as clutter
+from . import garage_machines as machines
+from . import garage_storage as storage
+from .kg_shapes import Assembly, front_limited_box
 from .placement import against_wall, flush_center, floor_z, place
 
-BENCH_TOP = 0.90
-SHELF_TIERS = (0.30, 0.65, 1.00, 1.35, 1.70)
-NOTE_TIER = 1.00                                   # o degrau de 1 m recebe o guia do reboque
-NOTE_TIER_LIMIT = 0.55
+BENCH_TOP = bench.TOP
+SHELF_TIERS = storage.SHELF_TIERS
+NOTE_TIER = storage.NOTE_TIER
+NOTE_TIER_LIMIT = storage.NOTE_TIER_LIMIT
 
 
 def make_workbench(ctx, room, x, y, yaw, *, anchor=None, z=None):
-    """Bancada de madeira grossa sob a janela leste, com morsa, ferramentas, latas e a prateleira de baixo cheia."""
-    length, depth = 2.0, 0.65
-    cy = flush_center(room, x, y, yaw, depth)
-    m = MeshBuilder("workbench")
-    with m.at(0, cy, 0):
-        m.box(0, 0, BENCH_TOP - 0.07, length, depth, 0.07, "wood_mid")
-        m.box(0, -depth / 2 + 0.03, BENCH_TOP, length, 0.03, 0.10, "wood_dark")
-        parts.four_legs(m, -length / 2 + 0.04, -depth / 2 + 0.04, length / 2 - 0.04, depth / 2 - 0.04, BENCH_TOP - 0.07, 0.08,
-                        "wood_dark")
-        m.box(0, 0, 0.28, length - 0.16, depth - 0.1, 0.04, "wood_dark")
-        m.box(-0.5, 0.0, 0.32, 0.5, 0.36, 0.28, "cardboard")
-        m.cylinder(0.3, 0.0, 0.32, 0.1, 0.22, "toy_red", seg=8)
-        m.cylinder(0.6, 0.05, 0.32, 0.08, 0.16, "steel_dark", seg=8)
-        m.box(0.86, 0.1, BENCH_TOP, 0.18, 0.14, 0.16, "steel_dark")             # morsa
-        m.box(0.86, 0.22, BENCH_TOP + 0.09, 0.14, 0.05, 0.05, "steel_dark")
-        m.tube((0.86, 0.3, BENCH_TOP + 0.11), (0.86, 0.42, BENCH_TOP + 0.11), 0.01, "chrome", seg=5)
-        m.bar((0.35, 0.12, BENCH_TOP), (0.55, 0.05, BENCH_TOP), 0.03, "steel_dark")   # martelo
-        m.box(0.58, 0.04, BENCH_TOP, 0.05, 0.05, 0.05, "coat_dark")
-        m.bar((0.2, 0.05, BENCH_TOP + 0.01), (0.34, 0.16, BENCH_TOP + 0.01), 0.016, "toy_yellow")
-        m.cylinder(-0.35, -0.05, BENCH_TOP, 0.05, 0.12, "glass_clear", seg=8)
-        m.cylinder(-0.35, -0.05, BENCH_TOP, 0.04, 0.05, "steel_dark", seg=8)
-        m.soft_box(-0.85, 0.0, BENCH_TOP, 0.26, 0.15, 0.16, "plastic_gray", radius=0.02, edge=0.01)     # rádio
-        m.box(-0.85, 0.076, BENCH_TOP + 0.08, 0.14, 0.004, 0.06, "black")
-        parts.paper_sheet(m, 0.05, 0.16, BENCH_TOP, 0.30, 0.10, "coat_dark", 0.4, 0.02)                 # pano de graxa
-    return place(ctx, m, room, "workbench", x, y, yaw, z, name="workbench", anchor=anchor, collision_top=BENCH_TOP)
+    """Bancada de tábuas grossas sob a janela leste, com gavetas, morsa e o que ficou em cima quando o Dan parou."""
+    cy = flush_center(room, x, y, yaw, bench.DEPTH)
+    asm = Assembly("workbench", wear={"grime_height": 0.6, "seed": 43})
+    with asm.at(0, cy, 0):
+        bench.build_bench(asm, ctx.rng)
+    low, high = asm.bounds()
+    body = [(low[0], cy - bench.DEPTH / 2, 0.0, high[0], cy + bench.DEPTH / 2, BENCH_TOP)]
+    return place(ctx, asm, room, "workbench", x, y, yaw, z, name="workbench", anchor=anchor, collision=body)
 
 
 def make_tool_panel(ctx, room, wall, along, z_center, *, width=1.7, height=0.9):
-    """Painel perfurado com as silhuetas das ferramentas; uma ferramenta falta, deixando só o contorno."""
+    """Painel perfurado com as ferramentas penduradas; o contorno do martelo ficou vazio."""
     x, y, yaw = against_wall(room, wall, along, 0.0)
-    m = MeshBuilder("tool_panel")
-    m.box(0, 0.012, -height / 2, width, 0.024, height, "wood_mid")
-    for i in range(6):
-        tx = -width / 2 + 0.2 + i * (width - 0.4) / 5
-        if i == 3:
-            m.box(tx, 0.026, -0.62, 0.05, 0.004, 0.32, "black")               # contorno de uma ferramenta que sumiu
-            continue
-        m.bar((tx, 0.05, -0.2), (tx, 0.05, -0.6 - 0.05 * (i % 3)), 0.03, "steel_dark")
-        m.box(tx, 0.05, -0.16, 0.06, 0.04, 0.08, "toy_red" if i % 2 else "toy_yellow")
-    m.tube((-width / 2 + 0.15, 0.06, -0.72), (width / 2 - 0.2, 0.06, -0.78), 0.012, "coat_dark", seg=4)
-    return place(ctx, m, room, "tool_panel", x, y, yaw, floor_z(room) + z_center + height / 2, mode="wall")
-
-
-def _stock_shelf(m, rng, tier, first, limit, depth):
-    """Enche uma prateleira de `first` a `limit` (coordenadas locais) com caixas, latas e potes, sem passar do fim."""
-    cursor = first
-    while cursor < limit - 0.12:
-        span = min(rng.uniform(0.18, 0.4), limit - cursor)
-        kind = rng.random()
-        if kind < 0.4:
-            m.box(cursor + span / 2, 0.0, tier + 0.005, span, depth - 0.08, rng.uniform(0.16, 0.28), "cardboard",
-                  mats={"front": "cardboard_toys" if rng.random() < 0.3 else "cardboard"}, uv=1.6)
-        elif kind < 0.75:
-            for k in range(max(1, int((span - 0.06) / 0.13))):
-                m.cylinder(cursor + 0.07 + k * 0.13, 0.0, tier + 0.005, 0.06, rng.uniform(0.14, 0.2), "can_labels", seg=8)
-        else:
-            m.cylinder(cursor + span / 2, 0.0, tier + 0.005, 0.07, 0.2, "glass_clear", seg=8)
-        cursor += span + rng.uniform(0.02, 0.08)
+    asm = Assembly("tool_panel")
+    storage.build_tool_panel(asm, ctx.rng, width, height)
+    return place(ctx, asm, room, "tool_panel", x, y, yaw, floor_z(room) + z_center + height / 2, mode="wall")
 
 
 def make_garage_shelves(ctx, room, wall, along, *, width=2.5, depth=0.4, height=1.85):
-    """Estante de aço com caixas, latas de tinta e potes; o degrau de 1 m fica livre para o guia do reboque."""
+    """Estante de aço com caixas, latas e potes; o degrau de 1 m fica livre no trecho do guia do reboque."""
     x, y, yaw = against_wall(room, wall, along, depth)
-    m = MeshBuilder("garage_shelves")
-    for sx in (-width / 2 + 0.03, width / 2 - 0.03, 0.0):
-        for sy in (-depth / 2 + 0.02, depth / 2 - 0.02):
-            m.box(sx, sy, 0, 0.04, 0.04, height, "steel_dark")
-    for tier in SHELF_TIERS:
-        m.box(0, 0, tier - 0.02, width, depth, 0.025, "wood_mid")
-    for tier in SHELF_TIERS:
-        # a estante gira 180 graus: o trecho onde o guia repousa (x ~ 15.2) fica no lado +X local
-        limit = NOTE_TIER_LIMIT if tier == NOTE_TIER else width / 2 - 0.08
-        _stock_shelf(m, ctx.rng, tier, -width / 2 + 0.1, limit, depth)
+    asm = Assembly("garage_shelves", wear={"grime_height": 0.9, "seed": 47})
+    storage.build_shelves(asm, ctx.rng, width, depth, height)
     # proxy só no fundo da estante: o jogador para na beira dela e o guia do reboque fica fora do volume
     back_only = [(-width / 2, -depth / 2, 0.0, width / 2, -depth / 2 + 0.12, height)]
-    return place(ctx, m, room, "garage_shelves", x, y, yaw, collision=back_only)
+    return place(ctx, asm, room, "garage_shelves", x, y, yaw, collision=back_only)
 
 
 def make_chest_freezer(ctx, room, wall, along):
-    """Freezer horizontal velho, amarelado, com a tampa cheia de riscos e um cadeado."""
-    width, depth, height = 1.1, 0.7, 0.9
-    x, y, yaw = against_wall(room, wall, along, depth)
-    m = MeshBuilder("chest_freezer")
-    m.soft_box(0, 0, 0.06, width, depth, height - 0.1, "appliance_panel", radius=0.03, edge=0.02)
-    m.box(0, 0.016, height - 0.06, width + 0.03, depth + 0.03, 0.06, "plastic_beige")
-    m.box(0, depth / 2 + 0.02, height - 0.05, 0.3, 0.03, 0.03, "chrome")
-    m.box(0, depth / 2 + 0.005, height - 0.16, 0.05, 0.02, 0.06, "steel_dark")
-    for fx in (-0.45, 0.45):
-        m.box(fx, 0, 0, 0.08, depth - 0.1, 0.06, "black")
-    return place(ctx, m, room, "chest_freezer", x, y, yaw)
+    """Freezer horizontal velho e amarelado, com a tampa riscada e um cadeado."""
+    x, y, yaw = against_wall(room, wall, along, machines.FREEZER_D)
+    asm = Assembly("chest_freezer", wear={"grime_height": 0.6, "seed": 53})
+    machines.build_freezer(asm, ctx.rng)
+    return place(ctx, asm, room, "chest_freezer", x, y, yaw, collision=front_limited_box(asm, machines.FREEZER_D / 2 + 0.01))
 
 
 def make_water_heater(ctx, room, x, y):
-    m = MeshBuilder("water_heater")
-    m.cylinder(0, 0, 0.0, 0.27, 1.45, "plastic_beige", seg=10, caps=(True, True))
-    m.cylinder(0, 0, 1.45, 0.27, 0.05, "plastic_beige", seg=10, r_top=0.2)
-    for sx in (-0.08, 0.08):
-        m.tube((sx, 0, 1.5), (sx, 0, 1.85), 0.022, "brass", seg=6)
-    m.box(0.0, -0.28, 0.35, 0.16, 0.02, 0.22, "black")
-    m.box(0.0, -0.291, 0.4, 0.10, 0.004, 0.06, "paper_white")
-    return place(ctx, m, room, "water_heater", x, y, 0.0)
+    """Aquecedor de água com canos de cobre, válvula de alívio, exaustão até o forro e a poça de ferrugem."""
+    asm = Assembly("water_heater", wear={"grime_height": 0.9, "seed": 59})
+    machines.build_heater(asm, ctx.rng)
+    r = machines.HEATER_RADIUS
+    return place(ctx, asm, room, "water_heater", x, y, math.pi,
+                 collision=[(-r - 0.02, -r - 0.02, 0.0, r + 0.02, r + 0.02, machines.HEATER_HEIGHT)])
 
 
 def make_lawn_mower(ctx, room, x, y, yaw):
-    """Cortador de grama a gasolina, de lado, com o cabo dobrado."""
-    m = MeshBuilder("lawn_mower")
-    m.soft_box(0, 0, 0.12, 0.5, 0.6, 0.16, "toy_red", radius=0.06, edge=0.03)
-    m.cylinder(0.0, -0.05, 0.28, 0.1, 0.09, "steel_dark", seg=8)
-    m.box(0, 0.14, 0.14, 0.5, 0.06, 0.06, "black")
-    for sx in (-0.27, 0.27):
-        for sy, radius in ((0.22, 0.07), (-0.22, 0.10)):
-            with m.at(sx, sy, radius, ry=90):
-                m.cylinder(0, 0, -0.025, radius, 0.05, "tire_rubber", seg=8)
-    for sx in (-0.2, 0.2):
-        m.bar((sx, -0.28, 0.24), (sx * 0.9, -0.55, 0.95), 0.025, "steel_dark")
-    m.bar((-0.18, -0.55, 0.95), (0.18, -0.55, 0.95), 0.03, "black")
-    m.cylinder(0.14, 0.2, 0.28, 0.035, 0.05, "toy_yellow", seg=6)
-    return place(ctx, m, room, "lawn_mower", x, y, yaw)
+    """Cortador de grama a gasolina de empurrar, com o saco de grama e o guidão dobrado."""
+    asm = Assembly("lawn_mower", wear={"grime_height": 0.4, "seed": 61})
+    machines.build_mower(asm, ctx.rng)
+    return place(ctx, asm, room, "lawn_mower", x, y, yaw)
 
 
 def make_kids_bicycle(ctx, room, x, y, yaw):
-    """Bicicleta rosa da Emma com rodinhas de apoio, cestinha e fitas no guidão, encostada na parede."""
-    m = MeshBuilder("kids_bicycle")
-    wheel_r, wheelbase = 0.20, 0.72
-    for wy in (-wheelbase / 2, wheelbase / 2):
-        m.torus(0, wy, wheel_r, wheel_r, 0.018, "tire_rubber", seg=12, seg_minor=4, ry=90)
-        for spoke in range(4):
-            angle = spoke * math.pi / 4
-            m.bar((0, wy - wheel_r * 0.95 * math.sin(angle), wheel_r - wheel_r * 0.95 * math.cos(angle)),
-                  (0, wy + wheel_r * 0.95 * math.sin(angle), wheel_r + wheel_r * 0.95 * math.cos(angle)), 0.006, "chrome")
-    rear_hub, front_hub = (0, -wheelbase / 2, wheel_r), (0, wheelbase / 2, wheel_r)
-    seat_post, head = (0, -0.16, 0.55), (0, 0.26, 0.60)
-    for a, b in ((rear_hub, (0, -0.02, 0.30)), ((0, -0.02, 0.30), front_hub), (seat_post, (0, -0.02, 0.30)),
-                 (seat_post, head), ((0, -0.02, 0.30), head), (head, front_hub), (rear_hub, seat_post)):
-        m.tube(a, b, 0.014, "painted_pink", seg=5)
-    m.box(0, -0.2, 0.55, 0.11, 0.2, 0.04, "coat_dark")
-    m.tube((-0.15, 0.24, 0.70), (0.15, 0.24, 0.70), 0.011, "chrome", seg=5)
-    m.tube(head, (0, 0.24, 0.70), 0.012, "chrome", seg=5)
-    for side in (-1, 1):
-        m.bar((side * 0.15, 0.24, 0.70), (side * 0.16, 0.24, 0.52), 0.006, "fabric_red")
-        m.tube((side * 0.03, -wheelbase / 2, wheel_r), (side * 0.13, -wheelbase / 2, 0.08), 0.008, "steel_dark", seg=4)
-        m.cylinder(side * 0.13, -wheelbase / 2, 0.0, 0.055, 0.03, "tire_rubber", seg=6)
-    m.box(0, 0.30, 0.62, 0.20, 0.13, 0.11, "linen_sheet")
-    return place(ctx, m, room, "kids_bicycle", x, y, yaw)
+    """Bicicleta rosa da Emma, com rodinhas, cestinha, fitas no guidão e o capacete."""
+    asm = Assembly("kids_bicycle", wear={"grime_height": 0.5, "seed": 67})
+    bicycle.build_bicycle(asm, ctx.rng)
+    return place(ctx, asm, room, "kids_bicycle", x, y, yaw)
+
+
+def make_box_pile(ctx, room, x, y, yaw, layers, label, name=None):
+    """Pilha de caixas de papelão fechadas com fita e rótulo à caneta."""
+    asm = Assembly(name or "boxes")
+    storage.box_pile(asm, ctx.rng, layers, label)
+    return place(ctx, asm, room, "boxes", x, y, yaw, name=name)
+
+
+def _decor(ctx, room, kind, build, x, y, z, yaw, mode="decor", name=None, wear=None):
+    asm = Assembly(name or kind, wear=wear)
+    build(asm, ctx.rng)
+    return place(ctx, asm, room, kind, x, y, yaw, z, mode=mode, name=name)
+
+
+def make_floor_stain(ctx, room, x, y, yaw, width, depth, name):
+    """Mancha de óleo no concreto: um quad com alfa 6 mm acima do piso."""
+    asm = Assembly(name)
+    asm.round.panel(0, 0, 0, width, depth, "kg_oil_stain", "top")
+    return place(ctx, asm, room, "decal", x, y, yaw, floor_z(room) + 0.006, mode="flat", name=name)
+
+
+def make_cobweb(ctx, room, wall, along, z_top, size, name):
+    """Teia de aranha na quina de uma parede com o forro: um quad com alfa, o vértice do leque no canto de cima."""
+    x, y, yaw = against_wall(room, wall, along, 0.0)
+    asm = Assembly(name)
+    asm.round.panel(size / 2 * (1 if along >= 0 else -1), 0.004, -size / 2, size, size, "kg_cobweb", "front")
+    return place(ctx, asm, room, "cobweb", x, y, yaw, floor_z(room) + z_top, mode="wall", name=name)
+
+
+def make_ambience(ctx, room):
+    """Tralhas e marcas de uso: a casa guardou o que o Dan deixou onde parou."""
+    _decor(ctx, room, "ladder", clutter.build_ladder, 13.45, 6.57, floor_z(room), math.pi)
+    _decor(ctx, room, "yard_tools", clutter.build_tool_leaners, 12.5, 6.58, floor_z(room), math.pi)
+    _decor(ctx, room, "toolbox", clutter.build_toolbox, 17.35, 4.75, floor_z(room), math.radians(-70))
+    _decor(ctx, room, "jerrycan", clutter.build_jerrycan, 18.12, 0.42, floor_z(room), math.radians(90))
+    _decor(ctx, room, "spare_tires", clutter.build_tires, 12.62, 5.0, floor_z(room), 0.0)
+    for index, (x, y, tone) in enumerate(((17.6, 6.55, "toy_blue"), (17.62, 6.25, "toy_green"))):
+        _decor(ctx, room, "paint_can", lambda asm, rng, c=tone: storage.paint_can(asm, 0.0, 0.0, 0.0, c, True), x, y,
+               floor_z(room), 0.0, name=f"paint_can_floor_{index + 1}")
+    _decor(ctx, room, "hose", clutter.build_hose, 18.34, 5.2, floor_z(room) + 1.45, -math.pi / 2, mode="wall")
+    _decor(ctx, room, "extension_cord", clutter.build_cord_coil, 12.42, 1.35, 0.907, 0.4)
+    _decor(ctx, room, "bare_bulb", clutter.build_bare_bulb, 17.2, 3.2, floor_z(room) + 2.15, 0.0, mode="wall")
+    make_floor_stain(ctx, room, 17.2, 0.75, 0.6, 0.6, 0.45, "stain_mower_garage")
+    make_floor_stain(ctx, room, 15.9, 5.2, -0.5, 0.5, 0.35, "stain_door_garage")
+    make_cobweb(ctx, room, "N", 13.3, 2.6, 0.55, "cobweb_garage_nw")
+    make_cobweb(ctx, room, "W", 6.7, 2.6, 0.5, "cobweb_garage_w")
+    make_cobweb(ctx, room, "N", 18.2, 2.6, 0.5, "cobweb_garage_ne")

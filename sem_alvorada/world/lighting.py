@@ -4,14 +4,13 @@ As luzes de ambiente não projetam sombra (só a lanterna projeta): isso mantém
 viewport baixo. Em troca elas atravessam paredes, então cada uma tem distância de corte
 (`cutoff_distance`) para não iluminar cômodos distantes.
 """
-import math
 from dataclasses import dataclass
 
 import bpy
 
 from .. import conventions as C
 from .. import layout
-from .meshkit import MeshBuilder
+from . import fixtures
 
 # A luz fica 36 cm abaixo do forro: assim `layout.room_at` a classifica no andar certo
 # (o limite do andar de cima é z >= 2,3) e o forro não estoura em branco logo acima dela.
@@ -52,11 +51,7 @@ def _place_lamp(ctx, room_id, index, x, y):
     lamp = LAMPS.get(room_id, DEFAULT_LAMP)
     ceiling_z = layout.CEIL_Z[room.level]
     name = f"{room_id}_c{index}"
-
-    fixture = _fixture_mesh(f"Fixture_{name}", lamp.kind, x, y, ceiling_z).build(
-        ctx, C.COL_WORLD, origin=(x, y, ceiling_z))
-    fixture["sa_glow"] = 1.0
-    fixture[C.P_ROOM] = room_id
+    fixtures.build(ctx, room_id, index, x, y, ceiling_z, lamp.kind)
 
     data = bpy.data.lights.new(f"{C.N_LIGHT}{name}", "POINT")
     data.energy = lamp.energy
@@ -72,24 +67,6 @@ def _place_lamp(ctx, room_id, index, x, y):
     obj[C.P_LIGHT_ENERGY] = lamp.energy
     obj[C.P_LIGHT_FLICKER] = lamp.flicker
     obj[C.P_LIGHT_KIND] = lamp.kind
-
-
-def _fixture_mesh(name, kind, x, y, ceiling_z):
-    """Luminária colada ao forro: tubo fluorescente na cozinha e garagem, globo nos demais."""
-    builder = MeshBuilder(name)
-    if kind == "fluorescent":
-        builder.box(x - 0.66, y - 0.12, ceiling_z - 0.07, x + 0.66, y + 0.12, ceiling_z, "metal", skip=("+z",))
-        builder.box(x - 0.6, y - 0.07, ceiling_z - 0.085, x + 0.6, y + 0.07, ceiling_z - 0.07,
-                    "fixture_glow", skip=("+z",))
-        return builder
-    sides = 10
-    builder.cylinder(x, y, ceiling_z - 0.03, ceiling_z, 0.22, "trim_white", sides=sides, caps=False)
-    builder.cylinder(x, y, ceiling_z - 0.11, ceiling_z - 0.03, 0.17, "fixture_glow", sides=sides,
-                     radius_top=0.2, caps=False)
-    disc = [(x + 0.17 * math.cos(2 * math.pi * i / sides), y + 0.17 * math.sin(2 * math.pi * i / sides),
-             ceiling_z - 0.11) for i in range(sides)]
-    builder.polygon(disc[::-1], "fixture_glow")
-    return builder
 
 
 def apply_power(scene, on):
