@@ -157,12 +157,13 @@ def _simulate(frame, style, u0, u1, rng):
     rows = max(6, round((top - bottom) / CELL))
     mesh = craft.cloth_grid(rest, top - bottom, columns, rows)
     phases = [rng.random() * math.tau for _ in range(3)]
+    flare = 0.12 if style.length == "short" else 0.55      # a cortina de café não passa da moldura
     for vertex in mesh.vertices:
         i, j = round(vertex.co.x / rest * columns), round(vertex.co.y / (top - bottom) * rows)
         t = j / rows
         spread = _smoothstep(0.0, 0.55, t)
         gathered_u = u0 + gathered * i / columns
-        flared_u = (u0 + u1) / 2 + (i / columns - 0.5) * gathered * (1.0 + 0.55 * spread)
+        flared_u = (u0 + u1) / 2 + (i / columns - 0.5) * gathered * (1.0 + flare * spread)
         u = gathered_u * (1 - spread) + flared_u * spread
         x = gathered * i / columns
         wave = (0.7 * math.sin(math.tau * x / PLEAT_PERIOD + phases[0])
