@@ -39,16 +39,16 @@ ROOM = {"x": 2.4, "y": 1.2, "alvo": (3.4, 4.2)}          # sala de estar: piso d
 
 # nome: dict(pitch graus, tecla/andar, mãos). "mao": lado -> (alvo na câmera, rotação em graus, preset de dedos)
 CENAS = {
-    "parado_olhando_baixo": dict(pitch=-72, texto="parado, olhando quase para baixo: peito, cinto, coxas e botas"),
-    "parado_olhando_45": dict(pitch=-48, texto="parado, olhando 48 graus para baixo"),
-    "meio_passo": dict(pitch=-70, andar=0.46, texto="no meio de um passo (a passada mostra o pé da frente)"),
-    "agachado": dict(pitch=-62, agachar=True, texto="agachado, olhando para baixo"),
-    "correndo": dict(pitch=-38, andar=0.5, correr=True, texto="correndo"),
-    "maos_flat": dict(pitch=-8, maos=True, mao={"R": ((0.19, -0.13, -0.40), (-10, 0, 0), "flat"), "L": ((-0.19, -0.13, -0.40), (-10, 0, 0), "flat")},
+    "parado_olhando_baixo": dict(pitch=-82, texto="parado, olhando quase para baixo: camisa, cinto, coxas e botas"),
+    "parado_olhando_45": dict(pitch=-52, texto="parado, olhando 52 graus para baixo"),
+    "meio_passo": dict(pitch=-78, andar=0.46, texto="no meio de um passo (a passada mostra o pé da frente)"),
+    "agachado": dict(pitch=-76, agachar=True, texto="agachado, olhando para baixo: coxas, joelhos e botas"),
+    "correndo": dict(pitch=-45, andar=0.5, correr=True, texto="correndo"),
+    "maos_flat": dict(pitch=-4, maos=True, mao={"R": ((0.17, -0.04, -0.42), (-40, 0, 0), "flat"), "L": ((-0.17, -0.04, -0.42), (-40, 0, 0), "flat")},
                       texto="as duas mãos erguidas, dedos esticados (flat)"),
-    "maos_pinch": dict(pitch=-8, maos=True, mao={"R": ((0.16, -0.12, -0.36), (0, 0, 20), "pinch"), "L": ((-0.16, -0.12, -0.36), (0, 0, -20), "pinch")},
+    "maos_pinch": dict(pitch=-4, maos=True, mao={"R": ((0.12, -0.03, -0.40), (-25, 0, 25), "pinch"), "L": ((-0.12, -0.03, -0.40), (-25, 0, -25), "pinch")},
                        texto="as duas mãos erguidas, pinça (pinch)"),
-    "maos_punho": dict(pitch=-8, maos=True, mao={"R": ((0.17, -0.15, -0.38), (0, 0, 60), "fist"), "L": ((-0.17, -0.15, -0.38), (0, 0, -60), "fist")},
+    "maos_punho": dict(pitch=-4, maos=True, mao={"R": ((0.15, -0.05, -0.40), (-20, 0, 60), "fist"), "L": ((-0.15, -0.05, -0.40), (-20, 0, -60), "fist")},
                        texto="as duas mãos erguidas, punhos fechados (fist)"),
     "lanterna_na_mao": dict(pitch=-14, texto="partida normal: lanterna na mão direita, esquerda solta (Hands)"),
 }

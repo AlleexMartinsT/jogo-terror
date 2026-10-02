@@ -16,7 +16,7 @@ from .. import layout
 from . import actions as act
 from . import anim
 from .body_actor import BodyDriver, BodyPose, HandActor, HandKey, root_for
-from .scene_intro import LYING_EYE, SIT_EYE
+from .scene_intro import LYING_EYE, SIT_EYE, SIT_YAW
 from .camera import Hand, Impact, Rig, axis_rotation
 from .curves import Curve, Key, Path
 from .staging import (BED_LAMP, CAR_CABIN, CLOCK_GLOW, CLOCK_NAMES, DAWN_LIGHT, DRIVEWAY_LIGHT, END_CLOCK,
@@ -60,10 +60,9 @@ def build():
     car_home = (car.x, car.y, car.z)
     road = layout.ENTITY_ROAD_POS
     car_stop = (car.x, road[1] + 6.0, car.z - 0.054)
-    chest = (road[0], road[1], road[2] + 1.45)
 
-    def figure(stage):
-        return stage.to_local("Car", chest)
+    def figure_head(stage):
+        return stage.to_local("Car", (road[0], road[1], road[2] + 2.05))
 
     def car_point(dx=0.0, dy=0.0, dz=0.0):
         return lambda st: add(st.mount_transform("Car")[0], (dx, dy, dz))
@@ -83,8 +82,11 @@ def build():
         mount=C.OBJ_CAR)
     # o motorista: sentado na pose "driving"; para alcançar a ignição o corpo todo se inclina para a frente com a câmera
     drive_root, lean_root = root_for("driving", DRIVER, 0.0), root_for("driving", LEAN, 0.0)
+    peer_root = root_for("driving", (-0.40, -0.12, 1.12), 0.0)
     body_a = (BodyPose(0.0, "driving", 0.0, Path([Key(0.0, drive_root), Key(1.2, lean_root), Key(3.0, lean_root),
-                                                     Key(4.4, drive_root)]), 0.0, mount=C.OBJ_CAR),)
+                                                     Key(4.4, drive_root), Key(SHOT_B + 0.4, drive_root),
+                                                     Key(SHOT_B + 2.6, peer_root), Key(SHOT_C, peer_root)]), 0.0,
+                       mount=C.OBJ_CAR),)
     rim = lambda angle: add(HUB, (0.19 * math.cos(angle), 0.19 * 0.423 * math.sin(angle), 0.19 * 0.906 * math.sin(angle)))  # noqa: E731
 
     def toward_hub(point):
@@ -152,10 +154,11 @@ def build():
 
     # ---------------------------------------------------------------- B: a rua, o Alto, a estática
     dur_b = SHOT_C - SHOT_B
+    peer = (-0.40, -0.12, 1.12)                      # o rosto dele é alto demais para o para-brisa: o motorista se inclina e se abaixa
     rig_b = Rig(
-        eye=path((0.0, (-0.45, -0.55, 1.25), True), (dur_b, (-0.45, -0.55, 1.25), True)),
-        look=looking((0.0, AHEAD, True), (1.4, AHEAD), (3.0, figure), (dur_b, figure, True)),
-        fov=curve((0.0, 64.0), (2.0, 54.0), (4.5, 46.0), (dur_b, 40.0)),
+        eye=path((0.0, add(DRIVER, (0.0, 0.0, 0.03)), True), (2.6, peer), (dur_b, add(peer, (0.0, 0.03, 0.0)), True)),
+        look=looking((0.0, AHEAD, True), (1.2, AHEAD), (3.0, figure_head), (dur_b, figure_head, True)),
+        fov=curve((0.0, 64.0), (2.0, 56.0), (4.5, 48.0), (dur_b, 42.0)),
         roll=curve((0.0, 0.0), (dur_b, 0.0)),
         hand=Hand("drive", Curve([(0.0, 0.7), (dur_b, 1.3)])),
         focus=curve((0.0, 3.2), (1.2, 0.9), (2.4, 0.9), (3.4, 6.0), (dur_b, 6.0)),
@@ -188,14 +191,14 @@ def build():
         focus=curve((0.0, 0.55), (3.0, 0.55), (6.0, 2.0), (dur_c, 2.0)),
         fstop=curve((0.0, 2.2), (6.0, 3.6), (dur_c, 4.5)))
     lying_root = root_for("lying_bed", near_clock, -math.pi / 2)
-    sit_root = root_for("sit_bed", sitting, 0.0)
+    sit_root = root_for("sit_bed", sitting, SIT_YAW)
     stand_yaw = math.radians(-25.0)
     stand_root = root_for("stand", window, stand_yaw)
     body_c = (BodyPose(0.0, "lying_bed", 0.0, lying_root, -math.pi / 2),
               BodyPose(3.0, "sit_bed", 2.6, Path([Key(3.0, lying_root), Key(5.6, sit_root)]),
-                       Curve([(3.0, -math.pi / 2), (5.6, 0.0)])),
+                       Curve([(3.0, -math.pi / 2), (5.6, SIT_YAW)])),
               BodyPose(9.0, "stand", 2.0, Path([Key(9.0, sit_root), Key(11.0, stand_root)]),
-                       Curve([(9.0, 0.0), (11.0, stand_yaw)])))
+                       Curve([(9.0, SIT_YAW), (11.0, stand_yaw)])))
     cues_c = (
         *(Cue(0.0, act.stop_actor(key)) for key in ("car", "bunny", "wheel", "key", "key_charm", "dash", "dash2", "dash3",
                                                       "rollup")),

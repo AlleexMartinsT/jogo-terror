@@ -166,11 +166,11 @@ def build_thumb(side="R", material=SKIN, uv_rect=None, tile=0.12):
     total = curve.length
     edges = np.cumsum([0.0] + lengths)
     # (distância ao CMC, raio lateral, espessura): o polegar é mais largo que um dedo e achatado
-    profile = [(-0.022, 0.0178, 0.0150), (-0.010, 0.0184, 0.0150), (0.000, 0.0178, 0.0142), (0.014, 0.0156, 0.0126),
-               (0.032, 0.0134, 0.0114), (edges[1] - 0.006, 0.0120, 0.0105), (edges[1], 0.0126, 0.0110),
-               (edges[1] + 0.006, 0.0118, 0.0102), (edges[1] + 0.020, 0.0112, 0.0098), (edges[2] - 0.005, 0.0108, 0.0094),
-               (edges[2], 0.0114, 0.0099), (edges[2] + 0.005, 0.0107, 0.0092), (edges[2] + 0.018, 0.0100, 0.0087),
-               (total - 0.004, 0.0084, 0.0076), (total - 0.0012, 0.0060, 0.0056)]
+    profile = [(-0.022, 0.0170, 0.0145), (-0.010, 0.0172, 0.0143), (0.000, 0.0164, 0.0134), (0.014, 0.0140, 0.0116),
+               (0.032, 0.0118, 0.0102), (edges[1] - 0.006, 0.0106, 0.0094), (edges[1], 0.0112, 0.0099),
+               (edges[1] + 0.006, 0.0105, 0.0092), (edges[1] + 0.020, 0.0099, 0.0088), (edges[2] - 0.005, 0.0096, 0.0085),
+               (edges[2], 0.0101, 0.0090), (edges[2] + 0.005, 0.0095, 0.0083), (edges[2] + 0.018, 0.0089, 0.0079),
+               (total - 0.004, 0.0075, 0.0069), (total - 0.0012, 0.0054, 0.0050)]
     rings = []
     for d, rx, ry in profile:
         pos, tan = curve(max(d, 0.0) / total) if d >= 0 else (curve(0.0)[0] + curve(0.0)[1] * d, curve(0.0)[1])
@@ -208,7 +208,7 @@ def build_nail(finger, side="R", material=NAIL):
     l1, l2, l3 = S.PHALANX[finger]
     knuckle = wrist + f * S.MCP_FORWARD[finger] + t * S.MCP_LATERAL[finger]
     radius = _FINGER_R[finger]
-    b_start, b_end = l1 + l2 + 0.28 * l3, l1 + l2 + l3 - 0.0012
+    b_start, b_end = l1 + l2 + 0.36 * l3, l1 + l2 + l3 - 0.0014
     cols, rows = 7, 8
     points = np.zeros((rows, cols, 3))
     for r in range(rows):
@@ -217,7 +217,7 @@ def build_nail(finger, side="R", material=NAIL):
         k_r = float(np.interp(b, [row[0] for row in finger_profile(finger)], [row[1] for row in finger_profile(finger)]))
         k_t = float(np.interp(b, [row[0] for row in finger_profile(finger)], [row[2] for row in finger_profile(finger)]))
         rx, ry = radius * k_r, radius * k_t * 0.94
-        half = nail_half_width(v, rx * 0.74)
+        half = nail_half_width(v, rx * 0.64)
         for c in range(cols):
             u = -1.0 + 2.0 * c / (cols - 1)
             a = half * u
@@ -239,12 +239,12 @@ def _thumb_nail(side, material):
     points = np.zeros((rows, cols, 3))
     for r in range(rows):
         v = r / (rows - 1)
-        d = total - 0.020 + 0.0185 * v
+        d = total - 0.0165 + 0.0150 * v
         pos, tan = curve(d / total)
         normal, _ = K.perpendicular_frame(tan, p)
         lateral = np.cross(tan, normal)
         rx, ry = 0.0102 * (1 - 0.15 * v), 0.0090 * (1 - 0.1 * v)
-        half = nail_half_width(v, rx * 0.76)
+        half = nail_half_width(v, rx * 0.66)
         for c in range(cols):
             a = half * (-1.0 + 2.0 * c / (cols - 1))
             x_norm = min(abs(a) / rx, 0.98)

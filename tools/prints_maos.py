@@ -312,14 +312,14 @@ def main():
             hand = game.hands.last.get("R")
             print(f"t={clock:.2f} busy={game.hands.busy} cur={game.interact.current and game.interact.current.ref} "
                   f"vis={sorted(game.hands.visible_kinds())} lantern={lantern} hand={hand and tuple(round(c, 3) for c in hand[0])} "
-                  f"hide={vm and vm.hide_viewport}", flush=True)
+                  f"I={game.flashlight.intensity:.2f}", flush=True)
         game.player.pitch = math.radians(spec.pitch)
         clock += DT
         if pending and clock + 1e-6 >= pending[0]:
             moment = pending.pop(0)
             path = os.path.join(args.out, f"raw_{args.cenario}_{moment:.2f}.png")
             frames.append(render_frame(scene, game, path, size, args.samples))
-            labels.append(f"{args.cenario} t={moment:.2f}s")
+            labels.append(f"{args.cenario} t={moment:.2f}s I={game.flashlight.intensity:.2f}")
         if clock > last + 1.0:
             break
     out_path = os.path.join(args.out, f"maos_{args.cenario}.png")

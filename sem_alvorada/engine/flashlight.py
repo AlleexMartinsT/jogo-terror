@@ -32,7 +32,7 @@ LIGHT_FROM_GRIP = (LIGHT_XY[0] - VIEWMODEL_OFFSET[0], LIGHT_XY[1] - VIEWMODEL_OF
                    -LIGHT_FORWARD_MAX - VIEWMODEL_OFFSET[2])     # onde a luz nasce, a partir do punho da lanterna
 HOLD_MATRIX = Matrix.Translation(VIEWMODEL_OFFSET)
 BATTERY_FULL_ENOUGH = 0.9
-BURST_LOW = 0.07                          # brilho no fundo de uma piscada
+BURST_LOW = 0.03                          # brilho no fundo de uma piscada
 BURST_SURGE = 1.10                        # e o tranco de volta quando o contato fecha
 SWAY_FOLLOW = 9.0                         # 1/s: rapidez com que a luz alcança a câmera
 MAX_LAG = math.radians(7.0)

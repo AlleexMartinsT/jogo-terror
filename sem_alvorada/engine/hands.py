@@ -597,6 +597,7 @@ class Hands:
         shown = self.visible_kinds()
         for kind in self.models.objects:
             self.models.present(kind, kind in shown)
+        self.models.light_hands(bool(shown))
         if C.ITEM_KEY not in shown:
             self.pivot.reset()
             self.pendulum.reset()

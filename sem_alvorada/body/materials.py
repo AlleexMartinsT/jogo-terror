@@ -11,6 +11,10 @@ import bpy
 from .. import compat
 from . import tex
 
+# Brilho mínimo (emissão = a própria cor do material x isto) para o corpo não sumir por inteiro no escuro: a lanterna fica
+# na mão e ilumina só o que está à frente dela. É uma fração pequena do que a lanterna dá a 40 cm; com as luzes acesas não aparece.
+GLOW = 0.03
+
 # nome do slot -> (cor linear, rugosidade, metálico) dos materiais sem textura
 FLAT = {
     "sole": ((0.040, 0.040, 0.042), 0.88, 0.0),
@@ -80,6 +84,9 @@ def textured(name, *, atlas=None, tile=None, color=(0.5, 0.5, 0.5), roughness=0.
         solid.outputs[0].default_value = (*tint, 1.0)
         out = _multiply(tree, out, solid.outputs[0])
     links.new(out, bsdf.inputs["Base Color"])
+    if GLOW > 0.0:
+        links.new(out, bsdf.inputs["Emission Color"])
+        compat.set_bsdf(bsdf, emission_strength=GLOW)
     normal = None
     for height, strength, dist in bumps:
         bump = tree.nodes.new("ShaderNodeBump")
@@ -139,7 +146,8 @@ def get(name):
     color, roughness, metallic = FLAT[name]
     mat = compat.new_material(full)
     compat.set_bsdf(compat.bsdf_of(mat), base_color=color, roughness=roughness, metallic=metallic,
-                    specular=0.3 if metallic == 0 else 0.5)
+                    specular=0.3 if metallic == 0 else 0.5, emission=color if GLOW > 0.0 else None,
+                    emission_strength=GLOW if GLOW > 0.0 else None)
     mat.diffuse_color = (*color, 1.0)
     return mat
 

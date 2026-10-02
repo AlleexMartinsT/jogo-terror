@@ -193,6 +193,7 @@ class CutscenePlayer:
         cam.location = position
         cam.rotation_mode = "QUATERNION"
         cam.rotation_quaternion = q
+        cam.rotation_euler = camera.quaternion_to_euler_xyz(q)      # o corpo lê a câmera de referência dos braços por aqui
         stage.camera_pose = (position, q)
         stage.safe("lens", camera.apply_lens, cam, state)
         self._apply_lids(run, tl.sample("lids", run.t), state.fov)

@@ -29,6 +29,7 @@ LYING_EYE = (1.15, 8.50, 3.572)
 SIT_EYE = (1.00, 8.44, 4.17)
 STAND_EYE = (1.34, 8.62, 4.45)
 LAMP_SWITCH = (0.43, 8.84, 3.52)
+SIT_YAW = math.radians(-31.0)          # sentado, o corpo já olha para a janela: senão o ombro entra no quadro quando a cabeça gira
 
 
 def _walk_points():
@@ -107,15 +108,15 @@ def build():
               walk=True)
 
     lying_root = root_for("lying_bed", LYING_EYE, -math.pi / 2)
-    sit_root = root_for("sit_bed", SIT_EYE, 0.0)
+    sit_root = root_for("sit_bed", SIT_EYE, SIT_YAW)
     stand_yaw = math.radians(-25.0)
     stand_root = root_for("stand", STAND_EYE, stand_yaw)
     body_plan = (
         BodyPose(0.0, "lying_bed", 0.0, lying_root, -math.pi / 2),
         BodyPose(7.8, "sit_bed", 2.6, Path([Key(7.8, lying_root), Key(10.4, sit_root)]),
-                 Curve([(7.8, -math.pi / 2), (10.4, 0.0)])),
+                 Curve([(7.8, -math.pi / 2), (10.4, SIT_YAW)])),
         BodyPose(14.4, "stand", 1.8, Path([Key(14.4, sit_root), Key(16.2, stand_root)]),
-                 Curve([(14.4, 0.0), (16.2, stand_yaw)])),
+                 Curve([(14.4, SIT_YAW), (16.2, stand_yaw)])),
         BodyFollow(WALK_FROM - 0.8),
     )
     hands = (

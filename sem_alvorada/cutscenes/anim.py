@@ -207,7 +207,7 @@ class SparkBurst(Actor):
 
 
 # --------------------------------------------------------------------------
-# Emissão (relógio, TV, painel do carro)
+# Emissão (relógio, painel do carro; qualquer material com Emission Strength, como o chuvisco da TV)
 # --------------------------------------------------------------------------
 class EmissionPulse(Actor):
     """Anima a "Emission Strength" de um material por uma função do tempo e a devolve no fim."""
@@ -235,14 +235,6 @@ class EmissionPulse(Actor):
         if self._node is not None:
             self._node.inputs["Emission Strength"].default_value = self._base
         self._node = None
-
-
-def tv_static_level(t, seed=0.0):
-    """Chuvisco de TV: brilho que cintila em 24 Hz sem repetir, com quedas curtas de sinal."""
-    cell = math.floor(t * 24.0)
-    flicker = 0.78 + 0.22 * hash01(cell, seed)
-    drop = 0.35 if hash01(math.floor(t * 3.0), seed + 5.0) > 0.86 else 1.0
-    return flicker * drop
 
 
 def clock_level(t, glitches=()):

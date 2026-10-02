@@ -19,3 +19,10 @@ vidro. Grava `assets/models/carro_carroceria.npz` (cerca de 160 KB) com `materia
 (0 tinta, 1 plástico preto, 2 painéis internos, 3 carpete, 4 borracha, 5 forro). O amassado da frente é
 aplicado depois, no Blender (`props/car_damage.py`). Rode `python tools/modelagem/carro_carroceria.py`
 sempre que mudar `car_shape.py`.
+
+## Dedos do corpo (`corpo_dedos.py`)
+
+Não gera malha: ajusta com `scipy` os números dos dedos do corpo do jogador (`sem_alvorada/body`). `pinca` acha a
+chave fechada do polegar de modo que polegar e indicador se toquem no preset `pinch`; `lanterna` acha os `curls` e a
+inclinação do cano que fecham a mão em volta de um cilindro de 3,7 cm (`grip_cylinder`, `GRIP_ANGLE`). O jogo só lê
+os números colados em `body/fingers.py` e `body/handframe.py`.

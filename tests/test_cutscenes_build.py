@@ -18,7 +18,7 @@ import bpy  # noqa: E402
 import numpy as np  # noqa: E402
 from mathutils import Vector  # noqa: E402
 
-from sem_alvorada import build, cutscenes, entity, layout  # noqa: E402
+from sem_alvorada import body, build, cutscenes, entity, layout  # noqa: E402
 from sem_alvorada import conventions as C  # noqa: E402
 from sem_alvorada.buildctx import BuildContext  # noqa: E402
 from sem_alvorada.cutscenes import anim, camera, objects, preview, scripts, timeline  # noqa: E402
@@ -37,7 +37,7 @@ def fresh_scene():
     car_root = bpy.data.objects.new(C.OBJ_CAR, None)
     car_root.location, car_root.rotation_euler = (car.x, car.y, car.z), (0.0, 0.0, math.radians(car.yaw_deg))
     scene.collection.objects.link(car_root)
-    for stage, module in (("entity", entity), ("cutscenes", cutscenes)):
+    for stage, module in (("entity", entity), ("body", body), ("cutscenes", cutscenes)):
         ctx.stage = stage
         module.build(ctx)
     bpy.context.view_layer.update()
@@ -109,6 +109,18 @@ def test_camera_convention(scene):
     tilt = (cam.matrix_world.to_3x3() @ Vector((0, 1, 0))).x
     assert abs(abs(tilt) - math.sin(math.radians(10))) < 1e-5, "roll gira em torno do eixo de visão"
     print("  convenção yaw/pitch/roll igual à dos yaws do jogo")
+
+
+def test_quaternion_to_euler_matches_blender():
+    """O corpo lê a câmera de referência dos braços por `rotation_euler`; o player escreve os dois, e têm de coincidir."""
+    from mathutils import Euler, Quaternion
+    import random
+    rng = random.Random(4)
+    for _ in range(300):
+        q = Quaternion([rng.gauss(0, 1) for _ in range(4)]).normalized()
+        e = camera.quaternion_to_euler_xyz(tuple(q))
+        assert abs(abs(q.dot(Euler(e, "XYZ").to_quaternion())) - 1.0) < 1e-5
+    print("  quaternion -> Euler XYZ igual ao do Blender")
 
 
 def test_look_angles_roundtrip():
@@ -188,6 +200,43 @@ def test_body_eye_offsets_match_the_body_solver():
         eye = solution.point_on("Neck", rest_eye)
         assert (eye - Vector(expected)).length < 0.01, (name, tuple(eye), expected)
     print("  olhos de cada pose do corpo coincidem com o solver do corpo")
+
+
+def play_until(scene, name, seconds):
+    host = preview.PreviewHost(scene, preview.START_STATE[name])
+    player = cutscenes.CutscenePlayer(host)
+    player.play(name)
+    while player.active and player.time < seconds - 1e-6:
+        step = min(1 / 30, seconds - player.time)
+        player.update(step)
+        host.tick(step)
+    bpy.context.view_layer.update()
+    return host, player
+
+
+def test_hands_reach_the_key_with_the_real_body(scene):
+    """Com o BodyRig de verdade: a mão que leva a chave chega nela (garagem: esquerda; ignição: direita)."""
+    assert scene.objects.get(C.OBJ_BODY_RIG) is not None, "o corpo foi montado nesta cena"
+    for name, side, when in (("garage_unlock", "L", 2.9), ("ending", "R", 2.1)):
+        host, player = play_until(scene, name, when)
+        key = scene.objects[objects.OBJ_KEY]
+        assert not key.hide_render, f"{name}: a chave está à vista em t={when}"
+        palm = Vector(host.body.arm(side).hand_world_position())
+        gap = (palm - key.matrix_world.translation).length
+        assert gap < 0.14, f"{name}: a mão {side} está a {gap:.2f} m da chave"
+        assert player.errors == [], player.errors
+        print(f"  {name}: a mão {side} está a {gap * 100:.0f} cm da chave em t={when}")
+        player.skip()
+        host.entity.set_visible(False)
+
+
+def test_body_is_returned_to_the_game(scene):
+    """Ao fim da cutscene o corpo volta a seguir o jogador (reset): sem pose nem câmera da cutscene presas."""
+    for name in ("intro", "garage_unlock", "ending"):
+        host, player = play_until(scene, name, 3.0)
+        player.skip()
+        assert host.body._mode == "follow" and host.body._pose_name == "stand" and host.body._view is None, name
+    print("  o corpo volta ao modo de seguir o jogador depois de cada cutscene")
 
 
 def curtain_mesh(name, columns=64, rows=60):
@@ -285,10 +334,13 @@ def main():
     test_cabin_light_follows_the_car(scene)
     test_camera_convention(scene)
     test_look_angles_roundtrip()
+    test_quaternion_to_euler_matches_blender()
     test_lens_and_depth_of_field_on_a_real_camera(scene)
     test_object_animation_cost_in_blender(scene)
     test_car_parts_are_split_from_the_body(scene, ctx)
     test_body_eye_offsets_match_the_body_solver()
+    test_hands_reach_the_key_with_the_real_body(scene)
+    test_body_is_returned_to_the_game(scene)
     test_run_all_in_blender(scene)
     test_skip_in_blender(scene)
     print("test_cutscenes_build: OK")

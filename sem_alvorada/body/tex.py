@@ -139,11 +139,11 @@ def _paint_arm(layer, side, rng):
         angle = 1.5 * math.pi + lateral / 0.042
         knuckle = gaussian(d - {"Index": 0.093, "Middle": 0.096, "Ring": 0.091, "Pinky": 0.081}[finger], 0.008) \
             * gaussian(wrap_angle(theta - angle), 0.35)
-        rgb = mix(rgb, SKIN_RED, 0.55 * knuckle)
+        rgb = mix(rgb, SKIN_RED, 0.42 * knuckle)
         height -= 0.10 * knuckle * (fbm(h, w, rng, 3, 24, 0.5, wrap=False) > 0.5)
         for k in range(4):                                         # rugas transversais no nó
             offset = (k - 1.5) * 0.0035
-            height -= 0.06 * gaussian(d - (0.093 + offset), 0.0007) * gaussian(wrap_angle(theta - angle), 0.28)
+            height -= 0.03 * gaussian(d - (0.093 + offset), 0.0007) * gaussian(wrap_angle(theta - angle), 0.28)
     # veias no dorso da mão e do punho
     for index, base_angle in enumerate((-0.45, -0.10, 0.22, 0.55)):
         path = 1.5 * math.pi + base_angle + 0.12 * np.sin(d * (24 + 6 * index) + index * 1.7) * np.clip((d + 0.1) / 0.1, 0, 1)
@@ -268,14 +268,14 @@ def atlas_nail(seed=11):
     """Unha 64x64: placa rosada, lúnula pálida na base, borda livre branca suja."""
     rng = np.random.default_rng(seed)
     size = 64
-    px = new_layer(size, size, (0.86, 0.68, 0.66))
+    px = new_layer(size, size, (0.80, 0.60, 0.57))
     v = (np.arange(size) + 0.5)[:, None] / size * np.ones((1, size), np.float32)
     u = np.ones((size, 1), np.float32) * ((np.arange(size) + 0.5)[None, :] / size)
     rgb = px[..., :3]
-    rgb[:] = mix(rgb, (0.93, 0.88, 0.84), 0.65 * gaussian(v - 0.08, 0.12))              # lúnula
+    rgb[:] = mix(rgb, (0.88, 0.76, 0.72), 0.45 * gaussian(v - 0.08, 0.12))              # lúnula
     rgb[:] = mix(rgb, (0.72, 0.55, 0.52), 0.25 * (1.0 - gaussian(u - 0.5, 0.6)))
     free = np.clip((v - 0.86) / 0.14, 0, 1)
-    rgb[:] = mix(rgb, (0.64, 0.58, 0.50), 0.8 * free)                                    # borda livre com sujeira
+    rgb[:] = mix(rgb, (0.70, 0.60, 0.54), 0.55 * free)                                    # borda livre com sujeira
     rgb[:] = mix(rgb, SKIN_DIRT, 0.55 * np.clip((v - 0.93) / 0.07, 0, 1))
     px[..., 3] = 0.5 + 0.06 * np.sin(u * math.pi * 14.0) * 0.4 + 0.02 * (rng.random((size, size)) - 0.5)
     return px

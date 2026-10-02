@@ -16,6 +16,7 @@ from .. import conventions as C
 MODEL_NAMES = {C.ITEM_FLASHLIGHT: "ViewModel_Flashlight", C.ITEM_KEY: "ViewModel_Key", C.ITEM_MAP: "ViewModel_Map",
                C.ITEM_BATTERY: "ViewModel_Battery", C.ITEM_NOTE: "ViewModel_Paper"}
 CAP_NAME = "ViewModel_Flashlight_Cap"
+FILL_NAME = "HandFill"
 MAP_PANEL_NAMES = ("ViewModel_Map_P2", "ViewModel_Map_P3")
 
 # Anotação -> (material do papel, largura, altura em metros). Mesmas medidas dos modelos de mesa.
@@ -34,6 +35,10 @@ class Handhelds:
         self.objects = {kind: scene.objects.get(name) for kind, name in MODEL_NAMES.items()}
         self.cap = scene.objects.get(CAP_NAME)
         self.panels = tuple(scene.objects.get(name) for name in MAP_PANEL_NAMES)
+        self.fill = scene.objects.get(FILL_NAME)
+        if self.fill is not None and self.fill.parent is None and camera is not None:
+            self.fill.parent = camera
+            self.fill.matrix_parent_inverse = Matrix.Identity(4)
         self._shown = {}
         for kind, obj in self.objects.items():
             if obj is None:
@@ -71,6 +76,12 @@ class Handhelds:
         for kind in MODEL_NAMES:
             self._shown.pop(kind, None)
             self.present(kind, False)
+        self.light_hands(False)
+
+    def light_hands(self, on):
+        """A luz de preenchimento das mãos acende enquanto há algo na mão."""
+        if self.fill is not None:
+            self.fill.hide_viewport = self.fill.hide_render = not on
 
     def restore_scene(self):
         """Devolve os objetos ao arquivo: ocultos e na origem do pai."""

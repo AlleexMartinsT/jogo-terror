@@ -62,6 +62,17 @@ def rotate(q, v):
     return (vx + w * tx + (y * tz - z * ty), vy + w * ty + (z * tx - x * tz), vz + w * tz + (x * ty - y * tx))
 
 
+def quaternion_to_euler_xyz(q):
+    """Euler XYZ do Blender (a, b, c) em radianos de um quaternion unitário: R = Rz(c) Ry(b) Rx(a)."""
+    w, x, y, z = q
+    r20 = 2.0 * (x * z - w * y)
+    r21 = 2.0 * (y * z + w * x)
+    r22 = 1.0 - 2.0 * (x * x + y * y)
+    r10 = 2.0 * (x * y + w * z)
+    r00 = 1.0 - 2.0 * (y * y + z * z)
+    return (math.atan2(r21, r22), -math.asin(max(-1.0, min(1.0, r20))), math.atan2(r10, r00))
+
+
 def keep_hemisphere(q, previous):
     """q e -q são a mesma rotação; escolhe o que fica no mesmo hemisfério do quadro anterior (sem dupla cobertura)."""
     if previous is not None and sum(a * b for a, b in zip(q, previous)) < 0.0:

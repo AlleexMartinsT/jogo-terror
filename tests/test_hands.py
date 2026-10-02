@@ -730,6 +730,9 @@ def test_handheld_models_exist_fit_the_budget_and_chain_correctly():
     assert objects["ViewModel_Map_P2"].parent is objects["ViewModel_Map"]
     assert objects["ViewModel_Map_P3"].parent is objects["ViewModel_Map_P2"]
     assert abs(objects["ViewModel_Map_P2"].location.x - 0.118) < 1e-6
+    fill = objects["HandFill"]
+    assert fill.type == "LIGHT" and fill.data.type == "POINT" and not fill.data.use_shadow and fill.data.energy < 3.0
+    assert fill.hide_viewport and fill.hide_render, "a luz das mãos só acende com algo na mão"
     for name in ("ViewModel_Flashlight", "ViewModel_Key", "ViewModel_Map", "ViewModel_Battery", "ViewModel_Paper"):
         for material in objects[name].data.materials:
             image = next((n.image for n in material.node_tree.nodes if n.type == "TEX_IMAGE"), None) if material.node_tree else None
@@ -757,6 +760,7 @@ def test_handheld_objects_hang_from_the_player_camera_and_hide_when_the_world_is
     assert flash.parent is game.player_cam and not flash.hide_viewport
     game.flashlight.update(DT_IDLE, 0.0, 0.0, show_viewmodel=False)       # o que o mundo ocioso (cutscene) faz
     assert flash.hide_viewport and not game.hands.visible_kinds()
+    assert game.hands.models.fill is None or game.hands.models.fill.hide_render
 
 
 def test_neutral_hand_matches_the_body_package():
