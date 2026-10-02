@@ -43,7 +43,7 @@ def test_catalog_has_every_contract_name():
     synth.selected_names()
     missing = [n for n in REQUIRED_SOUNDS if n not in SPECS]
     assert not missing, f"receitas ausentes: {missing}"
-    assert len(REQUIRED_SOUNDS) == 77
+    assert len(REQUIRED_SOUNDS) == 99
     for surface in STEP_SURFACES:
         assert all(f"step_{surface}_{i}" in SPECS for i in range(1, 5))
 

@@ -111,7 +111,7 @@ O `.blend` é gerado por código. Para refazê-lo:
 blender -b --python construir.py -- --quality medium     # com o Blender instalado (cerca de 2 min em CPU, arquivo de ~50 MB)
 python construir.py                                      # com o módulo bpy (pip install bpy)
 python -m sem_alvorada.build --stages world,props --out out/parcial.blend   # só algumas etapas
-python -m sem_alvorada.audio.synth                       # regenera os 77 sons em assets/audio
+python -m sem_alvorada.audio.synth                       # regenera os 99 sons em assets/audio
 python -m sem_alvorada.layout                            # valida a planta e escreve out/planta_andar*.png
 ```
 

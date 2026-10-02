@@ -1,35 +1,21 @@
 """Modelo de dados das cutscenes: planos, enquadramentos, ações e a linha do tempo compilada.
 
-Um `Cutscene` é uma lista de `Shot`. Cada plano tem uma câmera A -> B, legendas, ações
-instantâneas (`Cue`), ações contínuas (`Track`) e curvas de efeitos (fade, letterbox, flash,
-tremor). Todos os tempos DENTRO de um plano são relativos ao começo dele; `compile_cutscene`
-converte tudo para tempo absoluto uma vez só, e o player apenas consulta.
+Um `Cutscene` é uma lista de `Shot`. Cada plano é uma tomada contínua de câmera (`cam`, um `camera.Rig`: caminho
+dos olhos, caminho do olhar, lente e foco; ou o atalho `view` -> `to` para planos simples), com legendas,
+ações instantâneas (`Cue`), ações contínuas (`Track`) e curvas de efeitos (fade, letterbox, flash, tremor,
+pálpebras). Todos os tempos DENTRO de um plano são relativos ao começo dele; `compile_cutscene` converte tudo
+para tempo absoluto uma vez só, e o player apenas consulta.
+
+`Shot.cut` declara se a câmera pode saltar na entrada do plano. Planos com `cut=False` continuam o anterior
+sem salto de posição, de rotação nem de lente (o teste de fluidez cobra isso).
 """
 import bisect
 from dataclasses import dataclass, field
 from typing import Callable
 
-EFFECT_CHANNELS = ("fade", "letterbox", "flash", "shake", "card")
+from .curves import clamp01, ease  # noqa: F401  (reexportados: scripts e testes importam daqui)
 
-
-def clamp01(value):
-    return 0.0 if value < 0.0 else 1.0 if value > 1.0 else value
-
-
-def ease(name, u):
-    """Curvas de aceleração de 0..1 para 0..1."""
-    u = clamp01(u)
-    if name == "linear":
-        return u
-    if name == "in":
-        return u * u
-    if name == "out":
-        return 1.0 - (1.0 - u) ** 2
-    if name == "smooth":
-        return u * u * (3.0 - 2.0 * u)
-    if name == "smoother":
-        return u * u * u * (u * (u * 6.0 - 15.0) + 10.0)
-    raise ValueError(f"curva desconhecida: {name!r}")
+EFFECT_CHANNELS = ("fade", "letterbox", "flash", "shake", "card", "lids")
 
 
 @dataclass(frozen=True)
@@ -82,19 +68,21 @@ class Track:
 @dataclass(frozen=True)
 class Shot:
     duration: float
-    view: View
+    view: View | None = None          # atalho: câmera de `view` até `to` (parando nas duas pontas)
     to: View | None = None            # None: câmera parada (só a mão tremendo)
-    ease: str = "smooth"
-    handheld: float = 0.25            # 0 = tripé, 1 = câmera muito instável
-    follow: str = ""                  # objeto movido por uma Track: os OLHOS da câmera acompanham o deslocamento dele
+    handheld: float = 0.25            # (atalho) energia da mão: 0 = tripé, 1 = câmera instável
+    cam: object = None                # camera.Rig: tomada contínua; tem prioridade sobre view/to
+    name: str = ""                    # só para depuração, para a folha de contato e para o teste de fluidez
+    cut: bool = True                  # a câmera pode saltar ao entrar neste plano
     lines: tuple = ()
     cues: tuple = ()
     tracks: tuple = ()
     fade: tuple = ()                  # (tempo, valor), ...  valores 0..1
     letterbox: tuple = ()
     flash: tuple = ()
-    shake: tuple = ()
+    shake: tuple = ()                 # estresse da câmera (0..1): tremor rápido; o HUD também treme
     card: tuple = ()                  # opacidade do cartão final
+    lids: tuple = ()                  # pálpebras: 0 aberto .. 1 fechado
 
 
 @dataclass(frozen=True)
@@ -114,16 +102,20 @@ class Timeline:
     cutscene: Cutscene
     total: float
     shots: list                       # (t0, t1, Shot)
+    rigs: list                        # camera.Rig de cada plano, na mesma ordem
     cues: list                        # (t, Action) por ordem de tempo
     tracks: list                      # (t0, t1, Track)
     channels: dict                    # nome -> [(t, valor)] ordenado
     lines: list                       # (t0, t1, texto)
 
-    def shot_at(self, t):
-        for t0, t1, shot in self.shots:
+    def shot_index(self, t):
+        for index, (t0, t1, shot) in enumerate(self.shots):
             if t < t1:
-                return t0, t1, shot
-        return self.shots[-1]
+                return index
+        return len(self.shots) - 1
+
+    def shot_at(self, t):
+        return self.shots[self.shot_index(t)]
 
     def sample(self, channel, t):
         """Valor do canal em `t`: interpolação linear entre chaves, mantendo o último valor no fim."""
@@ -146,13 +138,24 @@ class Timeline:
         return "", 0.0, 0.0
 
 
+def _rig_of(shot):
+    from . import camera
+    if shot.cam is not None:
+        rig = shot.cam
+        if rig.length > shot.duration + 1e-6:
+            raise ValueError(f"o caminho da câmera ({rig.length:.2f} s) passa da duração do plano ({shot.duration:.2f} s)")
+        return rig
+    return camera.rig_from_views(shot.view, shot.to, shot.duration, camera.Hand("stand", shot.handheld))
+
+
 def compile_cutscene(cutscene):
-    shots, cues, tracks, lines = [], [], [], []
+    shots, rigs, cues, tracks, lines = [], [], [], [], []
     channels = {name: [(0.0, float(cutscene.initial.get(name, 0.0)))] for name in EFFECT_CHANNELS}
     start = 0.0
     for shot in cutscene.shots:
         end = start + shot.duration
         shots.append((start, end, shot))
+        rigs.append(_rig_of(shot))
         cues += [(start + c.at, c.action) for c in shot.cues]
         tracks += [(start + tr.start, start + tr.end, tr) for tr in shot.tracks]
         lines += [(start + ln.start, start + ln.end, ln.text) for ln in shot.lines]
@@ -165,5 +168,5 @@ def compile_cutscene(cutscene):
         keys.sort(key=lambda k: k[0])
     cues.sort(key=lambda c: c[0])
     lines.sort(key=lambda ln: ln[0])
-    return Timeline(cutscene, start, shots, cues, tracks, channels, lines)
+    return Timeline(cutscene, start, shots, rigs, cues, tracks, channels, lines)
 

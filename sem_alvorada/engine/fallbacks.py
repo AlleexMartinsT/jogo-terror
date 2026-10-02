@@ -73,7 +73,7 @@ class FallbackNoise:
         self._listener = (0.0, 0.0, 0.0)
         self._room = None
 
-    def emit(self, source, kind, pos, loudness, ttl=1.5):
+    def emit(self, source, kind, pos, loudness, ttl=1.5, opening=""):
         self.events.append(_Event(source, kind, tuple(pos), loudness, ttl))
 
     def update(self, dt):

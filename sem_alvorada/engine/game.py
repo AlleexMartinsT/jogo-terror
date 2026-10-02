@@ -14,7 +14,7 @@ from mathutils import Vector
 from .. import conventions as C
 from .. import layout
 from .. import story
-from . import collision, texts
+from . import collision
 from .ambience import Ambience
 from .director import Director
 from .doors import DoorManager
@@ -23,7 +23,7 @@ from .fallbacks import FallbackNoise, NullAudio, NullBody
 from .flashlight import Flashlight
 from .host import CutsceneHost, WorldView
 from .hands import Hands
-from .hudmodel import build_hud_model
+from .hudmodel import HudFades, build_hud_model
 from .inputstate import InputState
 from .interact import Interact
 from .inventory import Inventory
@@ -39,7 +39,6 @@ BODY_KINDS = frozenset({"walk", "run", "crouch_walk", "breath_heavy", "pickup", 
                         "battery_swap", "stairs_creak"})
 CUTSCENE_REASON = {"intro": "intro_done", "blackout": "blackout_done", "garage_unlock": "unlock_done",
                    "death": "death_done", "ending": "ending_done"}
-RESPAWN_HINT_SECONDS = 4.0
 
 
 def _import_class(module_name, class_name):
@@ -95,6 +94,7 @@ class Game:
         self.body = self._make_body()
         self.hands = Hands(self)
         self.inventory = Inventory(self)
+        self.hud_fades = HudFades()
         self.lights = LightManager(scene)
         self.interact = Interact(self, scene)
         self.director = Director(self)
@@ -152,8 +152,10 @@ class Game:
     def sound(self, name, pos=None, volume=1.0):
         self.audio.play(name, pos, volume)
 
-    def make_noise(self, kind, pos, loudness, sound=None, source="player"):
-        """Toca o som e registra o ruído na mesma chamada, para nunca dessincronizarem."""
+    def make_noise(self, kind, pos, loudness, sound=None, source="player", opening=""):
+        """Toca o som e registra o ruído na mesma chamada, para nunca dessincronizarem.
+
+        `opening` é a porta que faz o som: ela não o abafa (ver `NoiseSystem.emit`)."""
         loudness = max(0.0, min(1.0, loudness))
         if sound is not None:
             spatial = None if source == "player" and kind in BODY_KINDS else pos
@@ -163,7 +165,7 @@ class Game:
                 self.audio.play(sound, spatial, 0.25 + 0.75 * loudness)
         if source != "entity" and self.clock < self._silence_until:
             return
-        self.noise.emit(source, kind, pos, loudness)
+        self.noise.emit(source, kind, pos, loudness, opening=opening)
         self.noise_log.append((source, kind, round(loudness, 3), round(self.clock, 2)))
         if source == "player":
             self.peak_noise = max(self.peak_noise, loudness)
@@ -207,6 +209,7 @@ class Game:
         self.player.reset_body()
         self.hands.reset()
         self.inventory.reset()
+        self.hud_fades.reset()
         self.body.reset()
         self.reader_note = None
         self.message_text, self._message_left = "", 0.0
@@ -242,7 +245,6 @@ class Game:
         if FLAG_BLACKOUT in self.state.flags:
             self.entity.activate(self.entity.respawn_point((x, y, z)), hunt=False)
         self.phase = "play"
-        self.say(texts.MSG_RESPAWN, RESPAWN_HINT_SECONDS)
 
     def _rebuild_world_from_state(self):
         if "garage" in self.state.unlocked:
@@ -297,6 +299,9 @@ class Game:
         {"title": self._tick_title, "cutscene": self._tick_cutscene, "play": self._tick_play,
          "reading": self._tick_reading, "paused": self._tick_paused, "dead": self._tick_dead,
          "credits": self._tick_credits}[self.phase](dt, inp)
+        if self.phase != "play":
+            self.inventory.cancel()             # a roda aberta fecha sem equipar quando o jogo sai do controle do jogador
+        self.hud_fades.observe(self, dt, inp)
         self.body.set_visible(self.phase in BODY_PHASES or (self.phase == "cutscene" and self.body_in_cutscene))
         self._sync_camera()
         self._update_listener()
@@ -465,7 +470,6 @@ class Game:
             state.batteries_found, state.spare_batteries = 3, 3
             state.collected |= {"FLASHLIGHT", "KEY", "MAP", "BATTERY_1", "BATTERY_2", "BATTERY_3"}
             self.interact.sync_scene()
-            self.say("[debug] tudo coletado")
         elif name == "to_garage":
             self.place_player(13.4, 5.85, 0.0, math.radians(-90))
         elif name == "entity_off":

@@ -78,6 +78,7 @@ class NoiseEvent:
     loudness: float
     ttl: float
     age: float = 0.0
+    opening: str = ""       # porta que é a origem do som (ranger, batida): ela mesma não o abafa
     _reach_cache: dict = field(default_factory=dict, repr=False, compare=False)
 
 
@@ -252,8 +253,11 @@ class NoiseSystem:
         self.ambient_rate = 1.0           # multiplicador da frequência dos eventos ambientais
 
     # ---- emissão e vida dos eventos -----------------------------------
-    def emit(self, source, kind, pos, loudness, ttl=1.5):
-        """Registra um som. Emissões iguais e coladas (zumbido contínuo) renovam o mesmo evento."""
+    def emit(self, source, kind, pos, loudness, ttl=1.5, opening=""):
+        """Registra um som. Emissões iguais e coladas (zumbido contínuo) renovam o mesmo evento.
+
+        `opening` é o id da porta que faz o som: o ranger de uma porta fechada que está sendo aberta não pode
+        ser abafado por ela mesma, senão a entidade colada do outro lado não o ouviria nos primeiros instantes."""
         if self._silence_left > 0.0 or loudness <= 0.0:
             return None
         loudness = min(max(float(loudness), 0.0), 1.0)
@@ -263,10 +267,11 @@ class NoiseSystem:
             if (event.source == source and event.kind == kind and event.age <= rules.merge_window
                     and _dist(event.pos, pos) <= rules.merge_distance):
                 event.age, event.loudness, event.ttl, event.pos = 0.0, max(event.loudness, loudness), max(event.ttl, ttl), pos
+                event.opening = opening or event.opening
                 event.room = room_id_at(pos)
                 event._reach_cache.clear()
                 return event
-        event = NoiseEvent(self._next_uid, source, kind, pos, room_id_at(pos), loudness, float(ttl))
+        event = NoiseEvent(self._next_uid, source, kind, pos, room_id_at(pos), loudness, float(ttl), opening=opening)
         self._next_uid += 1
         self._events.append(event)
         if len(self._events) > rules.max_events:
@@ -323,6 +328,8 @@ class NoiseSystem:
 
     def _reach_map(self, event, door_share):
         """Dijkstra do ponto de origem até cada ponto de passagem, minimizando o enfraquecimento."""
+        if event.opening:
+            door_share = {**door_share, event.opening: 0.0}
         key = tuple(sorted(door_share.items()))
         cached = event._reach_cache.get(key)
         if cached is not None:
@@ -381,9 +388,11 @@ class NoiseSystem:
     def set_door_openness(self, door_openness):
         self._door_openness = door_openness or (lambda _door_id: 0.0)
 
-    def path_between(self, source_pos, listener_pos):
-        """Caminho de menor perda entre dois pontos (o motor de áudio usa isto para a oclusão)."""
-        probe = NoiseEvent(0, "ambient", "probe", tuple(source_pos), room_id_at(source_pos), 1.0, 1.0)
+    def path_between(self, source_pos, listener_pos, opening=""):
+        """Caminho de menor perda entre dois pontos (o motor de áudio usa isto para a oclusão).
+
+        `opening` é uma porta que não conta como obstáculo (a que está fazendo o som)."""
+        probe = NoiseEvent(0, "ambient", "probe", tuple(source_pos), room_id_at(source_pos), 1.0, 1.0, opening=opening)
         _, length, doors, floors = self._route(probe, tuple(listener_pos), self._door_losses())
         return PathInfo(length, doors, floors)
 

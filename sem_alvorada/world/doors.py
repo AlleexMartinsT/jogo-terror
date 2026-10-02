@@ -3,6 +3,11 @@
 Contrato (docs/CONTRACT.md, seção 4): Empty pivô `Door_<id>` na dobradiça, com a folha `DoorLeaf_<id>`
 modelada em +X local e as ferragens em `DoorHandle_<id>`. O batente `DoorFrame_<id>` fica no mundo.
 O desenho da folha (onde ficam travessas e almofadas) vem de `doorspec`, o mesmo que a textura lê.
+
+A lingueta da maçaneta é um objeto à parte, `DoorBolt_<id>` (filha do pivô, origem na ponta de dentro da
+fechadura, eixo ao longo de +X). O engine a recolhe ao girar a maçaneta e a solta ao fechar. As maçanetas
+são peças de revolução: girá-las em torno do próprio eixo não muda nada na imagem, por isso o que se vê
+da "maçaneta girando" é a lingueta saindo da borda da folha.
 """
 import math
 from dataclasses import dataclass
@@ -23,6 +28,8 @@ HALF = doorspec.LEAF_THICKNESS / 2
 HINGE_HEIGHT = 0.09
 HINGE_ZS = (0.325, 1.07, 1.82)            # 28 cm do piso e 18 cm do topo, como manda a norma
 DEADBOLT_HEIGHT = 1.10
+LATCH_PLATE_OFFSET = 0.0015     # a face da chapa da fechadura, além da borda livre da folha
+BOLT_LENGTH = 0.012
 
 # Relevo de uma almofada, de fora para dentro: (recuo lateral, profundidade abaixo da face), em metros.
 # Os dois primeiros pontos são o perfil esculpido na travessa (sticking); depois o fundo do rasgo e o
@@ -78,6 +85,9 @@ def build(ctx, op, piece):
     hardware = _hardware(ctx, f"DoorHandle_{op.id}", spec, style, _key_side(placement, style)).build(
         ctx, C.COL_WORLD, knob)
     attach(hardware, pivot, knob)
+    bolt_origin = (width + LATCH_PLATE_OFFSET, 0.0, doorspec.KNOB_HEIGHT)
+    bolt = _bolt(f"DoorBolt_{op.id}", bolt_origin, detail(ctx, 12)).build(ctx, C.COL_WORLD, bolt_origin)
+    attach(bolt, pivot, bolt_origin)
     return pivot
 
 
@@ -221,7 +231,7 @@ def _hardware(ctx, name, spec, style, key_side):
     for side in (1, -1):
         with turned.at(knob_x, side * HALF, knob_z, rx=-90 * side):
             turned.lathe(KNOB_PROFILE, "brass_worn", sides)
-    _latch(turned, plates, spec.width, knob_z, sides)
+    _latch(plates, spec.width, knob_z)
     if key_side:
         for side in (1, -1):
             with turned.at(knob_x, side * HALF, DEADBOLT_HEIGHT, rx=-90 * side):
@@ -229,7 +239,8 @@ def _hardware(ctx, name, spec, style, key_side):
                 if side != key_side:
                     plates.box(knob_x - 0.014, side * HALF + 0.0056, DEADBOLT_HEIGHT - 0.005, knob_x + 0.014,
                                side * HALF + 0.016, DEADBOLT_HEIGHT + 0.005, "brass_worn")
-        _latch(turned, plates, spec.width, DEADBOLT_HEIGHT, sides, bolt_length=0.022)
+        _latch(plates, spec.width, DEADBOLT_HEIGHT)
+        _bolt_shape(turned, spec.width, DEADBOLT_HEIGHT, sides, 0.022)
     for z in HINGE_ZS:
         _hinge(turned, plates, z, max(6, sides // 2))
     if style.kick_plate:
@@ -256,12 +267,23 @@ class HardwareSet:
         return build_combined(ctx, collection, self.name, self.builders, origin)
 
 
-def _latch(turned, plates, width, z, sides, bolt_length=0.012):
-    """Chapa da fechadura na borda livre e a lingueta (ou o ferrolho) que sai dela."""
-    plates.box(width - 0.0005, -0.011, z - 0.055, width + 0.0015, 0.011, z + 0.055, "brass_worn")
-    with turned.at(width + 0.0015, 0.0, z, ry=90):
-        turned.lathe([(0.0065, 0.0), (0.0065, bolt_length), (0.0045, bolt_length + 0.003), (0.0, bolt_length + 0.0035)],
-                     "brass_worn", max(6, sides // 2))
+def _latch(plates, width, z):
+    """Chapa da fechadura na borda livre."""
+    plates.box(width - 0.0005, -0.011, z - 0.055, width + LATCH_PLATE_OFFSET, 0.011, z + 0.055, "brass_worn")
+
+
+def _bolt_shape(builder, width, z, sides, length=BOLT_LENGTH):
+    """Lingueta (ou ferrolho): cilindro de ponta arredondada que sai da chapa ao longo de +X."""
+    with builder.at(width + LATCH_PLATE_OFFSET, 0.0, z, ry=90):
+        builder.lathe([(0.0065, 0.0), (0.0065, length), (0.0045, length + 0.003), (0.0, length + 0.0035)],
+                      "brass_worn", max(6, sides // 2))
+
+
+def _bolt(name, origin, sides):
+    """A lingueta da maçaneta como objeto próprio, para o engine recolhê-la quando a maçaneta gira."""
+    builder = ModelBuilder(name, PROFILED)
+    _bolt_shape(builder, origin[0] - LATCH_PLATE_OFFSET, origin[2], sides)
+    return builder
 
 
 def _hinge(turned, plates, z, sides):

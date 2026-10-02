@@ -34,6 +34,11 @@ class GameState:
     flags: set = field(default_factory=set)
     deaths: int = 0
 
+    def find_flashlight(self):
+        """O jogador encontrou a lanterna: ela já foi usada, então a carga não nasce cheia."""
+        self.has_flashlight = True
+        self.battery = min(self.battery, C.FLASHLIGHT_FOUND_CHARGE)
+
     def have(self, item_type):
         if item_type == C.ITEM_KEY:
             return int(self.has_key)

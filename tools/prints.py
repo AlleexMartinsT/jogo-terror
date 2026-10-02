@@ -30,12 +30,13 @@ from sem_alvorada.engine.canvas import Canvas, load_hud_font  # noqa: E402
 from sem_alvorada.engine.state import FLAG_BLACKOUT  # noqa: E402
 from sem_alvorada.engine.game import Game, InputState  # noqa: E402
 from tools import pngwrite  # noqa: E402
+from tools.rasterpoly import blend_polygon  # noqa: E402
 
 OUT = os.path.join(ROOT, "out", "prints")
 
 
 class RasterCanvas(Canvas):
-    """Reproduz em numpy as operações que o HUD gravaria para a GPU (retângulos com alfa e texto via ImBuf)."""
+    """Reproduz em numpy as operações que o HUD gravaria para a GPU (retângulos e polígonos com alfa, texto via ImBuf)."""
 
     def __init__(self, width, height):
         super().__init__(width, height)
@@ -54,7 +55,10 @@ class RasterCanvas(Canvas):
                 continue
             self._blit_texts(frame, pending_text)
             pending_text = []
-            self._blend_rect(frame, op)
+            if op[0] == "poly":
+                blend_polygon(frame, list(op[1]), op[2])
+            else:
+                self._blend_rect(frame, op)
         self._blit_texts(frame, pending_text)
         return frame
 
@@ -187,6 +191,84 @@ def scene_titulo(game):
     return 6.5, 2.0, 0.0, 0.0, 6
 
 
+def hush(game):
+    """Tira a fala de abertura da tela: os cenários de HUD mostram só o que o HUD mostra sozinho."""
+    game.message_text, game._message_left = "", 0.0
+
+
+def scene_hud_trancada(game):
+    """HUD de jogo: mira com a dica "Trancada" (estado, não fala), bateria recém-ligada e a barra VOCÊ acordada."""
+    equip(game, battery=0.74, spare=2, key=False, batteries_found=1)
+    game.lights.set_power(False)
+    make_noise(game, 0.30, 0.0)
+    game.hud_fades.battery_left = 3.0
+    hush(game)
+    return 9.95, 5.85, 0.0, look_at_yaw(9.95, 5.85, 14.0, 5.85), -4
+
+
+def scene_hud_silencio(game):
+    """Tudo calmo: só a mira e uma barra de som quase transparente."""
+    equip(game, battery=0.74, spare=2, key=True, batteries_found=2)
+    game.lights.set_power(False)
+    make_noise(game, 0.0, 0.0)
+    hush(game)
+    return 0.9, 3.9, 0.0, look_at_yaw(0.9, 3.9, 4.7, 3.9), -2
+
+
+def scene_hud_perigo(game):
+    """A entidade é audível, a bateria está abaixo de 25% e o fôlego acabando."""
+    equip(game, battery=0.17, spare=1, key=True, batteries_found=2)
+    game.lights.set_power(False)
+    make_noise(game, 0.55, 0.6)
+    game.player.stamina = 0.18
+    hush(game)
+    return 6.5, 4.4, 2.8, 0.0, -1
+
+
+def scene_hud_sem_carga(game):
+    """Lanterna sem carga e com pilha reserva: o aviso é visual, o jogador não fala."""
+    equip(game, battery=0.0, spare=1, key=True, batteries_found=2, flashlight_on=False)
+    game.lights.set_power(False)
+    make_noise(game, 0.0, 0.0)
+    hush(game)
+    return 9.0, 6.0, 0.0, look_at_yaw(9.0, 6.0, 11.8, 8.8), -10
+
+
+def scene_pausa(game):
+    """Menu de pausa: objetivo, lista de coleta, medidor completo e controles."""
+    equip(game, battery=0.62, spare=2, key=True, batteries_found=2)
+    game.state.flags.add(FLAG_BLACKOUT)
+    game.lights.set_power(False)
+    make_noise(game, 0.30, 0.2)
+    game.phase = "paused"
+    return 10.3, 6.0, 0.0, look_at_yaw(10.3, 6.0, 12.0, 5.85), -4
+
+
+def scene_roda(game):
+    """A roda aberta com mapa, anotação, chave e pilhas; o mouse é movido por `open_wheel` depois do assentamento."""
+    equip(game, battery=0.62, spare=2, key=True, map_found=True, batteries_found=2)
+    game.state.notes_read.add("NOTE_1")
+    game.lights.set_power(False)
+    make_noise(game, 0.0, 0.0)
+    hush(game)
+    game.hands.held = C.ITEM_FLASHLIGHT
+    return 10.3, 6.0, 0.0, look_at_yaw(10.3, 6.0, 12.0, 5.85), -4
+
+
+# cenário -> movimento do mouse (rad acumulados, dx para a direita, dy para cima) com Q apertado
+WHEEL_MOVES = {"roda_pilhas": (0.19, 0.06), "roda_mapa": (-0.12, -0.2)}
+
+
+def open_wheel(game, movement):
+    """Segura Q por alguns quadros e então move o mouse, como o jogador faria."""
+    held = dict(wheel_held=True)
+    for _ in range(3):
+        game.tick(1 / 30, InputState(**held))
+    dx, dy = movement
+    for _ in range(4):
+        game.tick(1 / 30, InputState(wheel_dx=dx / 4, wheel_dy=dy / 4, **held))
+
+
 def lit(game, x, y, target, pitch, z=0.0, power=False, flashlight_on=True, **equipment):
     """Posição de câmera no escuro, com a lanterna acesa, olhando para `target` (x, y)."""
     equip(game, battery=0.7, spare=2, flashlight_on=flashlight_on, batteries_found=2, **equipment)
@@ -241,10 +323,15 @@ def _ambientacao(nome):
     return cena
 
 
+HUD_SCENES = {"hud_trancada": scene_hud_trancada, "hud_silencio": scene_hud_silencio, "hud_perigo": scene_hud_perigo,
+              "hud_sem_carga": scene_hud_sem_carga, "pausa": scene_pausa, "roda_pilhas": scene_roda,
+              "roda_mapa": scene_roda}
+
 SCENES = {"cozinha_ampla": scene_cozinha_ampla, "quarto": scene_quarto, "lanterna": scene_lanterna, "corredor": scene_corredor, "cozinha": scene_cozinha,
           "sala_tv": scene_sala_tv, "garagem": scene_garagem, "escada": scene_escada,
           "nota": scene_nota, "titulo": scene_titulo}
 SCENES.update({nome: _ambientacao(nome) for nome in AMBIENTACAO})
+SCENES.update(HUD_SCENES)
 
 
 def render_player_view(scene, path, resolution, samples):
@@ -298,6 +385,8 @@ def main():
     game.place_player(x, y, z, math.radians(yaw_deg))
     game.player.pitch = math.radians(pitch_deg)
     game._sync_camera()
+    if args.cenario in WHEEL_MOVES:
+        open_wheel(game, WHEEL_MOVES[args.cenario])
     if args.cenario in ("corredor",):
         from sem_alvorada.entity.rig import EntityRig
         rig = EntityRig(scene)

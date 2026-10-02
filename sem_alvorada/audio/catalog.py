@@ -21,8 +21,11 @@ def _numbered(prefix, count):
 REQUIRED_SOUNDS = (
     tuple(n for s in STEP_SURFACES for n in _numbered(f"step_{s}", STEP_VARIATIONS))
     + ("door_open", "door_close", "door_slam", "door_locked", "door_unlock", "door_creak_long")
+    + _numbered("door_creak", 4) + ("door_handle", "door_latch", "door_open_soft")
     + ("pickup", "battery_pickup", "battery_insert", "paper_rustle", "key_jingle", "map_unfold")
-    + ("flash_on", "flash_off", "flash_flicker")
+    + ("hand_reach", "flash_pickup", "key_pickup", "battery_clack", "map_fold", "paper_pick")
+    + ("flash_on", "flash_off", "flash_flicker", "flash_click_on", "flash_click_off", "flash_flicker_burst")
+    + _numbered("cloth_rustle", 3) + ("ui_wheel_open", "ui_wheel_tick", "ui_wheel_close")
     + ("breath_calm", "breath_heavy", "heartbeat", "gasp")
     + ("amb_house", "amb_fridge", "amb_clock_tick", "amb_wind", "amb_tv_static", "amb_garage_hum",
        "amb_music_box", "amb_radio_static")

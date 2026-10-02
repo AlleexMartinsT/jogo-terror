@@ -2,24 +2,25 @@
 
 METER_TITLE = "SOM"
 METER_LABELS = {"player": "VOCÊ", "ambient": "AMBIENTE", "entity": "ENTIDADE"}
-METER_THRESHOLD_HINT = "limiar de audição"
+METER_THRESHOLD_HINT = "marca: acima daqui ele escuta você"
 
-HUD_FLASHLIGHT = "LANTERNA"
-HUD_SPARE = "PILHAS"
-HUD_OBJECTIVE = "OBJETIVO"
+HUD_FLASHLIGHT = "LANTERNA [F]"
+HUD_NO_CHARGE = "SEM CARGA"
+HUD_SWAP_HINT = "[R] trocar a pilha"
 HUD_STAMINA = "FÔLEGO"
+MSG_BATTERY_GOOD = "A pilha ainda está boa."     # só o flashlight.py usa; sai quando ele parar de falar
 
-MSG_FLASHLIGHT_HINT = "[F] liga e desliga a lanterna."
-MSG_NEED_FLASHLIGHT = "Não dá para sair no escuro. A lanterna está no criado-mudo."
-MSG_BATTERY_GOOD = "A pilha ainda está boa."
-MSG_LOOK_WINDOW = "Lá fora só existe o preto. Nem estrelas."
-MSG_GARAGE_NEEDS = "Ainda falta: {missing}."
-MSG_CAR_LOCKED = "Preciso destrancar a porta da garagem primeiro."
-MSG_RESPAWN = "Você acorda no último lugar seguro."
+# Roda de itens (Q ou Tab): um nome por setor, na ordem de inventory.SLOTS.
+WHEEL_LABELS = {"FLASHLIGHT": "Lanterna", "BATTERY": "Pilhas", "KEY": "Chave", "MAP": "Mapa", "NOTE": "Anotações"}
+WHEEL_IN_HAND = "NA MÃO"
+WHEEL_TAKE = "PEGAR"
 
 READER_CLOSE = "[E] fechar"
 
 PAUSE_TITLE = "PAUSADO"
+PAUSE_OBJECTIVE = "OBJETIVO"
+PAUSE_COLLECT = "COLETA"
+PAUSE_CONTROLS = "CONTROLES"
 PAUSE_HELP = "[ENTER] continuar    [ESC] sair"
 TITLE_START = "[ENTER] começar    [ESC] sair"
 CREDITS_LINES = [

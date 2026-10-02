@@ -12,7 +12,7 @@ from mathutils import Vector
 from .. import conventions as C
 from .. import layout
 from .. import story
-from . import collision, texts
+from . import collision
 
 CONE = math.radians(12.0)
 DOOR_EXTRA_REACH = 0.3
@@ -96,19 +96,41 @@ class Interact:
         return True
 
     def prompt_for(self, target):
+        """A dica de interação. É também o único aviso de estado: porta trancada, janela sem nada lá fora."""
         if target.kind == "door":
             return self._door_prompt(target.ref)
+        if target.kind == "look":
+            return story.PROMPT_LOOK
+        if target.kind == "car" and not self._garage_open():
+            return story.PROMPT_CAR_LOCKED
         if target.prompt:
             return target.prompt
         if target.kind == "item":
             return story.ITEM_PROMPTS.get(target.item, story.PROMPT_PICKUP)
-        return {"note": story.PROMPT_READ, "look": "[E] Olhar", "car": story.PROMPT_CAR}[target.kind]
+        return {"note": story.PROMPT_READ, "car": story.PROMPT_CAR}[target.kind]
+
+    def is_blocked(self, target):
+        """O alvo mostra um estado (trancado) e não uma ação: o HUD desenha a dica em tom de aviso."""
+        if target.kind == "door":
+            return self._door_blocked(target.ref)
+        return target.kind == "car" and not self._garage_open()
+
+    def _garage_open(self):
+        return "garage" in self.game.state.unlocked
+
+    def _door_blocked(self, door_id):
+        doors = self.game.doors
+        return doors.is_locked(door_id) and not self._garage_ready(door_id)
+
+    def _garage_ready(self, door_id):
+        return self.game.doors.get(door_id).lock == "garage" and self.game.state.collect_complete()
 
     def _door_prompt(self, door_id):
         doors = self.game.doors
         if doors.is_locked(door_id):
-            garage_ready = doors.get(door_id).lock == "garage" and self.game.state.collect_complete()
-            return story.PROMPT_UNLOCK_GARAGE if garage_ready else story.PROMPT_OPEN
+            if self._garage_ready(door_id):
+                return story.PROMPT_UNLOCK_GARAGE
+            return story.PROMPT_LOCKED.get(doors.get(door_id).lock, story.PROMPT_LOCKED_DEFAULT)
         return story.PROMPT_CLOSE if doors.is_open(door_id) else story.PROMPT_OPEN
 
     def select(self, eye, forward):
@@ -150,8 +172,9 @@ class Interact:
     # ---- ações ----
     def use(self, target):
         action = {"item": self._take, "note": self._read, "door": self._use_door,
-                  "look": self._look, "car": self._enter_car}[target.kind]
-        action(target)
+                  "car": self._enter_car}.get(target.kind)
+        if action is not None:          # a janela só informa (ver `prompt_for`); não há o que fazer com ela
+            action(target)
 
     def _take(self, target):
         """A mão estende até o item; o inventário só muda quando os dedos o tocam (`_collect`)."""
@@ -171,44 +194,35 @@ class Interact:
             state.spare_batteries += 1
         state.collected.add(target.ref)
         self.sync_scene()
-        text = story.PICKED.get(item, story.PROMPT_PICKUP)
-        if item == C.ITEM_FLASHLIGHT:
-            text += " " + texts.MSG_FLASHLIGHT_HINT
         game.make_noise("pickup", game.player.feet, C.NOISE_PLAYER["pickup"], sound=STORY_SOUND[item])
-        game.say(text)
+        if item in story.PICKED:        # item principal: uma das duas ocasiões em que o personagem fala
+            game.say(story.PICKED[item])
+        game.inventory.on_collected(item)
         game.director.on_item_taken(target)
 
     def _read(self, target):
         game = self.game
         game.make_noise("pickup", game.player.feet, C.NOISE_PLAYER["pickup"], sound=STORY_SOUND[C.ITEM_NOTE])
+        if target.ref not in game.state.notes_read:
+            game.inventory.on_collected(C.ITEM_NOTE)
         game.state.notes_read.add(target.ref)
         game.hands.begin_read(target.ref, on_open=lambda: game.open_note(target.ref))
         game.director.on_note_read(target.ref)
 
     def _use_door(self, target):
         game = self.game
-        door = game.doors.get(target.ref)
         if game.doors.is_locked(target.ref):
-            if door.lock == "garage" and game.state.collect_complete():
+            if self._garage_ready(target.ref):
                 game.director.unlock_garage()
-                return
-            game.doors.toggle(target.ref)
-            text = story.LOCKED_MSGS.get(door.lock, "Trancada.")
-            if door.lock == "garage":
-                text += " " + texts.MSG_GARAGE_NEEDS.format(missing=", ".join(game.state.missing_labels()))
-            game.say(text)
+            else:
+                game.doors.toggle(target.ref)       # a porta não cede; a dica de interação já diz "Trancada"
             return
         hurried = game.player.running or game.player.speed > C.SPEED_WALK * 1.3
         game.doors.toggle(target.ref, hurried=hurried)
 
-    def _look(self, target):
-        self.game.say(story.NOTHING_OUTSIDE)
-
     def _enter_car(self, target):
-        if "garage" not in self.game.state.unlocked:
-            self.game.say(texts.MSG_CAR_LOCKED)
-            return
-        self.game.director.on_car_used()
+        if self._garage_open():
+            self.game.director.on_car_used()
 
     # ---- cena ----
     def sync_scene(self):

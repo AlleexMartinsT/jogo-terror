@@ -25,7 +25,8 @@ BUDGET_BYTES = 20 * 1024 * 1024
 
 def load_recipes():
     """Importa os módulos de receitas (cada um se registra em `catalog.SPECS`)."""
-    from . import recipes_ambience, recipes_entity, recipes_foley, recipes_scene  # noqa: F401
+    from . import (recipes_ambience, recipes_doors, recipes_entity, recipes_foley, recipes_scene,  # noqa: F401
+                   recipes_ui)
 
 
 def seed_for(name):

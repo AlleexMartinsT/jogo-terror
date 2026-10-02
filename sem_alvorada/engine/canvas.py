@@ -1,9 +1,12 @@
 """Superfície de desenho 2D do HUD.
 
-`Canvas` só GRAVA operações (retângulos e textos, origem no canto inferior esquerdo, y para cima).
-O HUD e as telas desenham nela sem saber de GPU, então dá para testar sem janela.
+`Canvas` só GRAVA operações (retângulos, polígonos convexos e textos, origem no canto inferior esquerdo,
+y para cima). O HUD e as telas desenham nela sem saber de GPU, então dá para testar sem janela.
 `GpuCanvas` reproduz as operações num draw handler POST_PIXEL usando `gpu` e `blf`.
+Quem criar uma operação nova precisa implementá-la também nos `RasterCanvas` de `tools/prints.py` e
+`tests/test_engine_hud.py`, que a reproduzem em numpy.
 """
+import math
 import os
 
 # Paleta de papel envelhecido. Nada colorido demais: só o vermelho apagado dos avisos.
@@ -36,6 +39,34 @@ class Canvas:
     def rect(self, x, y, w, h, color):
         if color[3] > 0.003 and w > 0 and h > 0:
             self.ops.append(("rect", x, y, w, h, color))
+
+    def poly(self, points, color):
+        """Polígono CONVEXO preenchido; os pontos vão em sequência (horária ou anti-horária)."""
+        if color[3] > 0.003 and len(points) >= 3:
+            self.ops.append(("poly", tuple(points), color))
+
+    def line(self, x0, y0, x1, y1, thickness, color):
+        length = math.hypot(x1 - x0, y1 - y0)
+        if length < 1e-6:
+            return
+        nx, ny = -(y1 - y0) / length * thickness / 2, (x1 - x0) / length * thickness / 2
+        self.poly(((x0 + nx, y0 + ny), (x1 + nx, y1 + ny), (x1 - nx, y1 - ny), (x0 - nx, y0 - ny)), color)
+
+    def disc(self, cx, cy, radius, color, segments=28):
+        step = math.tau / segments
+        self.poly([(cx + radius * math.cos(i * step), cy + radius * math.sin(i * step)) for i in range(segments)],
+                  color)
+
+    def ring(self, cx, cy, radius, thickness, color, segments=56):
+        """Anel de espessura `thickness` por dentro do raio externo `radius`."""
+        step = math.tau / segments
+        inner = radius - thickness
+        for i in range(segments):
+            a0, a1 = i * step, (i + 1) * step
+            self.poly(((cx + inner * math.cos(a0), cy + inner * math.sin(a0)),
+                       (cx + radius * math.cos(a0), cy + radius * math.sin(a0)),
+                       (cx + radius * math.cos(a1), cy + radius * math.sin(a1)),
+                       (cx + inner * math.cos(a1), cy + inner * math.sin(a1))), color)
 
     def text(self, x, y, string, size, color, align="left"):
         """`y` é a linha de base. `align`: left | center | right."""
@@ -113,32 +144,37 @@ class GpuCanvas(Canvas):
         return blf.dimensions(self.font_id, string)[0]
 
     def flush(self):
-        """Desenha tudo o que foi gravado, na ordem: retângulos vizinhos viram um único lote."""
+        """Desenha tudo o que foi gravado, na ordem: retângulos e polígonos vizinhos viram um único lote."""
         import gpu
         gpu.state.blend_set("ALPHA")
         run = []
         for op in self.ops:
-            if op[0] == "rect":
+            if op[0] in ("rect", "poly"):
                 run.append(op)
                 continue
-            self._draw_rects(run)
+            self._draw_shapes(run)
             run = []
             self._draw_text(op)
-        self._draw_rects(run)
+        self._draw_shapes(run)
         gpu.state.blend_set("NONE")
         self.ops.clear()
 
-    def _draw_rects(self, rects):
-        if not rects:
+    def _draw_shapes(self, shapes):
+        if not shapes:
             return
         import gpu
         from gpu_extras.batch import batch_for_shader
         positions, colors, indices = [], [], []
-        for _kind, x, y, w, h, color in rects:
+        for op in shapes:
             base = len(positions)
-            positions += [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
-            colors += [tuple(color)] * 4
-            indices += [(base, base + 1, base + 2), (base, base + 2, base + 3)]
+            if op[0] == "rect":
+                _kind, x, y, w, h, color = op
+                corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+            else:
+                _kind, corners, color = op
+            positions += corners
+            colors += [tuple(color)] * len(corners)
+            indices += [(base, base + i, base + i + 1) for i in range(1, len(corners) - 1)]
         shader = gpu.shader.from_builtin("FLAT_COLOR")
         batch = batch_for_shader(shader, "TRIS", {"pos": positions, "color": colors}, indices=indices)
         batch.draw(shader)

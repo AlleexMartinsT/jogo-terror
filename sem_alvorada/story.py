@@ -13,7 +13,7 @@ TITLE = "SEM ALVORADA"
 SUBTITLE = "Harlan Ridge, Ohio. Domingo, 6:47."
 
 # --------------------------------------------------------------------------
-# Objetivos (mostrados no canto da tela)
+# Objetivos (só aparecem no menu de pausa)
 # --------------------------------------------------------------------------
 OBJ_TAKE_FLASHLIGHT = "Pegar a lanterna no criado-mudo."
 OBJ_LEAVE_ROOM = "Sair do quarto."
@@ -44,18 +44,19 @@ ITEM_PROMPTS = {
     "NOTE": "[E] Ler",
 }
 
-LOCKED_MSGS = {
-    "front": "Trancada por fora. Não é por aqui.",
-    "back": "A porta dos fundos não abre. Como se não houvesse nada do lado de lá.",
-    "garage": "Trancada. Preciso da chave do carro, do mapa e de pilhas para a estrada.",
-}
-GARAGE_UNLOCKED = "A porta da garagem destrancou."
-NOTHING_OUTSIDE = "Lá fora só existe o preto. Nem estrelas."
+# Estados que o personagem NÃO fala: aparecem como dica de interação, sem o [E] quando não há o que fazer.
+PROMPT_LOCKED = {"front": "Trancada por fora", "back": "Trancada", "garage": "Trancada"}
+PROMPT_LOCKED_DEFAULT = "Trancada"
+PROMPT_CAR_LOCKED = "Trancado"
+PROMPT_LOOK = "Lá fora só existe o preto"
+
+# Falas do personagem: só estas e as de PICKED/COLLECT_DONE (a regra está em docs/FASE3.md).
+OPENING_LINE = "Sem sol, de novo. Preciso de luz. A lanterna, no criado-mudo."
 FLASHLIGHT_DEAD = "A lanterna apagou. [R] para trocar as pilhas."
 NO_SPARE = "Sem pilhas reserva."
 BATTERY_SWAPPED = "Pilhas trocadas."
 PICKED = {
-    "FLASHLIGHT": "Lanterna.",
+    "FLASHLIGHT": "A lanterna. A pilha já não é nova.",
     "KEY": "A chave do carro. O chaveiro ainda tem o coelhinho dela.",
     "MAP": "O mapa da cidade. Uma estrada que não seja a Rota 33.",
     "BATTERY": "Pilhas reserva.",
@@ -144,6 +145,7 @@ TIPS = [
     "Portas fechadas seguram o som. Portas batidas, não.",
     "O zumbido de uma geladeira esconde o que você faz por perto.",
     "Quando o zumbido dele para, ele está perto.",
+    "Segure Q ou Tab e mova o mouse para escolher o que levar na mão esquerda.",
 ]
 
 CONTROLS = [
@@ -154,5 +156,6 @@ CONTROLS = [
     ("F", "lanterna"),
     ("R", "trocar pilhas"),
     ("E", "interagir"),
+    ("Q / Tab", "roda de itens (segurar)"),
     ("Esc", "pausar"),
 ]

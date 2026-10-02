@@ -91,6 +91,7 @@ REACH_MIN_STAMINA_TO_RUN = 0.15
 # Lanterna
 # --------------------------------------------------------------------------
 BATTERY_MAX = 1.0
+FLASHLIGHT_FOUND_CHARGE = 0.78        # a lanterna do criado-mudo já foi usada: ao pegá-la a carga cai para isto
 BATTERY_DRAIN_PER_SEC = 1.0 / 210.0   # ~3,5 min de luz por pilha
 BATTERY_LOW = 0.25                    # abaixo disso a luz começa a falhar
 BATTERY_CRITICAL = 0.08
@@ -113,9 +114,11 @@ NOISE_PLAYER = {
     "door_open": 0.30,
     "door_close": 0.35,
     "door_slam": 0.90,
+    "door_creak": 0.55,        # dobradiça que range: atravessa um cômodo e meio, não a casa (ver engine/doors.py)
     "pickup": 0.15,
     "flash_click": 0.10,
     "battery_swap": 0.18,
+    "key_jingle": 0.20,        # chaveiro na mão tilintando a cada passo de corrida
     "stairs_creak": 0.55,      # degrau que range
     "knock_over": 0.85,
 }
@@ -133,6 +136,7 @@ NOISE_ENTITY = {
     "growl": 0.70,
     "scream": 1.00,
     "door_open": 0.40,
+    "door_creak": 0.50,
     "door_break": 0.95,
 }
 

@@ -22,7 +22,7 @@ LOG = logging.getLogger("sem_alvorada.audio")
 
 # Distância de referência (m) em que o som toca a 100%: sons enormes carregam mais longe.
 _REFERENCE_DISTANCE = {
-    "default": 1.5, "ent_scream": 7.0, "ent_stinger": 8.0, "ent_door_break": 5.0, "ent_growl": 4.0,
+    "default": 1.5, "door_creak": 2.5, "ent_scream": 7.0, "ent_stinger": 8.0, "ent_door_break": 5.0, "ent_growl": 4.0,
     "ent_drone": 4.0, "ent_step": 3.0, "door_slam": 4.0, "blackout_thunk": 8.0, "glass_break": 3.5,
     "phone_ring": 3.0, "clock_chime": 3.0, "thud": 3.0, "car_": 4.0, "garage_rollup": 4.0, "death_hit": 8.0,
 }

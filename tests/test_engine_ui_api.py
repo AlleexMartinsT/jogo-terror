@@ -59,6 +59,7 @@ def test_window_and_operator_api():
 def test_event_types_used_by_controls_exist():
     valid = enum_ids(bpy.types.Event.bl_rna.properties["type"])
     used = set(controls.MOVE_KEYS) | controls.RUN_KEYS | controls.CROUCH_KEYS | set(controls.EDGE_KEYS)
+    used |= controls.WHEEL_KEYS
     used |= set(controls.DEBUG_KEYS) | {"TIMER", "MOUSEMOVE", "INBETWEEN_MOUSEMOVE", "WINDOW_DEACTIVATE"}
     assert used <= valid, used - valid
     values = enum_ids(bpy.types.Event.bl_rna.properties["value"])
@@ -83,8 +84,8 @@ def test_blf_and_gpu_signatures():
     assert "indices" in inspect.signature(batch_for_shader).parameters
 
 
-def test_gpu_canvas_replays_recorded_operations_in_order():
-    """GpuCanvas.flush chama blf/gpu com os mesmos dados que o Canvas gravou (com gpu e blf substituídos)."""
+def replay_on_fake_gpu(surface):
+    """Roda `surface.flush()` com gpu e blf substituídos e devolve as chamadas na ordem em que aconteceram."""
     calls = []
 
     class FakeBlf:
@@ -101,11 +102,6 @@ def test_gpu_canvas_replays_recorded_operations_in_order():
                                shader=SimpleNamespace(from_builtin=lambda name: name))
     fake_extras = SimpleNamespace(batch_for_shader=lambda shader, kind, content, indices=None: (
         calls.append(("batch", kind, len(content["pos"]), len(content["color"]), len(indices))) or FakeBatch()))
-    surface = canvas.GpuCanvas(1280, 720, 1)
-    surface.rect(0, 0, 10, 10, (1, 1, 1, 1))
-    surface.rect(20, 0, 10, 10, (1, 0, 0, 1))
-    surface.text(5, 5, "oi", 12, (1, 1, 1, 1))
-    surface.rect(0, 0, 5, 5, (0, 0, 0, 1))
     saved = {name: sys.modules.get(name) for name in ("blf", "gpu", "gpu_extras", "gpu_extras.batch")}
     sys.modules.update({"blf": FakeBlf(), "gpu": fake_gpu, "gpu_extras": fake_extras, "gpu_extras.batch": fake_extras})
     try:
@@ -116,12 +112,37 @@ def test_gpu_canvas_replays_recorded_operations_in_order():
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = module
+    return calls
+
+
+def test_gpu_canvas_replays_recorded_operations_in_order():
+    """GpuCanvas.flush chama blf/gpu com os mesmos dados que o Canvas gravou (com gpu e blf substituídos)."""
+    surface = canvas.GpuCanvas(1280, 720, 1)
+    surface.rect(0, 0, 10, 10, (1, 1, 1, 1))
+    surface.rect(20, 0, 10, 10, (1, 0, 0, 1))
+    surface.text(5, 5, "oi", 12, (1, 1, 1, 1))
+    surface.rect(0, 0, 5, 5, (0, 0, 0, 1))
+    calls = replay_on_fake_gpu(surface)
     kinds = [c[0] for c in calls]
     assert kinds[0] == "blend" and kinds[-1] == "blend"
     batches = [c for c in calls if c[0] == "batch"]
     assert [b[2] for b in batches] == [8, 4] and all(b[4] == 4 for b in batches[:1]), batches
     assert kinds.index("draw") > kinds.index("batch") and kinds.count("batch") == 2
     assert not surface.ops
+
+
+def test_gpu_canvas_batches_polygons_as_triangle_fans_next_to_rects():
+    surface = canvas.GpuCanvas(1280, 720, 1)
+    surface.rect(0, 0, 10, 10, (1, 1, 1, 1))
+    surface.poly([(0, 0), (10, 0), (14, 8), (5, 14), (-4, 8)], (1, 1, 1, 0.5))        # pentágono: 3 triângulos
+    surface.line(0, 0, 20, 0, 2, (1, 1, 1, 1))                                       # quadrilátero: 2 triângulos
+    surface.text(5, 5, "oi", 12, (1, 1, 1, 1))
+    surface.disc(50, 50, 5, (1, 1, 1, 1), segments=8)
+    calls = replay_on_fake_gpu(surface)
+    batches = [c for c in calls if c[0] == "batch"]
+    assert [(b[2], b[3], b[4]) for b in batches] == [(4 + 5 + 4, 4 + 5 + 4, 2 + 3 + 2), (8, 8, 6)], batches
+    kinds = [c[0] for c in calls]
+    assert kinds.index("draw") > kinds.index("batch") and kinds.count("batch") == 2
 
 
 class FakeWindow:
@@ -190,6 +211,26 @@ def test_session_keys_mouse_and_timer():
     assert game.player.yaw == yaw_after
     assert session.model["phase"] == "play" and game.player.feet != start
     assert session.errors_in_a_row == 0 and not game.error_text
+
+
+def test_session_wheel_key_sends_the_mouse_to_the_wheel_and_not_to_the_camera():
+    session = make_session()
+    game = session.game
+    game.state.has_flashlight, game.state.has_key = True, True
+    yaw = game.player.yaw
+    assert session.handle_event(event("TAB", "PRESS"))
+    session.handle_event(event("TIMER"))
+    assert game.inventory.wheel_open and session.model["wheel"]["open"]
+    session.handle_event(event("MOUSEMOVE", x=640 + 90, y=360 - 100))      # para a direita e para baixo: setor da chave
+    session.handle_event(event("TIMER"))
+    assert game.inventory.selection == "KEY" and game.player.yaw == yaw
+    assert session.model["wheel"]["name"] == "Chave"
+    session.handle_event(event("TAB", "RELEASE"))
+    session.handle_event(event("TIMER"))
+    assert not game.inventory.wheel_open and game.hands.held == "KEY"
+    session.handle_event(event("MOUSEMOVE", x=640 + 90 + 50, y=360 - 100))      # mais 50 px à direita
+    session.handle_event(event("TIMER"))
+    assert game.player.yaw < yaw, "soltou a roda: o mouse volta a girar a câmera"
 
 
 def test_session_survives_warp_that_does_nothing():

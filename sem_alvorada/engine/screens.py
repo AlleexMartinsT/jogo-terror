@@ -20,6 +20,8 @@ def draw_frame(canvas, model):
 
 def draw_playing(canvas, model):
     hud.draw_gameplay(canvas, model)
+    if model["fade_in"] > 0:         # voltou de uma morte: a tela clareia em vez de aparecer de repente
+        canvas.rect(0, 0, canvas.width, canvas.height, with_alpha(SHADE, model["fade_in"]))
 
 
 # --------------------------------------------------------------------------
@@ -66,7 +68,6 @@ def _draw_card(canvas, card, backdrop):
 # Leitor de notas
 # --------------------------------------------------------------------------
 def draw_reading(canvas, model):
-    hud.draw_gameplay(canvas, model)
     hud.draw_reader_dim(canvas)
     draw_note(canvas, model["note"])
 
@@ -117,18 +118,47 @@ def draw_title(canvas, model):
     canvas.text(cx, cy + 92 * u, info["subtitle"], 17 * u, PAPER_DIM, "center")
     canvas.rect(cx - 130 * u, cy + 70 * u, 260 * u, u, with_alpha(PAPER, 0.3))
     draw_controls(canvas, info["controls"], cx, cy + 34 * u)
-    canvas.text(cx, cy - 180 * u, texts.TITLE_START, 16 * u, PAPER, "center")
-    canvas.wrapped(cx, cy - 225 * u, info["tip"], 13 * u, with_alpha(PAPER_DIM, 0.85), canvas.width * 0.6, align="center")
+    canvas.text(cx, cy - 200 * u, texts.TITLE_START, 16 * u, PAPER, "center")
+    canvas.wrapped(cx, cy - 238 * u, info["tip"], 13 * u, with_alpha(PAPER_DIM, 0.85), canvas.width * 0.6, align="center")
 
 
 def draw_paused(canvas, model):
+    """O único lugar do jogo com objetivo, lista de coleta, medidor completo e controles."""
     u = canvas.scale
-    hud.draw_gameplay(canvas, model)
-    canvas.rect(0, 0, canvas.width, canvas.height, with_alpha(SHADE, 0.7))
+    canvas.rect(0, 0, canvas.width, canvas.height, with_alpha(SHADE, 0.84))
     cx, cy = canvas.width / 2, canvas.height / 2
-    canvas.text(cx, cy + 130 * u, texts.PAUSE_TITLE, 40 * u, PAPER, "center")
-    draw_controls(canvas, model["title"]["controls"], cx, cy + 80 * u)
-    canvas.text(cx, cy - 130 * u, texts.PAUSE_HELP, 16 * u, PAPER, "center")
+    canvas.text(cx, cy + 250 * u, texts.PAUSE_TITLE, 36 * u, PAPER, "center")
+    canvas.rect(cx - 130 * u, cy + 232 * u, 260 * u, u, with_alpha(PAPER, 0.3))
+    left, y = cx - 400 * u, cy + 190 * u
+    canvas.text(left, y, texts.PAUSE_OBJECTIVE, 11 * u, PAPER_DIM)
+    used = canvas.wrapped(left, y - 26 * u, model["objective"], 19 * u, PAPER, 360 * u)
+    y -= 26 * u + used + 28 * u
+    canvas.text(left, y, texts.PAUSE_COLLECT, 11 * u, PAPER_DIM)
+    for index, row in enumerate(model["collect"]):
+        _draw_collect_row(canvas, left, y - 26 * u - index * 24 * u, row)
+    y -= 26 * u + len(model["collect"]) * 24 * u + 14 * u
+    _draw_pause_meter(canvas, model["noise"], left, y)
+    canvas.text(cx + 180 * u, cy + 190 * u, texts.PAUSE_CONTROLS, 11 * u, PAPER_DIM, "center")
+    draw_controls(canvas, model["title"]["controls"], cx + 180 * u, cy + 164 * u)
+    canvas.text(cx, cy - 190 * u, texts.PAUSE_HELP, 16 * u, PAPER, "center")
+
+
+def _draw_collect_row(canvas, x, y, row):
+    u = canvas.scale
+    box = 10 * u
+    canvas.outline(x, y, box, box, max(1.0, u), with_alpha(PAPER, 0.8))
+    if row["done"]:
+        canvas.rect(x + 2.5 * u, y + 2.5 * u, box - 5 * u, box - 5 * u, PAPER)
+    label = row["label"] if row["need"] == 1 else f"{row['label']} {row['have']}/{row['need']}"
+    canvas.text(x + 19 * u, y - 0.5 * u, label, 14 * u, PAPER if row["done"] else PAPER_DIM)
+
+
+def _draw_pause_meter(canvas, noise, x, y):
+    u = canvas.scale
+    canvas.text(x, y, texts.METER_TITLE, 11 * u, PAPER_DIM)
+    for index, key in enumerate(("player", "ambient", "entity")):
+        hud.draw_meter_row(canvas, x, y - 28 * u - index * 26 * u, noise, key)
+    hud.draw_threshold_legend(canvas, x, y - 28 * u - 3 * 26 * u - 2 * u)
 
 
 def draw_dead(canvas, model):

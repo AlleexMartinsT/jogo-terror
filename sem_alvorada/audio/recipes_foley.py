@@ -1,4 +1,6 @@
-"""Receitas de foley: passos por piso, portas, itens, lanterna e sons do corpo do jogador."""
+"""Receitas de foley: passos por piso, itens e gestos das mãos, lanterna e sons do corpo do jogador.
+
+As portas estão em `recipes_doors`."""
 import numpy as np
 
 from . import dsp as D
@@ -103,89 +105,6 @@ def step_stairs(rng, index):
 
 
 # --------------------------------------------------------------------------
-# Portas
-# --------------------------------------------------------------------------
-def _latch(rng, gain=1.0):
-    """Lingueta do trinco: toque metálico com um baque de madeira embaixo."""
-    n = D.samples(0.15)
-    return gain * D.stack(_metal_tick(rng, 0.7), 0.5 * D.thump(n, 240, 130, 0.01, 0.025))
-
-
-def _wood_stop(rng, gain=1.0):
-    """Folha encostando no batente: baque surdo curto."""
-    n = D.samples(0.3)
-    return gain * (D.thump(n, 105, 55, 0.03, 0.07) + 0.4 * _soft_burst(rng, n, 700, 0.04, 0.002))
-
-
-@sound("door_open", peak=0.8, group="doors")
-def door_open(rng):
-    out = np.zeros(D.samples(1.6))
-    D.mix_into(out, _latch(rng), 0.02)
-    D.mix_into(out, _creak(rng, 1.0, (52, 96), (620, 860), 0.4), 0.14, gain=0.85)
-    D.mix_into(out, _soft_burst(rng, D.samples(1.0), 450, 0.5, 0.3) * D.swell(D.samples(1.0)), 0.14, gain=0.05)
-    D.mix_into(out, _wood_stop(rng, 0.35), 1.2)
-    return D.reverb(rng, out, 0.35, wet=0.15)
-
-
-@sound("door_close", peak=0.8, group="doors")
-def door_close(rng):
-    out = np.zeros(D.samples(1.4))
-    D.mix_into(out, _creak(rng, 0.85, (96, 55), (840, 610), 0.35), 0.02, gain=0.8)
-    D.mix_into(out, _soft_burst(rng, D.samples(0.8), 450, 0.4, 0.3) * D.swell(D.samples(0.8)), 0.02, gain=0.05)
-    D.mix_into(out, _wood_stop(rng, 0.8), 0.86)
-    D.mix_into(out, _latch(rng, 1.1), 0.88)
-    return D.reverb(rng, out, 0.35, wet=0.15)
-
-
-@sound("door_slam", peak=0.95, group="doors")
-def door_slam(rng):
-    n = D.samples(2.2)
-    out = np.zeros(n)
-    boom = D.thump(n, 75, 32, 0.05, 0.25)
-    slab = _soft_burst(rng, n, 1500, 0.08, 0.001)
-    wood = D.modal_strike(rng, [(110, 0.25, 0.6), (190, 0.18, 0.5), (340, 0.14, 0.35), (520, 0.10, 0.25)], n, spread=0.02)
-    crack = _burst(rng, n, 1500, 12000, 0.012, attack=0.0002)
-    out += 1.0 * boom + 0.8 * slab + 0.6 * wood + 0.6 * crack
-    D.mix_into(out, _latch(rng, 0.9), 0.008)
-    for k in range(6):      # o batente e a folha vibram depois do impacto
-        D.mix_into(out, _burst(rng, D.samples(0.05), 800, 3000, 0.01), 0.06 + 0.045 * k, gain=0.35 * 0.7 ** k)
-    return D.reverb(rng, out, 0.9, wet=0.28, predelay=0.02)[:D.samples(2.2)]
-
-
-@sound("door_locked", peak=0.8, group="doors")
-def door_locked(rng):
-    out = np.zeros(D.samples(1.3))
-    for start, gain in ((0.02, 1.0), (0.42, 0.85), (0.78, 0.55)):
-        for k in range(3):      # a maçaneta sacoleja: três batidas metálicas seguidas
-            D.mix_into(out, _metal_tick(rng, gain * (1.0 - 0.25 * k), ring=0.03), start + 0.03 * k)
-        D.mix_into(out, D.thump(D.samples(0.2), 210, 120, 0.01, 0.04), start, gain=0.5 * gain)
-    D.mix_into(out, _wood_stop(rng, 0.3), 0.03)
-    return D.reverb(rng, out, 0.3, wet=0.12)
-
-
-@sound("door_unlock", peak=0.75, group="doors")
-def door_unlock(rng):
-    out = np.zeros(D.samples(1.5))
-    for start in (0.03, 0.10):       # chave entrando: raspado agudo em dois tempos
-        D.mix_into(out, _burst(rng, D.samples(0.06), 3500, 9500, 0.03, attack=0.004), start, gain=0.35)
-    for k, start in enumerate((0.30, 0.38, 0.45)):    # pinos do cilindro
-        D.mix_into(out, _metal_tick(rng, 0.6 + 0.1 * k, ring=0.012), start)
-    D.mix_into(out, _latch(rng, 1.2), 0.62)
-    D.mix_into(out, D.thump(D.samples(0.25), 160, 85, 0.02, 0.06), 0.62, gain=0.5)
-    D.mix_into(out, _burst(rng, D.samples(0.1), 3000, 9000, 0.05, attack=0.01), 1.05, gain=0.25)
-    return D.reverb(rng, out, 0.3, wet=0.12)
-
-
-@sound("door_creak_long", peak=0.8, group="doors")
-def door_creak_long(rng):
-    seconds = 4.6
-    groan = _creak(rng, seconds, (42, 118), (480, 940), 0.55)
-    n = len(groan)
-    air = _soft_burst(rng, n, 380, 3.0, 0.6) * D.swell(n)
-    return D.reverb(rng, groan + 0.06 * air, 0.5, wet=0.15)
-
-
-# --------------------------------------------------------------------------
 # Itens
 # --------------------------------------------------------------------------
 @sound("pickup", peak=0.6, group="items")
@@ -249,6 +168,78 @@ def map_unfold(rng):
     return out
 
 
+@sound("hand_reach", peak=0.35, group="items")
+def hand_reach(rng):
+    """Braço estendendo: a manga da camisa de flanela roça no tronco. Quase só ar e tecido."""
+    n = D.samples(0.5)
+    cloth = _soft_burst(rng, n, 1900, 0.4, 0.12) * D.swell(n, 0.55, 1.4)
+    fibres = _crackle(rng, 0.5, 40, 900, 4500) * D.swell(n, 0.6, 1.5)
+    return 0.8 * cloth + 0.18 * fibres
+
+
+@sound("flash_pickup", peak=0.7, group="items")
+def flash_pickup(rng):
+    """Lanterna de metal pesada erguida da superfície: peso na palma, o tubo vibra e a pilha chacoalha dentro."""
+    out = np.zeros(D.samples(0.9))
+    D.mix_into(out, D.thump(D.samples(0.2), 210, 120, 0.02, 0.05), 0.0, gain=0.7)                  # peso na mão
+    tube = [(rng.uniform(560, 680), 0.07, 0.5), (rng.uniform(1350, 1550), 0.05, 0.35), (rng.uniform(2500, 2800), 0.03, 0.2)]
+    D.mix_into(out, D.modal_strike(rng, tube, D.samples(0.5), spread=0.02), 0.01, gain=0.5)        # tubo toca
+    D.mix_into(out, _burst(rng, D.samples(0.15), 600, 2800, 0.06, attack=0.01), 0.0, gain=0.35)    # dedos no corpo
+    for at, gain in ((0.22, 0.5), (0.31, 0.3)):                                                     # pilha chacoalhando
+        D.mix_into(out, _metal_tick(rng, gain, ring=0.01), at)
+        D.mix_into(out, D.thump(D.samples(0.08), 330, 190, 0.008, 0.02), at, gain=0.3 * gain)
+    D.mix_into(out, _soft_burst(rng, D.samples(0.3), 1400, 0.1, 0.03), 0.4, gain=0.25)            # ajeita na mão
+    return D.reverb(rng, out, 0.25, wet=0.1)
+
+
+@sound("key_pickup", peak=0.6, group="items")
+def key_pickup(rng):
+    """Chaveiro colhido: chaves tilintam umas nas outras ao sair da superfície e o anel arrasta."""
+    out = np.zeros(D.samples(1.0))
+    D.mix_into(out, _burst(rng, D.samples(0.12), 1500, 6500, 0.05, attack=0.015), 0.0, gain=0.3)    # anel arrasta
+    for start, gain in ((0.05, 0.8), (0.12, 0.65), (0.20, 0.5), (0.31, 0.35), (0.44, 0.2)):
+        base = rng.uniform(3000, 4400)
+        modes = [(base, 0.12, 0.5), (base * 1.52, 0.09, 0.35), (base * 2.31, 0.06, 0.22), (base * 0.61, 0.15, 0.3)]
+        D.mix_into(out, D.modal_strike(rng, modes, D.samples(0.4)), start, gain=gain * rng.uniform(0.7, 1.0))
+    D.mix_into(out, D.thump(D.samples(0.1), 260, 150, 0.01, 0.02), 0.06, gain=0.2)
+    return D.reverb(rng, out, 0.28, wet=0.12)
+
+
+@sound("battery_clack", peak=0.8, group="items")
+def battery_clack(rng):
+    """Pilha D batendo na palma e no metal da lanterna: estalo grave e curto, sem o tilintar de `battery_pickup`."""
+    out = np.zeros(D.samples(0.5))
+    D.mix_into(out, D.thump(D.samples(0.12), 330, 190, 0.008, 0.022), 0.0, gain=0.9)
+    cell = [(rng.uniform(1350, 1550), 0.03, 0.5), (rng.uniform(2800, 3100), 0.02, 0.35), (rng.uniform(4300, 4700), 0.012, 0.2)]
+    D.mix_into(out, D.modal_strike(rng, cell, D.samples(0.25), spread=0.015), 0.0, gain=0.7)
+    D.mix_into(out, _metal_tick(rng, 0.45, ring=0.006), 0.05)                                       # a mola do contato cede
+    D.mix_into(out, _burst(rng, D.samples(0.03), 1800, 7000, 0.007, attack=0.0004), 0.0, gain=0.5)
+    return D.reverb(rng, out, 0.22, wet=0.1)
+
+
+@sound("map_fold", peak=0.6, group="items")
+def map_fold(rng):
+    """Mapa dobrado de novo: três vincos que estalam e o papel deslizando entre eles."""
+    n = D.samples(1.1)
+    out = np.zeros(n)
+    for start, length in ((0.02, 0.28), (0.38, 0.26), (0.72, 0.3)):
+        slide = _burst(rng, D.samples(length), 2200, 8500, 0.2, attack=0.03) * D.swell(D.samples(length), 0.4)
+        D.mix_into(out, slide + 0.5 * _crackle(rng, length, 90, 1500, 9000), start, gain=0.4)
+        crease = _burst(rng, D.samples(0.05), 1600, 7500, 0.012, attack=0.0008)
+        D.mix_into(out, crease, start + length * 0.7, gain=0.8)
+    return out
+
+
+@sound("paper_pick", peak=0.5, group="items")
+def paper_pick(rng):
+    """Folha tirada de uma superfície: raspa curta, a borda se curva e o papel acomoda na mão."""
+    n = D.samples(0.5)
+    scrape = _burst(rng, n, 2600, 8000, 0.12, attack=0.03) * D.swell(n, 0.3, 1.5)
+    out = 0.5 * scrape + 0.6 * _crackle(rng, 0.5, 70, 1700, 8500) * D.swell(n, 0.35, 1.2)
+    D.mix_into(out, _burst(rng, D.samples(0.04), 1400, 6000, 0.01, attack=0.0008), 0.28, gain=0.4)
+    return out
+
+
 # --------------------------------------------------------------------------
 # Lanterna
 # --------------------------------------------------------------------------
@@ -277,6 +268,45 @@ def flash_flicker(rng):
         crackle = _burst(rng, D.samples(length), 2000, 9000, 0.015, attack=0.0005)
         D.mix_into(out, 0.5 * buzz + 0.8 * crackle, start, gain=rng.uniform(0.5, 1.0))
     D.mix_into(out, _burst(rng, D.samples(0.02), 2500, 12000, 0.004), 0.68, gain=0.8)
+    return out
+
+
+@sound("flash_click_on", peak=0.7, group="flashlight")
+def flash_click_on(rng):
+    """Botão de borracha da lanterna: a cúpula cede, o contato fecha com um estalo seco e a mola volta."""
+    out = np.zeros(D.samples(0.22))
+    D.mix_into(out, _soft_burst(rng, D.samples(0.04), 1400, 0.012, 0.004), 0.0, gain=0.5)          # borracha cede
+    D.mix_into(out, _burst(rng, D.samples(0.05), 2400, 11000, 0.005, attack=0.0002), 0.012, gain=0.9)
+    D.mix_into(out, D.thump(D.samples(0.06), 640, 360, 0.008, 0.016), 0.012, gain=0.5)
+    D.mix_into(out, _metal_tick(rng, 0.3, ring=0.007), 0.016)
+    D.mix_into(out, _burst(rng, D.samples(0.03), 1800, 6000, 0.006, attack=0.0004), 0.07, gain=0.25)   # a cúpula volta
+    return out
+
+
+@sound("flash_click_off", peak=0.6, group="flashlight")
+def flash_click_off(rng):
+    """O mesmo botão desligando: um tom mais grave e abafado, sem o estalo de contato fechando."""
+    out = np.zeros(D.samples(0.22))
+    D.mix_into(out, _soft_burst(rng, D.samples(0.04), 1200, 0.012, 0.004), 0.0, gain=0.5)
+    D.mix_into(out, _burst(rng, D.samples(0.05), 1700, 8000, 0.006, attack=0.0003), 0.012, gain=0.7)
+    D.mix_into(out, D.thump(D.samples(0.06), 500, 270, 0.009, 0.02), 0.012, gain=0.6)
+    D.mix_into(out, _metal_tick(rng, 0.2, ring=0.006), 0.016)
+    D.mix_into(out, _burst(rng, D.samples(0.03), 1400, 5000, 0.006, attack=0.0004), 0.075, gain=0.2)
+    return out
+
+
+@sound("flash_flicker_burst", peak=0.7, group="flashlight")
+def flash_flicker_burst(rng):
+    """Três falhas da luz logo depois de acender: a pilha velha mal fecha o contato e o filamento chia."""
+    out = np.zeros(D.samples(0.95))
+    for start, length, gain in ((0.0, 0.07, 1.0), (0.17, 0.05, 0.8), (0.32, 0.04, 0.65), (0.50, 0.03, 0.4)):
+        n = D.samples(length)
+        buzz = D.harmonic_tone(rng.uniform(105, 135), n, [1, 0.6, 0.4, 0.5, 0.3]) * D.attack_decay(n, 0.002, length * 0.4)
+        crackle = _burst(rng, n, 1800, 9500, length * 0.3, attack=0.0004)
+        D.mix_into(out, 0.45 * buzz + 0.85 * crackle, start, gain=gain)
+        D.mix_into(out, _metal_tick(rng, 0.25 * gain, ring=0.005), start)
+    D.mix_into(out, _burst(rng, D.samples(0.03), 2200, 9000, 0.006), 0.66, gain=0.5)               # a luz firma
+    D.mix_into(out, 0.05 * D.harmonic_tone(120.0, D.samples(0.25), [1, 0.5]) * D.swell(D.samples(0.25), 0.2), 0.66)
     return out
 
 
@@ -315,3 +345,15 @@ def gasp(rng):
     voice = D.formants(D.harmonic_tone(pitch, n, D.sawtooth_weights(10, 1.0)), [(750, 200, 1.0), (1250, 250, 0.6)])
     voice = D.unit_rms(voice) * D.attack_decay(n, 0.06, 0.12)
     return air + 0.25 * voice
+
+
+@sound_family("cloth_rustle", 3, peak=0.34, group="body")
+def cloth_rustle(rng, index):
+    """Camisa de flanela e calça se mexendo, bem baixo: ruído abafado e granulado, sem ataque nenhum."""
+    seconds = (0.55, 0.75, 0.42)[index]
+    band = ((420, 3400), (520, 2800), (700, 4200))[index]
+    n = D.samples(seconds)
+    body = D.band_noise(rng, n, *band)
+    grain = 0.55 + 0.45 * np.abs(D.smooth_noise(rng, n, (22, 17, 28)[index]))
+    fibres = _crackle(rng, seconds, 55, 1200, 6000)
+    return (body * grain + 0.25 * fibres) * D.swell(n, (0.4, 0.5, 0.35)[index], 1.3)

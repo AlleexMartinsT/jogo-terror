@@ -5,7 +5,6 @@ destrancar a porta da garagem (garage_unlock) -> carro (ending). Morte -> death 
 O objetivo na tela é função do `GameState` (ver `GameState.objective`).
 """
 from .. import story
-from . import texts
 from .state import (FLAG_BLACKOUT, FLAG_COLLECT_DONE, FLAG_ENDING, FLAG_GARAGE_UNLOCKED, FLAG_INTRO)
 
 AGGRESSION_HUNT = 0
@@ -17,7 +16,6 @@ TRIGGER_ROOM = "hall_u"
 class Director:
     def __init__(self, game):
         self.game = game
-        self._warned_about_dark = False
 
     # ---- início ----
     def start_new_game(self, skip_intro=False):
@@ -29,16 +27,9 @@ class Director:
     # ---- gatilhos por posição ----
     def update(self, dt):
         game = self.game
-        state = game.state
-        in_trigger_room = game.player.room_id == TRIGGER_ROOM
-        if FLAG_BLACKOUT not in state.flags and in_trigger_room:
-            if state.has_flashlight:
-                game.play_cutscene("blackout")
-            elif not self._warned_about_dark:
-                self._warned_about_dark = True
-                game.say(texts.MSG_NEED_FLASHLIGHT)
-        if not in_trigger_room:
-            self._warned_about_dark = False
+        if (FLAG_BLACKOUT not in game.state.flags and game.state.has_flashlight
+                and game.player.room_id == TRIGGER_ROOM):
+            game.play_cutscene("blackout")
 
     # ---- eventos do jogador ----
     def on_item_taken(self, target):
@@ -58,7 +49,6 @@ class Director:
         state.flags.add(FLAG_GARAGE_UNLOCKED)
         pos = game.doors.center("garage_door")
         game.make_noise("pickup", pos, 0.15, sound="door_unlock")
-        game.say(story.GARAGE_UNLOCKED)
         game.play_cutscene("garage_unlock")
 
     def on_car_used(self):
@@ -82,6 +72,7 @@ class Director:
         game.state.flags.add(FLAG_INTRO)
         game.place_player_at_start()
         game.phase = "play"
+        game.say(story.OPENING_LINE, seconds=4.5)
         game.save_checkpoint()
 
     def _after_blackout(self):

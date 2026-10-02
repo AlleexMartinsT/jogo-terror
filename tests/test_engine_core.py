@@ -259,7 +259,8 @@ def test_flashlight_toggle_drain_flicker_and_death():
     game.state.battery = 0.004
     tick_seconds(game, 2)
     assert not game.state.flashlight_on and game.state.battery == 0.0
-    assert game.message_text == story.FLASHLIGHT_DEAD
+    battery = game.hud_model()["battery"]
+    assert battery["dead"] and battery["alpha"] == 1.0, "lanterna sem carga: a bateria fica na tela"
     assert beam.energy == 0.0
 
 
@@ -267,18 +268,18 @@ def test_flashlight_battery_swap():
     game = start_playing(make_game(world=True))
     game.state.has_flashlight = True
     step(game, InputState(reload=True))
-    assert game.message_text == story.NO_SPARE
+    assert game.flashlight.swap_left == 0 and game.hud_model()["battery"]["alpha"] > 0, "sem pilha reserva: só mostra a bateria"
     game.state.spare_batteries = 1
     game.state.battery = 0.95
     step(game, InputState(reload=True))
-    assert game.message_text == texts.MSG_BATTERY_GOOD and game.state.spare_batteries == 1
+    assert game.flashlight.swap_left == 0 and game.state.spare_batteries == 1, "pilha ainda boa: não troca"
     game.state.battery = 0.2
     step(game, InputState(reload=True))
     assert kinds_logged(game, "battery_swap")[-1][2] == C.NOISE_PLAYER["battery_swap"]
     assert game.flashlight.swap_left > 0
     tick_seconds(game, 1.5)
     assert game.state.battery > 0.99 and game.state.spare_batteries == 0
-    assert game.state.flashlight_on and game.message_text == story.BATTERY_SWAPPED
+    assert game.state.flashlight_on
     game.state.battery = 0.0
     game.state.flashlight_on = False
     game.state.spare_batteries = 1
@@ -542,14 +543,17 @@ def test_gate_requires_key_map_and_three_found_batteries():
     aim_at(game, game.doors.center("garage_door"))
     step(game)
     assert game.interact.current.ref == "garage_door"
-    assert game.interact.prompt_for(game.interact.current) == story.PROMPT_OPEN
+    assert game.interact.prompt_for(game.interact.current) == story.PROMPT_LOCKED["garage"]
+    assert game.hud_model()["prompt_blocked"], "porta trancada: a dica vai em tom de aviso"
     step(game, InputState(interact=True))
     assert game.doors.is_locked("garage_door") and game.phase == "play"
-    assert story.LOCKED_MSGS["garage"] in game.message_text and story.LABEL_BATTERIES in game.message_text
+    assert game.message_text in ("", story.OPENING_LINE), "porta trancada não é fala"
+    assert kinds_logged(game, "flash_click"), "a mão tentou a maçaneta"
     st.batteries_found, st.spare_batteries = 3, 0            # usar pilhas não descontaria do que foi encontrado
     assert st.collect_complete()
     step(game)
     assert game.interact.prompt_for(game.interact.current) == story.PROMPT_UNLOCK_GARAGE
+    assert not game.hud_model()["prompt_blocked"]
     step(game, InputState(interact=True))
     assert not game.doors.is_locked("garage_door") and "garage" in st.unlocked
     assert game.phase == "cutscene" and cutscenes.played[-1] == "garage_unlock"
@@ -590,12 +594,13 @@ def test_story_flow_intro_blackout_collect_unlock_ending():
     assert game.hud_model()["overlay"]["letterbox"] == 1.0
     run_for(game, 1.5)
     assert game.phase == "play" and game.state.objective == story.OBJ_TAKE_FLASHLIGHT
+    assert game.message_text == story.OPENING_LINE, "o personagem fala ao começar a partida"
     assert game.checkpoint is not None
     hall = layout.ROOMS["hall_u"].rect.center
     teleport(game, hall[0], hall[1], 2.8, 0)
     run_for(game, 0.3)
     assert game.phase == "play" and "blackout" not in cutscenes.played, "blackout sem lanterna"
-    assert game.message_text == texts.MSG_NEED_FLASHLIGHT
+    assert game.message_text in ("", story.OPENING_LINE), "sem lanterna não há aviso falado"
     game.state.has_flashlight = True
     assert game.state.objective == story.OBJ_LEAVE_ROOM
     run_for(game, 0.3)
@@ -633,8 +638,10 @@ def test_car_refuses_until_garage_unlocked():
     teleport(game, car.x + 1.0, car.y, 0.0, 90)
     aim_at(game, (car.x, car.y, car.z + 1.0))
     step(game)
+    assert game.interact.prompt_for(game.interact.current) == story.PROMPT_CAR_LOCKED
+    assert game.hud_model()["prompt_blocked"]
     step(game, InputState(interact=True))
-    assert game.phase == "play" and game.message_text == texts.MSG_CAR_LOCKED
+    assert game.phase == "play" and game.message_text in ("", story.OPENING_LINE)
 
 
 def farness(a, b):
@@ -721,8 +728,9 @@ def test_player_camera_follows_player_with_bob():
 
 def test_hud_model_is_complete_in_every_phase():
     game, brain, rig, cutscenes = game_with_fake_entity(hunts=False, debug=True)
-    required = {"phase", "battery", "collect", "objective", "prompt", "message", "message_alpha", "noise", "stamina",
-                "exhausted", "crouching", "overlay", "note", "title", "death", "ending", "debug", "error"}
+    required = {"phase", "battery", "collect", "objective", "prompt", "prompt_blocked", "message", "message_alpha",
+                "noise", "stamina", "stamina_alpha", "exhausted", "crouching", "wheel", "fade_in", "overlay", "note",
+                "title", "death", "ending", "debug", "error"}
     seen = set()
     for phase in ("title", "cutscene", "play", "reading", "paused", "dead", "credits"):
         game.phase = phase
@@ -732,7 +740,9 @@ def test_hud_model_is_complete_in_every_phase():
         seen.add(model["phase"])
     assert len(seen) == 7
     model = game.hud_model()
-    assert {"levels", "peaks", "hear_threshold", "labels"} <= set(model["noise"])
+    assert {"levels", "peaks", "hear_threshold", "labels", "alpha", "entity_audible"} <= set(model["noise"])
+    assert {"has", "level", "on", "spare", "low", "critical", "swapping", "dead", "can_swap", "alpha"} <= set(model["battery"])
+    assert {"open", "slots", "pointer", "name", "caption"} <= set(model["wheel"]) and len(model["wheel"]["slots"]) == 5
     assert set(model["noise"]["levels"]) == {"player", "ambient", "entity"}
     assert 0.0 < model["noise"]["hear_threshold"] < 0.5
     assert [row["label"] for row in model["collect"]] == [story.LABEL_KEY, story.LABEL_MAP, story.LABEL_BATTERIES]

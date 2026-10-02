@@ -2,13 +2,19 @@
 
 Toda chamada ao host passa por aqui. Erros em chamadas cosméticas (um som que falta, um objeto que
 não existe) são registrados em `errors` e NÃO derrubam a cutscene: o jogo continua e o teste pega.
+
+O palco também lembra tudo o que a cutscene mexeu (transformações, visibilidade, luzes, braços do corpo,
+atores) para devolver no fim, tanto no fim normal quanto num `skip`.
 """
+import math
 from dataclasses import dataclass
 
 from .. import conventions as C
+from . import camera
 
 # Objetos que só existem para cutscenes (criados por `cutscenes.build`)
 HEADLIGHT_ENERGY = 3500.0
+EXPECTED_EYE = C.PLAYER_EYE_STAND
 
 
 @dataclass(frozen=True)
@@ -19,6 +25,7 @@ class PlayerSnapshot:
     z: float
     yaw: float
     eye_z: float
+    pitch: float = 0.0
 
     @property
     def eye(self):
@@ -29,18 +36,50 @@ class PlayerSnapshot:
         dx, dy = C.yaw_dir(self.yaw)
         return (self.x + dx * distance, self.y + dy * distance, self.eye_z if height is None else height)
 
+    def gaze(self, distance=6.0):
+        """Ponto para onde o jogador olhava (com a inclinação da cabeça): a primeira vista da cutscene é a do jogo."""
+        dx, dy = C.yaw_dir(self.yaw)
+        flat = math.cos(self.pitch)
+        return (self.x + dx * flat * distance, self.y + dy * flat * distance,
+                self.eye_z + math.sin(self.pitch) * distance)
+
+
+class Actor:
+    """Algo que vive por vários quadros (vento, pêndulo, carro). Subclasses restauram o que mexeram em `stop`."""
+
+    def start(self, stage):
+        pass
+
+    def update(self, stage, dt):
+        pass
+
+    def stop(self, stage):
+        pass
+
 
 class Stage:
     def __init__(self, host):
         self.host = host
         self.errors = []
         self.player = self._snapshot()
-        self.moved = {}                   # objeto -> deslocamento (dx, dy, dz) aplicado pelas Tracks
+        self.t = 0.0                      # tempo absoluto da cutscene
+        self.dt = 0.0
+        self.signals = {}                 # um ator publica (ex.: aceleração do carro), outro lê (o coelhinho)
+        self.poses = {}                   # nome do objeto carregador -> (origem, (rx, ry, rz)); a câmera `mount` lê daqui
+        self.actors = {}
+        self.entity_speed = 0.0           # m/s que a rig da entidade usa para o passo
+        self.flash_hand = 0.0             # 0..1: tremor da lanterna na mão (a lanterna do jogo segue a câmera da cutscene)
+        self.flashlight_follows = False
         self._loops = set()
         self._lit = set()                 # luzes CutLight_* que esta cutscene acendeu
+        self._gains = set()               # luzes da casa que a cutscene escureceu/realçou
         self._head_limit = None           # (valor original) se a entidade foi erguida por esta cutscene
         self._dawn_used = False
         self._visibility = {}             # objeto -> (hide_viewport, hide_render) originais, devolvidos no fim
+        self._touched = {}                # objeto -> transformação original
+        self._arms = set()
+        self._body_shown = False
+        self._camera_q = None
 
     def _snapshot(self):
         try:
@@ -48,7 +87,14 @@ class Stage:
         except Exception as exc:          # noqa: BLE001 - um host sem jogador ainda deixa a cutscene rodar
             self.errors.append(f"player_state: {exc}")
             x, y, z, yaw, eye_z = 0.0, 0.0, 0.0, 0.0, C.PLAYER_EYE_STAND
-        return PlayerSnapshot(x, y, z, yaw, eye_z)
+        pitch = 0.0
+        getter = getattr(self.host, "player_pitch", None)
+        if getter is not None:
+            try:
+                pitch = float(getter())
+            except Exception as exc:      # noqa: BLE001
+                self.errors.append(f"player_pitch: {exc}")
+        return PlayerSnapshot(x, y, z, yaw, eye_z, pitch)
 
     def safe(self, label, fn, *args, **kwargs):
         """Chama o host; se falhar, anota e segue."""
@@ -65,8 +111,66 @@ class Stage:
     def obj(self, name):
         return self.safe(f"get_object({name})", self.host.get_object, name)
 
-    def offset(self, name):
-        return self.moved.get(name, (0.0, 0.0, 0.0))
+    def touch(self, obj):
+        """Guarda a transformação original de `obj` (uma vez) para devolver ao terminar."""
+        if obj is None or obj in self._touched:
+            return obj
+        saved = {}
+        for attr in ("location", "rotation_euler", "scale"):
+            value = getattr(obj, attr, None)
+            if value is not None:
+                saved[attr] = tuple(value)
+        saved["rotation_mode"] = getattr(obj, "rotation_mode", None)
+        saved["rotation_quaternion"] = tuple(getattr(obj, "rotation_quaternion", ())) or None
+        self._touched[obj] = saved
+        return obj
+
+    def _restore_transforms(self):
+        for obj, saved in self._touched.items():
+            for attr in ("location", "rotation_euler", "scale"):
+                if attr in saved:
+                    setattr(obj, attr, saved[attr])
+            if saved["rotation_mode"] is not None:
+                obj.rotation_mode = saved["rotation_mode"]
+            if saved["rotation_quaternion"] is not None:
+                obj.rotation_quaternion = saved["rotation_quaternion"]
+        self._touched.clear()
+
+    # ---------------------------------------------------------------- carregadores (o carro)
+    def set_mount(self, name, origin, euler):
+        self.poses[name] = (tuple(origin), tuple(euler))
+
+    def mount_quaternion(self, name):
+        return camera.euler_xyz_quaternion(*self.poses[name][1])
+
+    def mount_transform(self, name):
+        """(origem, quaternion) do objeto que carrega a câmera; sem ator que o mova, vale a pose do objeto na cena."""
+        if name not in self.poses:
+            obj = self.obj(name)
+            location = tuple(getattr(obj, "location", (0.0, 0.0, 0.0))) if obj is not None else (0.0, 0.0, 0.0)
+            euler = tuple(getattr(obj, "rotation_euler", (0.0, 0.0, 0.0))) if obj is not None else (0.0, 0.0, 0.0)
+            self.poses[name] = (location, euler)
+        return self.poses[name][0], self.mount_quaternion(name)
+
+    def to_world(self, mount, local_point):
+        origin, q = self.mount_transform(mount)
+        r = camera.rotate(q, local_point)
+        return (origin[0] + r[0], origin[1] + r[1], origin[2] + r[2])
+
+    # ---------------------------------------------------------------- atores
+    def start_actor(self, key, actor):
+        self.stop_actor(key)
+        self.actors[key] = actor
+        self.safe(f"actor.start({key})", actor.start, self)
+
+    def stop_actor(self, key):
+        actor = self.actors.pop(key, None)
+        if actor is not None:
+            self.safe(f"actor.stop({key})", actor.stop, self)
+
+    def update_actors(self, dt):
+        for key, actor in list(self.actors.items()):
+            self.safe(f"actor.update({key})", actor.update, self, dt)
 
     # ---------------------------------------------------------------- som
     def sound(self, name, pos=None, volume=1.0, pitch=1.0):
@@ -89,7 +193,7 @@ class Stage:
         for key in list(self._loops):
             self.stop_loop(key)
 
-    # ---------------------------------------------------------------- luzes só de cutscene
+    # ---------------------------------------------------------------- luzes
     def set_light(self, name, energy):
         """Liga/desliga uma luz `CutLight_*` (desligada = oculta, para não pesar no orçamento de luzes)."""
         obj = self.obj(name)
@@ -100,6 +204,13 @@ class Stage:
         obj.data.energy = max(0.0, energy)
         (self._lit.add if on else self._lit.discard)(name)
 
+    def house_light(self, name, gain):
+        """Escurece ou realça uma luz da casa (`Light_<sala>_cN`) sem brigar com o LightManager do engine."""
+        setter = getattr(self.host, "set_light_gain", None)
+        if setter is not None:
+            self.safe(f"set_light_gain({name})", setter, name, gain)
+            (self._gains.add if abs(gain - 1.0) > 1e-6 else self._gains.discard)(name)
+
     def headlights(self, on):
         """Liga/desliga os faróis do carro (módulo props). Ligados usam `sa_base_energy` se existir."""
         for name in ("Car_Headlight_L", "Car_Headlight_R"):
@@ -108,6 +219,16 @@ class Stage:
                 continue
             obj.hide_viewport = obj.hide_render = not on
             obj.data.energy = float(obj.get("sa_base_energy", HEADLIGHT_ENERGY)) if on else 0.0
+
+    def headlight_level(self, level):
+        """Intensidade 0..1 dos faróis (a partida do motor faz a luz oscilar)."""
+        for name in ("Car_Headlight_L", "Car_Headlight_R"):
+            obj = self.obj(name)
+            if obj is None or not hasattr(getattr(obj, "data", None), "energy"):
+                continue
+            base = float(obj.get("sa_base_energy", HEADLIGHT_ENERGY))
+            obj.hide_viewport = obj.hide_render = level <= 0.001
+            obj.data.energy = base * max(0.0, level)
 
     def set_visible(self, name, visible):
         obj = self.obj(name)
@@ -141,11 +262,55 @@ class Stage:
     def entity_head(self):
         return tuple(self.entity.head_position())
 
+    # ---------------------------------------------------------------- corpo do jogador
+    @property
+    def body(self):
+        return getattr(self.host, "body", None)
+
+    def show_body(self, visible):
+        """Liga o corpo na cutscene (câmera dos olhos do Daniel). Sem corpo no jogo, não faz nada."""
+        shower = getattr(self.host, "show_body", None)
+        if shower is not None:
+            self.safe("show_body", shower, visible)
+        self._body_shown = visible
+
+    def body_call(self, method, *args, **kwargs):
+        body = self.body
+        fn = getattr(body, method, None) if body is not None else None
+        if fn is None:
+            return None
+        return self.safe(f"body.{method}", fn, *args, **kwargs)
+
+    def arm(self, side):
+        body = self.body
+        if body is None:
+            return None
+        arm = self.safe(f"body.arm({side})", body.arm, side)
+        if arm is not None:
+            self._arms.add(side)
+        return arm
+
+    # ---------------------------------------------------------------- fim
     def finish_up(self):
-        """Ao terminar (ou pular): solta os loops e apaga as luzes de cutscene. A câmera volta em `player.py`."""
+        """Ao terminar (ou pular): para atores e loops, apaga as luzes de cutscene, devolve tudo o que foi mexido."""
+        for key in list(self.actors):
+            self.stop_actor(key)
         self.stop_all_loops()
         for name in list(self._lit):
             self.set_light(name, 0.0)
+        for name in list(self._gains):
+            self.house_light(name, 1.0)
+        for side in list(self._arms):
+            arm = self.safe(f"body.arm({side})", self.body.arm, side) if self.body is not None else None
+            if arm is not None:
+                self.safe("arm.release", arm.release, 1.0)
+        self._arms.clear()
+        if self._body_shown:
+            self.show_body(False)
+            attach = getattr(self.body, "attach_view", None)
+            if attach is not None:
+                self.safe("body.attach_view(None)", attach, None)
+        self._restore_transforms()
         for obj, (hide_viewport, hide_render) in self._visibility.items():
             obj.hide_viewport, obj.hide_render = hide_viewport, hide_render
         self._visibility.clear()
