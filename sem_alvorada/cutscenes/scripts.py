@@ -336,7 +336,8 @@ def build_ending():
     car_home = (car.x, car.y, car.z)
     driver_eye = anchor("car_driver_eye")
     road = layout.ENTITY_ROAD_POS
-    car_stop = (car.x, road[1] + 6.0, car.z)
+    # A entrada de carros desce 6 cm até a calçada (world/street.py, `_driveway`): sem isso, o carro anda no ar
+    car_stop = (car.x, road[1] + 6.0, car.z - 0.054)
     rollup = layout.OPENINGS["garage_rollup"]
     rollup_mid = (rollup.mid[0], rollup.pos, 1.1)
     lift = 2.3

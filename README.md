@@ -2,6 +2,8 @@
 
 Jogo de terror psicológico em primeira pessoa, feito inteiramente dentro do Blender. Modelos, texturas, sons e lógica são gerados por código Python: não há nenhum arquivo de arte, áudio ou modelo vindo de fora.
 
+A segunda fase refez a ambientação. Nada é mais caixa com textura: móveis têm chanfro, costura e desgaste, o tecido cai com simulação de pano, o carro é uma carroceria esculpida por seções, o telhado tem telha por telha. O padrão de acabamento está em [`docs/ACABAMENTO.md`](docs/ACABAMENTO.md). O Alto (a entidade) ainda é o modelo da primeira fase e fica para a próxima.
+
 Domingo, 6:47, Harlan Ridge, Ohio. O sol devia ter nascido às 6:12 e a janela continua preta. Daniel acorda sozinho numa casa americana de dois andares e precisa de três coisas para sair dela: a **chave do carro**, o **mapa da cidade** e **três pilhas reserva** para a lanterna. Com tudo em mãos, a porta da garagem destranca. Enquanto isso, o Alto, uma figura de 2,65 m com olhos brancos, anda pela casa. Ele escuta melhor do que enxerga.
 
 ## Capturas
@@ -75,8 +77,9 @@ SemAlvorada.blend      o jogo construído (casa, props, entidade, cutscenes, nav
 play.py                inicia a partida dentro do Blender
 sem_alvorada/
   layout.py            planta da casa: fonte única de geometria, colisão, IA e som
-  conventions.py       nomes, constantes e as tabelas de ruído
+  conventions.py       nomes, constantes, orçamentos de triângulos e as tabelas de ruído
   story.py             todo o texto do jogo (pt-BR)
+  craft.py             acabamento das malhas: chanfro, subdivisão, pano, tubos, leitura de .npz
   world/               casa, texturas procedurais, luzes, rua, Sol Negro, pós-processamento
   props/               móveis, itens, notas, carro
   entity/              o Alto: modelo, esqueleto e animação procedural
@@ -84,16 +87,23 @@ sem_alvorada/
   engine/              jogador, lanterna, portas, HUD, operador modal
   audio/               síntese dos sons, reprodução 3D e sistema de ruído
   ai/                  cérebro da entidade e malha de navegação
+assets/models/         malhas pré-calculadas (.npz) de peças que dependem de bibliotecas externas
+tools/                 capturas (prints.py), inspeção de objeto e scripts de modelagem auxiliar
 docs/CONTRACT.md       contrato entre os módulos
+docs/ACABAMENTO.md     padrão de modelagem da fase 2
 tests/                 testes (scripts com assert)
 ```
+
+### Ferramentas auxiliares de modelagem
+
+Algumas peças (a carroceria do carro, o tampo da pia com cuba) precisam de operações que o Blender faz mal, como interseção booleana robusta. Elas são modeladas offline em `tools/modelagem/` com `trimesh`, `manifold3d`, `shapely` e `scipy`, e o resultado vai para `assets/models/*.npz`. O jogo só lê o `.npz` com numpy: nenhum módulo de `sem_alvorada/` importa essas bibliotecas, então quem só quer jogar ou reconstruir o `.blend` não precisa instalar nada além do Blender. Só é preciso rodar o script de novo se a forma da peça mudar. Veja [`tools/modelagem/README.md`](tools/modelagem/README.md).
 
 ## Reconstruir e testar
 
 O `.blend` é gerado por código. Para refazê-lo:
 
 ```
-blender -b --python construir.py -- --quality medium     # com o Blender instalado
+blender -b --python construir.py -- --quality medium     # com o Blender instalado (cerca de 2 min em CPU, arquivo de ~50 MB)
 python construir.py                                      # com o módulo bpy (pip install bpy)
 python -m sem_alvorada.build --stages world,props --out out/parcial.blend   # só algumas etapas
 python -m sem_alvorada.audio.synth                       # regenera os 77 sons em assets/audio
@@ -105,10 +115,14 @@ Testes (rodam sem janela; sem GPU use `LIBGL_ALWAYS_SOFTWARE=1`):
 ```
 python tests/test_integration_build.py     # constrói tudo e confere as costuras entre módulos
 python tests/sim_playthrough.py --rebuild  # um robô joga: coleta tudo, destranca a garagem, chega ao final
+python tests/test_world_geometry.py        # casca da casa: vãos, escadas, exterior, orçamentos
+python tests/test_props_layout.py          # móveis e itens: posição, alcance, texturas, orçamentos
 python tests/test_engine_core.py
 python tests/test_audio_noise.py
 python tests/test_ai_brain.py
 ```
+
+Capturas do jogo como o jogador veria: `LIBGL_ALWAYS_SOFTWARE=1 python tools/prints.py sala_sofa --out out/prints` (a lista de cenários está em `tools/prints.py`). Para olhar um objeto isolado, de vários ângulos: `tools/inspect_object.py`.
 
 ## Por que não é um jogo "nativo" do Blender
 
@@ -120,3 +134,8 @@ O Blender removeu o Game Engine na versão 2.80. Este jogo roda como um operador
 - Tudo que exige janela e placa de vídeo reais (desenho do HUD com `gpu`, captura do mouse, compositor ao vivo, 30 fps no EEVEE, áudio em dispositivo real) foi escrito contra a API do Blender 5.0.1 e testado por introspecção, mas não foi executado numa GUI.
 - O timbre dos sons foi conferido por números e espectrogramas, não de ouvido.
 - O equilíbrio da dificuldade foi pouco exercitado: o robô de teste não se esconde.
+- A cena tem cerca de 960 mil triângulos (teto de 1,2 milhão no teste de integração) e 216 props. Em GPU de entrada isso pode pesar no EEVEE: use `--quality low` e, se for preciso, esconda o exterior, que só aparece pelas janelas e no final.
+- O exterior é quase preto no jogo, de propósito. As imagens de fachada, rua e telhado em `docs/capturas/estudio_*` foram feitas com `tools/vista_estudio.py`, com luz de apoio, para mostrar o modelo e não o que o jogador vê.
+- O Alto (a entidade) continua com o modelo da primeira fase. Ele destoa do resto, agora mais detalhado, e é o próximo item.
+- Ficaram simplificados: o interior do forno e do freezer (as tampas não abrem), as portas do carro (só fresta e maçaneta, sem animação) e o desenho de ranhuras do pneu (sulcos em geometria, relevo fino só em textura).
+- Duas famílias de funções de ruído para textura (`props/tex_noise.py` e `props/tex_ruido.py`) cobrem coisas parecidas e podem ser unificadas.

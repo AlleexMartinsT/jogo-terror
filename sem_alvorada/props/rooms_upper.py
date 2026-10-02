@@ -27,6 +27,9 @@ def build_master(ctx):
     clock_x, clock_y, clock_yaw = bedrooms.ALARM_CLOCK_POSE
     bedrooms.make_alarm_clock(ctx, room, clock_x, clock_y, top + 0.001, clock_yaw)
     make_point_light(ctx, room, 1, (0.30, 8.90, top + 0.30), 40.0, WARM_LAMP, "lamp", flicker=0.0)
+    # Reflexo do abajur na parede: sem ele o criado-mudo da lanterna (nogueira escura, a 2,7 m do abajur) fica
+    # preto e o primeiro objetivo do jogo some no escuro.
+    make_point_light(ctx, room, 2, (0.50, 6.25, top + 0.45), 8.0, WARM_LAMP, "lamp", radius=0.08)
 
     x, y, wall_yaw = against_wall(room, "E", 6.9, 0.5)
     bedrooms.make_dresser(ctx, room, x, y, wall_yaw)

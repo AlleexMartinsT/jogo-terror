@@ -2,7 +2,8 @@
 
     LIBGL_ALWAYS_SOFTWARE=1 python tools/prints.py <cenario> [--res 1280x720] [--samples 16]
 
-Cenários: quarto, lanterna, cozinha_ampla, corredor, cozinha, sala_tv, garagem, escada, nota, titulo.
+Cenários: veja `SCENES` (cômodos no escuro com lanterna, notas e título). O exterior é quase preto no
+jogo; para ele existe `tools/vista_estudio.py`.
 O HUD é rasterizado na CPU pelo mesmo `Canvas` que o jogo desenha com `gpu`/`blf`, então o layout é o real.
 Útil para ver o resultado sem abrir a GUI do Blender (ex.: em servidor sem tela).
 """
@@ -186,9 +187,64 @@ def scene_titulo(game):
     return 6.5, 2.0, 0.0, 0.0, 6
 
 
+def lit(game, x, y, target, pitch, z=0.0, power=False, flashlight_on=True, **equipment):
+    """Posição de câmera no escuro, com a lanterna acesa, olhando para `target` (x, y)."""
+    equip(game, battery=0.7, spare=2, flashlight_on=flashlight_on, batteries_found=2, **equipment)
+    game.lights.set_power(power)
+    make_noise(game, 0.0, 0.0)
+    return x, y, z, look_at_yaw(x, y, *target), pitch
+
+
+UPPER = layout.LEVEL_Z[1]
+
+# (x, y, alvo, pitch, z). Os do andar de cima somam UPPER ao z.
+AMBIENTACAO = {
+    "sala_sofa": ((0.9, 2.3), (2.5, 4.0), -12, 0.0),
+    "sala_acesa": ((2.4, 1.2), (3.4, 4.2), -12, 0.0),
+    "sala_relogio": ((2.4, 3.2), (3.6, 5.55), 4, 0.0),
+    "sala_mesinha": ((1.6, 4.8), (3.05, 4.15), -28, 0.0),
+    "escritorio_mesa": ((3.4, 7.6), (1.7, 9.4), -14, 0.0),
+    "escritorio_cortica": ((1.6, 8.3), (0.1, 9.45), 0, 0.0),
+    "hall_porta": ((6.4, 4.2), (6.9, 0.5), -2, 0.0),
+    "hall_telefone": ((6.2, 6.4), (7.8, 4.9), -6, 0.0),
+    "jantar_mesa": ((8.6, 4.3), (10.4, 2.5), -16, 0.0),
+    "jantar_aparador": ((9.6, 3.9), (11.7, 1.4), -6, 0.0),
+    "cozinha_fogao": ((9.0, 6.0), (11.8, 8.8), -10, 0.0),
+    "garagem_portao": ((18.0, 1.8), (14.6, 0.1), 8, 0.0),
+    "quarto_menina": ((4.4, 4.3), (1.2, 1.2), -12, UPPER),
+    "quarto_casal": ((4.4, 5.8), (1.0, 8.4), -14, UPPER),
+    "banheiro": ((8.6, 4.3), (11.0, 1.2), -10, UPPER),
+    "escritorio_cima": ((8.6, 5.8), (11.2, 9.0), -10, UPPER),
+    "casal_cama": ((3.3, 6.2), (1.2, 7.6), -12, UPPER),
+    "casal_cabeceira": ((1.6, 9.3), (0.4, 8.8), -22, UPPER),
+    "casal_armario": ((3.6, 7.2), (4.2, 9.6), -2, UPPER),
+    "casal_comoda": ((3.0, 6.0), (4.7, 6.9), -4, UPPER),
+    "menina_cama": ((3.4, 2.9), (1.2, 3.9), -14, UPPER),
+    "menina_estante": ((2.6, 2.2), (0.8, 0.3), -8, UPPER),
+    "menina_casa": ((3.0, 3.6), (4.7, 2.8), -6, UPPER),
+    "menina_mesa": ((3.0, 3.2), (2.0, 4.7), -10, UPPER),
+    "banheiro_banheira": ((9.3, 2.6), (11.4, 1.0), -8, UPPER),
+    "banheiro_pia": ((9.6, 2.4), (9.1, 4.6), -10, UPPER),
+    "escritorio_cima_mesa": ((9.1, 7.2), (10.7, 9.3), -12, UPPER),
+    "escritorio_cima_estante": ((10.4, 6.5), (8.2, 6.4), -4, UPPER),
+    "corredor_cima": ((6.5, 1.3), (6.5, 6.0), -2, UPPER),
+}
+
+
+LUZ_ACESA = {"sala_acesa"}      # o estado do começo da partida, antes do apagão
+
+
+def _ambientacao(nome):
+    def cena(game):
+        origem, alvo, pitch, z = AMBIENTACAO[nome]
+        return lit(game, *origem, alvo, pitch, z=z, power=nome in LUZ_ACESA)
+    return cena
+
+
 SCENES = {"cozinha_ampla": scene_cozinha_ampla, "quarto": scene_quarto, "lanterna": scene_lanterna, "corredor": scene_corredor, "cozinha": scene_cozinha,
           "sala_tv": scene_sala_tv, "garagem": scene_garagem, "escada": scene_escada,
           "nota": scene_nota, "titulo": scene_titulo}
+SCENES.update({nome: _ambientacao(nome) for nome in AMBIENTACAO})
 
 
 def render_player_view(scene, path, resolution, samples):
@@ -212,12 +268,15 @@ def load_pixels(path, size):
 
 
 def main():
+    global OUT
     parser = argparse.ArgumentParser()
     parser.add_argument("cenario", choices=sorted(SCENES))
     parser.add_argument("--res", default="1280x720")
     parser.add_argument("--samples", type=int, default=16)
     parser.add_argument("--blend", default=BLEND_PATH)
+    parser.add_argument("--out", default=OUT)
     args = parser.parse_args()
+    OUT = args.out
     size = tuple(int(v) for v in args.res.lower().split("x"))
     os.makedirs(OUT, exist_ok=True)
 
