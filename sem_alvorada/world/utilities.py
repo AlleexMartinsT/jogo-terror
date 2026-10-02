@@ -63,8 +63,8 @@ def telephone_pole(m, x, y, crossarms=(8.0, 7.2), tilt=0.0):
     """Poste de madeira: fuste torto, duas travessas com isoladores de vidro, transformador cinza e estai com âncora."""
     base = GROUND_Z
     top = base + 9.0
-    ext.sweep_circle(m, [(x + tilt * t, y, base + 9.0 * t) for t in np.linspace(0, 1, 7)], 0.14, "wood_dark", sides=8,
-                     radii=[0.17 - 0.05 * t for t in np.linspace(0, 1, 7)])
+    ext.sweep_circle(m, [(x + tilt * t, y, base + 9.0 * t) for t in np.linspace(0, 1, 5)], 0.14, "wood_dark", sides=7,
+                     radii=[0.17 - 0.05 * t for t in np.linspace(0, 1, 5)])
     for height in crossarms:
         z = base + height
         px = x + tilt * height / 9.0
@@ -72,13 +72,13 @@ def telephone_pole(m, x, y, crossarms=(8.0, 7.2), tilt=0.0):
         for dy in (-0.85, -0.35, 0.35, 0.85):
             m.cylinder(px, y + dy, z + 0.09, 0.025, 0.07, "ext_bin_gray", seg=6, r_top=0.045)
             m.cylinder(px, y + dy, z + 0.16, 0.045, 0.07, "ext_bin_gray", seg=6, r_top=0.02)
-        m.bar((px, y - 0.55, z - 0.12), (px, y - 0.10, z - 0.52), 0.05, "wood_dark")
-        m.bar((px, y + 0.55, z - 0.12), (px, y + 0.10, z - 0.52), 0.05, "wood_dark")
+        m.bar((px, y - 0.55, z - 0.12), (px, y - 0.10, z - 0.52), 0.05, "wood_dark", caps=(False, False))
+        m.bar((px, y + 0.55, z - 0.12), (px, y + 0.10, z - 0.52), 0.05, "wood_dark", caps=(False, False))
     m.cylinder(x + 0.30, y, base + 6.4, 0.22, 0.62, "ext_bin_gray", seg=14, r_top=0.20)
     m.cylinder(x + 0.30, y, base + 7.0, 0.22, 0.04, "ext_bin_gray", seg=14, r_top=0.12)
     m.box(x + 0.16, y, base + 6.2, 0.10, 0.28, 0.9, "wood_dark")
-    for k in range(4):                                                  # degraus de escalada
-        m.bar((x + 0.18, y - 0.10, base + 2.4 + 0.5 * k), (x + 0.28, y - 0.10, base + 2.4 + 0.5 * k), 0.018, "iron_black")
+    for k in range(3):                                                  # degraus de escalada
+        m.bar((x + 0.18, y - 0.10, base + 2.4 + 0.7 * k), (x + 0.28, y - 0.10, base + 2.4 + 0.7 * k), 0.018, "iron_black")
     anchor = (x + 2.2, y + 0.4, base)
     ext.sweep_circle(m, [(x + 0.1, y, base + 6.0), (x + 1.2, y + 0.2, base + 3.0), anchor], 0.006, "iron_black", sides=4)
     m.bar((anchor[0], anchor[1], base - 0.1), (anchor[0] + 0.1, anchor[1], base + 0.3), 0.04, "iron_black")
@@ -114,7 +114,7 @@ def road_sign(m, x, y):
 def build(ctx):
     ext.start(ctx)
     rng = ext.rng_for(ctx, "utilities")
-    m = ext.builder("StreetFurniture", ext.FINE)
+    m = ext.builder("StreetFurniture", ext.PROFILED)
     hydrant(m, 20.8, -5.9)
     street_light(m, 10.5, -5.0, arm_toward=-1.0)
     street_light(m, 31.0, -6.2, arm_toward=-1.0)

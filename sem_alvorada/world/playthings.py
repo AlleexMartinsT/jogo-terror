@@ -106,7 +106,7 @@ def chalk(m, x, y, drive_z):
 def build(ctx):
     ext.start(ctx)
     rng = ext.rng_for(ctx, "playthings")
-    m = ext.builder("Playthings", ext.FINE)
+    m = ext.builder("Playthings", ext.PROFILED)
     tricycle(m, 9.0, -3.1, 28)
     ball(m, 11.4, -2.4)
     swing_set(m, rng, 10.2, 13.2)

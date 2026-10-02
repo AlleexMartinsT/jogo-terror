@@ -99,6 +99,20 @@ def _headlight(ctx, name, x, parent):
     return lamp
 
 
+def _bind_bulb_glow(body, lamp):
+    """Liga `sa_glow` da carroceria à energia do farol: quem acende os faróis (cutscene, jogo) acende as lâmpadas também,
+    sem precisar conhecer o material. O driver vale 1 quando o farol passa de 100 W."""
+    driver = body.driver_add('["sa_glow"]').driver
+    driver.type = "SCRIPTED"
+    variable = driver.variables.new()
+    variable.name = "watts"
+    variable.type = "SINGLE_PROP"
+    variable.targets[0].id_type = "LIGHT"
+    variable.targets[0].id = lamp.data
+    variable.targets[0].data_path = "energy"
+    driver.expression = "min(1.0, watts / 100.0)"
+
+
 def make_car(ctx):
     """Cria `Car` (raiz), corpo, vidros, rodas, faróis desligados, olhos do motorista e ponto de interação."""
     anchor = layout.ANCHORS["car"]
@@ -112,15 +126,16 @@ def make_car(ctx):
     ctx.link(root, C.COL_PROPS)
     body = _new_object(ctx, "Car_Body", build_body_mesh(), root, (0, 0, 0))
     body["sa_tris"] = sum(len(p.vertices) - 2 for p in body.data.polygons)
-    body["sa_glow"] = 0.0          # as lâmpadas dos faróis leem esta propriedade (material car_lens_glow); a cutscene a liga com os faróis
+    body["sa_glow"] = 0.0          # as lâmpadas dos faróis leem esta propriedade (material car_lens_glow)
     _new_object(ctx, "Car_Glass", build_glass_mesh().to_mesh("Car_Glass"), root, (0, 0, 0))
     for suffix, x, y in (("FL", -WHEEL_X, WHEEL_Y), ("FR", WHEEL_X, WHEEL_Y), ("RL", -WHEEL_X, -WHEEL_Y),
                          ("RR", WHEEL_X, -WHEEL_Y)):
         name = f"Car_Wheel_{suffix}"
         wheel = _new_object(ctx, name, build_wheel_mesh(name).to_mesh(name), root, (x, y, WHEEL_RADIUS))
         wheel["sa_side"] = 1 if x > 0 else -1
-    _headlight(ctx, "Car_Headlight_L", -0.62, root)
+    lamp_left = _headlight(ctx, "Car_Headlight_L", -0.62, root)
     _headlight(ctx, "Car_Headlight_R", 0.62, root)
+    _bind_bulb_glow(body, lamp_left)
     bpy.context.view_layer.update()          # matrix_world do root precisa estar atual antes de parentear os marcadores
     eye = layout.ANCHORS["car_driver_eye"]
     _marker(ctx, "Car_DriverEye", eye.pos, root, "SPHERE", 0.1)

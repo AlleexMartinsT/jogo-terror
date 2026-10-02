@@ -166,7 +166,7 @@ def electric_meter(m, x, y):
 def build(ctx):
     ext.start(ctx)
     rng = ext.rng_for(ctx, "yard")
-    m = ext.builder("Yard", ext.FINE)
+    m = ext.builder("Yard", ext.PROFILED)
     mailbox(m, rng, 12.4, -4.7)
     bin_standing(m, 19.2, -0.95, 8, "ext_bin_green")
     bin_standing(m, 20.1, -1.05, -4, "ext_bin_gray", lid_open=0.0)

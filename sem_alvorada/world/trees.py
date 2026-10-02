@@ -100,7 +100,7 @@ def build(ctx):
 
     far = ext.builder("Trees_Far", ext.PROFILED)
     placed = 0
-    while placed < ext.scaled(ctx, 46):
+    while placed < ext.scaled(ctx, 34):
         angle, radius = rng.uniform(0, 2 * math.pi), rng.uniform(40.0, 120.0)
         x, y = 6.0 + math.cos(angle) * radius, 5.0 + math.sin(angle) * radius
         if layout.ROAD.y0 - 3 < y < layout.ROAD.y1 + 3:

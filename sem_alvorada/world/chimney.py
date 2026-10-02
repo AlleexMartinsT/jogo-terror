@@ -25,7 +25,9 @@ def roof_cutout():
 
 
 def _brick(m, rng, x0, y0, z0, x1, y1, z1, faces):
-    """Tijolo como caixa sem fundo; `faces` lista quais lados existem ('-x', '+x', '-y', '+y', 'top')."""
+    """Tijolo como pele de caixa; `faces` lista quais lados existem ('-x', '+x', '-y', '+y', 'top').
+
+    Só a frente e um lado: o resto fica escondido pelas juntas e pelo miolo de argamassa, e são milhares de tijolos."""
     u0, v0 = rng.random() * (1 - UV_WINDOW), rng.random() * (1 - UV_WINDOW)
     uv = [(u0, v0), (u0 + UV_WINDOW, v0), (u0 + UV_WINDOW, v0 + UV_WINDOW), (u0, v0 + UV_WINDOW)]
     quads = {
@@ -56,14 +58,14 @@ def _course(m, rng, z0, box, course_index, inset=0.0):
     z1 = z0 + BRICK_HEIGHT
     stagger = BRICK_LENGTH / 2 if course_index % 2 else 0.0
     for a, b in _run(rng, y1 - y0, stagger):                 # face oeste, a mais visível
-        _brick(m, rng, x_out, y0 + a, z0, x_out + BRICK_DEPTH, y0 + b, z1, ("-x", "top", "-y", "+y"))
+        _brick(m, rng, x_out, y0 + a, z0, x_out + BRICK_DEPTH, y0 + b, z1, ("-x", "-y"))
     for side, y_face in ((-1, y0), (1, y1)):                 # faces sul e norte, entre os cantos
         for a, b in _run(rng, depth - BRICK_DEPTH - JOINT, BRICK_LENGTH / 2 - stagger * 0.3):
             lo, hi = x_out + BRICK_DEPTH + JOINT + a, x_out + BRICK_DEPTH + JOINT + b
             if side < 0:
-                _brick(m, rng, lo, y_face, z0, hi, y_face + BRICK_DEPTH, z1, ("-y", "top", "-x", "+x"))
+                _brick(m, rng, lo, y_face, z0, hi, y_face + BRICK_DEPTH, z1, ("-y", "-x"))
             else:
-                _brick(m, rng, lo, y_face - BRICK_DEPTH, z0, hi, y_face, z1, ("+y", "top", "-x", "+x"))
+                _brick(m, rng, lo, y_face - BRICK_DEPTH, z0, hi, y_face, z1, ("+y", "-x"))
 
 
 def _core(m, box, z0, z1, inset=0.012):
