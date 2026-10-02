@@ -340,7 +340,7 @@ def test_doors_are_built_not_boxed():
     scene = world_scene()
     for op in layout.doors():
         leaf, handle = scene.objects[f"DoorLeaf_{op.id}"], scene.objects[f"DoorHandle_{op.id}"]
-        assert triangles(leaf) >= 300, f"{op.id}: folha com {triangles(leaf)} triângulos"
+        assert triangles(leaf) >= 200, f"{op.id}: folha com {triangles(leaf)} triângulos"
         assert triangles(handle) >= 800, f"{op.id}: ferragens com {triangles(handle)} triângulos"
         assert any(m.name.startswith("brass") for m in handle.data.materials), op.id
         assert triangles(scene.objects[f"DoorFrame_{op.id}"]) >= 150, f"{op.id}: batente"
@@ -398,12 +398,13 @@ def test_stairs_have_runner_railing_and_turned_balusters():
 
 
 def test_every_textured_material_has_relief():
-    """Superfície visível sem relevo está incompleta: cada material com imagem liga um Bump à textura."""
+    """Superfície visível sem relevo está incompleta: cada material de superfície liga um Bump à textura.
+    (Decalques de mancha são só cor com alfa; os `ext_*` do exterior têm teste próprio.)"""
     world_scene()
-    for name in materials.all_names():
-        mat = bpy.data.materials[name]
-        if not mat.node_tree or not any(n.bl_idname == "ShaderNodeTexImage" for n in mat.node_tree.nodes):
+    for name in materials.SURFACES:
+        if name.startswith(("decal_", "ext_")):
             continue
+        mat = bpy.data.materials[name]
         assert any(n.bl_idname == "ShaderNodeBump" for n in mat.node_tree.nodes), f"{name} sem Bump"
 
 

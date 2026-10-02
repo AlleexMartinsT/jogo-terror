@@ -65,13 +65,13 @@ def draw_paint(rng, size=256, wear=0.18):
 def draw_porcelain(rng, size=256):
     """Louça encardida: tom marfim, craquelê fino, manchas de ferrugem escorrendo."""
     gen = noise.generator(rng)
-    base = noise.blend((0.50, 0.50, 0.46), (0.58, 0.57, 0.52), noise.fbm(size, size, 3, 3, gen, 3))
+    base = noise.blend((0.60, 0.60, 0.56), (0.69, 0.68, 0.63), noise.fbm(size, size, 3, 3, gen, 3))
     level = noise.fbm(size, size, 10, 10, gen, 3)
     crazing = noise.smoothstep(0.008, 0.0, np.abs(level - 0.5)) * 0.32
     color = base * (1 - crazing[..., None])
     streaks = noise.smoothstep(0.78, 0.95, noise.stretched(size, size, gen, False, 2, 40, 2))
     color = noise.blend(color, (0.34, 0.24, 0.13), streaks * 0.30)
-    return _canvas(noise.grime(color, gen, 0.18, (0.16, 0.15, 0.11)))
+    return _canvas(noise.grime(color, gen, 0.10, (0.26, 0.24, 0.19)))
 
 
 def draw_steel_paint(rng, size=256, paint=(0.20, 0.23, 0.20)):

@@ -44,7 +44,7 @@ def _upholstered_seat(asm, width, depth, fabric, seats, *, arm_half=0.085):
     soft.soft_box(0, -depth / 2 + 0.105, LIFT + 0.05, span + 0.05, 0.21, 0.52, fabric, radius=0.07, edge=0.04)
     for sx in (-1, 1):
         shapes.rolled_arm(soft, sx * arm_x, -depth / 2 + 0.01, depth / 2 - 0.015, LIFT, arm_half, 0.545, fabric)
-        shapes.scroll_face(soft, sx * arm_x, depth / 2 - 0.015, 0.545, roll_radius * 0.97, fabric)
+        shapes.scroll_face(soft, sx * arm_x, depth / 2 - 0.015, 0.545, roll_radius * 0.92, fabric)
     for z_edge in (LIFT + 0.168, LIFT + 0.012):                       # vivos da base, em cima e embaixo
         pillows.tube((-span / 2 - 0.02, depth / 2 - 0.004, z_edge), (span / 2 + 0.02, depth / 2 - 0.004, z_edge), 0.0045,
                      fabric, seg=5, smooth=True)

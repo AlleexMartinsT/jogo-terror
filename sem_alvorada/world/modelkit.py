@@ -146,7 +146,8 @@ class ModelBuilder:
         self.poly(points, material, uv)
 
     def box(self, x0, y0, z0, x1, y1, z1, material, skip=(), face_materials=None):
-        """Caixa alinhada ao sistema atual. `skip` omite faces (chaves de FACES) escondidas."""
+        """Caixa alinhada ao sistema atual (a ordem dos extremos tanto faz). `skip` omite faces escondidas."""
+        x0, x1, y0, y1, z0, z1 = min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1), min(z0, z1), max(z0, z1)
         corners = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
                    (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
         ids = self._push(corners)

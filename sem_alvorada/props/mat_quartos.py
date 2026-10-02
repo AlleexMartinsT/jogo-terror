@@ -98,7 +98,7 @@ SURFACES.update({
     "up_rug_runner": Surface("up_rug_runner", roughness=(0.95, 1.0), relief=(0.9, 0.004)),
     "up_rug_cotton": Surface("up_rug_cotton", roughness=(0.95, 1.0), relief=(0.9, 0.004), scale=1.0),
     # duros
-    "up_porcelain": Surface("up_porcelain", scale=1.5, roughness=(0.10, 0.34), relief=(0.12, 0.0004), dust=0.25),
+    "up_porcelain": Surface("up_porcelain", scale=1.5, roughness=(0.10, 0.34), relief=(0.12, 0.0004), dust=0.10),
     "up_ceramic": Surface("up_porcelain", tint=(1.15, 1.02, 0.80), scale=3.0, roughness=(0.14, 0.38), relief=(0.1, 0.0004)),
     "up_steel": Surface("up_steel", scale=1.5, roughness=(0.38, 0.62), relief=(0.35, 0.0008), metallic=0.25, dust=0.5),
     "up_wicker": Surface("up_wicker", scale=3.0, roughness=(0.65, 0.9), relief=(0.9, 0.003)),

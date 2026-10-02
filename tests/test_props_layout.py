@@ -344,8 +344,9 @@ def check_materials_and_names(scene):
                     problems.append(f"{material.name}: imagem {node.image.name} não empacotada")
                 if node.bl_idname == "ShaderNodeTexImage" and node.interpolation not in ("Linear", "Closest"):
                     problems.append(f"{material.name}: interpolação {node.interpolation}")
-                if node.bl_idname == "ShaderNodeTexImage" and node.image and max(node.image.size) > 512:
-                    problems.append(f"{material.name}: textura {tuple(node.image.size)} acima de 512 px")
+                if node.bl_idname == "ShaderNodeTexImage" and node.image and \
+                        node.image.size[0] * node.image.size[1] > 512 * 512:
+                    problems.append(f"{material.name}: textura {tuple(node.image.size)} acima de 512x512 px em área")
     names = [o.name for o in scene.objects]
     if len(names) != len(set(names)):
         problems.append("nomes de objeto repetidos")

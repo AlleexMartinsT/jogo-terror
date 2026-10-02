@@ -22,7 +22,7 @@ LOOKS = {
     "cozinha_oeste": (10.3, 6.5, 8.1, 6.4, -6),
     "cozinha_armarios": (10.0, 6.3, 8.1, 6.3, 22),
     "cozinha_coifa": (10.0, 7.8, 11.9, 7.8, 24),
-    "cozinha_frigobar": (9.5, 6.55, 8.67, 6.45, -22),
+    "cozinha_frigobar": (9.55, 6.45, 8.67, 6.45, -46),
     "cozinha_bateria": (11.0, 8.75, 11.02, 9.55, -34),
     "garagem_bateria": (17.0, 2.75, 18.05, 2.66, -34),
     "garagem_guia": (15.2, 5.4, 15.2, 6.68, -10),

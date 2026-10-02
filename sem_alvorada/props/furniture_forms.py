@@ -17,7 +17,7 @@ from .kit import rounded_rect
 WOOD = craft.Finish(bevel=0.004, bevel_segments=1, smooth_angle=48)
 WOOD_HERO = craft.Finish(bevel=0.005, bevel_segments=2, smooth_angle=48)
 SMOOTH = craft.Finish(bevel=0.0, smooth_angle=55)
-PADDING = craft.Finish(bevel=0.0, subsurf=1, smooth_angle=70)
+PADDING = craft.Finish(bevel=0.005, bevel_segments=1, subsurf=1, smooth_angle=70)
 
 
 def smooth01(t):

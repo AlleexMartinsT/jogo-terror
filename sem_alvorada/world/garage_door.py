@@ -22,6 +22,7 @@ JOINT_GAP = 0.012
 LIFT = 2.3
 WINDOWS = 4
 STEEL, PAINT, GLASS = "garage_steel", "door_garage_metal", "garage_glass"
+TRIM, RUBBER = "garage_trim", "garage_rubber"          # também somem acima do forro: tudo o que sobe com o portão
 INNER = PANEL_THICKNESS / 2          # face interna do painel (lado +Y, dentro da garagem)
 OUTER = -PANEL_THICKNESS / 2         # face externa, voltada para a rua
 
@@ -55,6 +56,8 @@ def _clipped_material(name, color, roughness, metallic, alpha=None):
 def register_materials():
     ext.register_material(STEEL, lambda: _clipped_material(STEEL, (0.22, 0.225, 0.23), 0.45, 0.85))
     ext.register_material(GLASS, lambda: _clipped_material(GLASS, (0.03, 0.045, 0.055), 0.05, 0.0, alpha=0.3))
+    ext.register_material(TRIM, lambda: _clipped_material(TRIM, (0.30, 0.285, 0.24), 0.6, 0.0))
+    ext.register_material(RUBBER, lambda: _clipped_material(RUBBER, (0.015, 0.015, 0.017), 0.8, 0.0))
 
 
 # --------------------------------------------------------------------------------------------
@@ -80,9 +83,9 @@ def _window_row(m, x0, x1, z0, z1):
         cx = x0 + span * (k + 0.5) / WINDOWS
         zc = (z0 + z1) / 2
         for sign in (-1, 1):
-            m.box(cx + sign * (pane_w / 2 + 0.014), OUTER - 0.012, zc - pane_h / 2 - 0.014, 0.028, 0.012, pane_h + 0.028, "trim_white")
+            m.box(cx + sign * (pane_w / 2 + 0.014), OUTER - 0.012, zc - pane_h / 2 - 0.014, 0.028, 0.012, pane_h + 0.028, TRIM)
         for sign in (-1, 1):
-            m.box(cx, OUTER - 0.012, zc + sign * (pane_h / 2 + 0.014) - 0.014, pane_w + 0.056, 0.012, 0.028, "trim_white")
+            m.box(cx, OUTER - 0.012, zc + sign * (pane_h / 2 + 0.014) - 0.014, pane_w + 0.056, 0.012, 0.028, TRIM)
         m.panel(cx, OUTER + 0.012, zc, pane_w, pane_h, GLASS, "back")
         m.box(cx, 0.0, zc - 0.0015, pane_w, 0.004, 0.003, STEEL)
 
@@ -131,8 +134,8 @@ def _handle_and_lock(m, height):
     m.box(-1.17, OUTER - 0.017, z - 0.05, 0.04, 0.026, 0.10, STEEL)
     m.box(-1.26, OUTER - 0.034, z + 0.045, 0.22, 0.016, 0.018, STEEL)
     m.cylinder(-0.95, OUTER - 0.008, z - 0.03, 0.026, 0.01, STEEL, seg=14)
-    m.box(-0.95, OUTER - 0.014, z - 0.045, 0.004, 0.006, 0.026, "black")
-    m.box(0.0, OUTER - 0.012, 0.0, 3.9, 0.02, 0.055, "rubber")                                  # vedação de borracha embaixo
+    m.box(-0.95, OUTER - 0.014, z - 0.045, 0.004, 0.006, 0.026, RUBBER)
+    m.box(0.0, OUTER - 0.012, 0.0, 3.9, 0.02, 0.055, RUBBER)                                  # vedação de borracha embaixo
 
 
 def build_moving_parts(ctx, root, width, height):

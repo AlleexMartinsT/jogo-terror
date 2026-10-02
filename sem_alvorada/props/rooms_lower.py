@@ -93,7 +93,7 @@ def build_hall_ground(ctx):
     for (y, height), art in zip(entrance.stair_photo_slots(), arts):
         furniture.make_picture(ctx, room, "W", y, height, 0.36, 0.28, art)
     furniture.make_rug(ctx, room, 6.9, 0.7, 0.0, 0.9, 0.6, "doormat")
-    entrance.make_floor_mail(ctx, room, 6.42, 0.45)
+    entrance.make_floor_mail(ctx, room, 6.42, 0.52)
     ambience.make_backpack(ctx, room, 5.5, 0.9, 2.4)
 
 

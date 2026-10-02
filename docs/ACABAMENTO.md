@@ -65,7 +65,7 @@ Passa **todos** estes itens. Quem não passa em algum, justifica no relatório.
    amassado: `SOFT` ou `drape`. Nada de "laje com padrão".
 6. **Marcas de uso coerentes** com a casa e com a história (ver "Narrativa"): desgaste nas arestas, manchas,
    poeira acumulada, algo fora do lugar. Cada cômodo conta algo diferente.
-7. **Material com relevo e variação.** Textura de 256 a 512 px com filtro **Linear** (o `Closest` fica só
+7. **Material com relevo e variação.** Textura de 256 a 512 px (até 512x512 de área: uma faixa de 1024x128 vale) com filtro **Linear** (o `Closest` fica só
    para o que é pixelado de propósito: mostrador digital, chiado de TV), Bump ligado à textura, rugosidade que
    varia (mancha, gordura, uso). Cores sujas e dessaturadas; nada de cor lisa chapada em superfície grande.
 8. **Orçamento.** `conventions.BUDGET_TRIS` (peça comum 25 k, destaque 60 k, carro 90 k, props 650 k, mundo

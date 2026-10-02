@@ -196,7 +196,6 @@ def _glazing(builder, field, material):
 KNOB_PROFILE = [(0.030, 0.000), (0.0315, 0.002), (0.029, 0.005), (0.0235, 0.0065), (0.0165, 0.0075),
                 (0.0105, 0.009), (0.0085, 0.012), (0.0080, 0.030), (0.012, 0.036), (0.021, 0.042),
                 (0.026, 0.052), (0.0262, 0.060), (0.0235, 0.070), (0.014, 0.0765), (0.0, 0.0785)]
-ROSE_PROFILE = [(0.027, 0.0), (0.028, 0.0025), (0.026, 0.0045), (0.0, 0.0050)]
 CYLINDER_PROFILE = [(0.0262, 0.0), (0.0275, 0.002), (0.0255, 0.0045), (0.0180, 0.0055), (0.0165, 0.014),
                     (0.0, 0.0155)]
 THUMBTURN_PROFILE = [(0.027, 0.0), (0.0285, 0.002), (0.026, 0.0045), (0.012, 0.0055), (0.0, 0.0056)]
@@ -236,7 +235,7 @@ def _hardware(ctx, name, spec, style, key_side):
     if style.kick_plate:
         for side in (1, -1):
             plates.box(0.03, side * HALF, CLEARANCE_BOTTOM + 0.01, spec.width - 0.03, side * (HALF + 0.002),
-                       CLEARANCE_BOTTOM + 0.25, "steel_hardware")
+                       CLEARANCE_BOTTOM + 0.27, "steel_hardware")
     if style.peephole:
         _peephole(turned, spec.width / 2, 1.565, sides)
     if style.kind == "flush":

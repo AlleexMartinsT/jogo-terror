@@ -52,7 +52,9 @@ def leaf_spec(kind, width, height):
     top = height - TOP_RAIL
     lowest_row = (BOTTOM_RAIL, LOCK_RAIL[0])
     if kind == "flush":
-        return LeafSpec(kind, width, height, ())
+        # porta de aço estampada: dois painéis rasos, com a faixa da fechadura livre
+        return LeafSpec(kind, width, height, (Field(0.10, 0.30, width - 0.10, 0.85, "panel"),
+                                              Field(0.10, 1.05, width - 0.10, top - 0.05, "panel")))
     columns = _columns(width, 2)
     if kind == "screen":
         lower = tuple(Field(x0, lowest_row[0], x1, lowest_row[1], "panel") for x0, x1 in columns)
