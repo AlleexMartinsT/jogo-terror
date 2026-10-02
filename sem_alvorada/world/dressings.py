@@ -63,7 +63,8 @@ def _rod_geometry(frame, style):
     if style.length == "short":
         return op.a + 0.01, op.b - 0.01, -(frame.half - 0.03), frame.z0 + op.height * 0.58
     reach = 0.34 if style.covering == "curtain_open" else 0.20
-    return op.a - reach, op.b + reach, -(frame.half + ROD_OFFSET), frame.z1 + ROD_RISE
+    end = op.b - 0.09 if style.stack == "low" else op.b + reach
+    return op.a - reach, end, -(frame.half + ROD_OFFSET), frame.z1 + ROD_RISE
 
 
 def _rod(ctx, builder, frame, style, rng):
@@ -113,6 +114,8 @@ def _panel_spans(frame, style):
     op = frame.op
     if style.length == "short":
         return [(op.a + 0.02, op.b - 0.02)]
+    if style.stack == "low":
+        return [(op.a - 0.34, op.a + 0.62)]
     if style.covering == "curtain_closed":
         mid = (op.a + op.b) / 2
         return [(op.a - 0.14, mid + 0.07), (mid - 0.07, op.b + 0.14)]
@@ -131,7 +134,8 @@ def _panels(ctx, frame, style, rng):
     material = CURTAIN_MATERIALS.get(frame.op.id, "curtain")
     variant = sum(map(ord, frame.op.id)) % 2
     for side, (u0, u1) in enumerate(_panel_spans(frame, style)):
-        key = (style.covering, style.length, round(frame.op.width, 3), round(frame.op.height, 3), side, variant)
+        key = (style.covering, style.length, style.stack, round(frame.op.width, 3), round(frame.op.height, 3), side,
+               variant)
         if key not in _PANEL_CACHE["panels"]:
             _PANEL_CACHE["panels"][key] = _to_local(frame, _simulate(frame, style, u0, u1, random.Random(str(key))))
         mesh = _from_local(frame, _PANEL_CACHE["panels"][key], material)

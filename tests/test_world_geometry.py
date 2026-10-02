@@ -359,6 +359,14 @@ def test_windows_have_sashes_and_coverings():
             assert curtain.parent is window
 
 
+def test_den_curtain_leaves_the_cork_board_free():
+    """O quadro de cortiça do escritório ocupa a parede oeste a partir de y=9,07: a cortina fica ao sul de y=9."""
+    scene = world_scene()
+    curtain = scene.objects["Curtain_w_den_w"]
+    ys = [(curtain.matrix_world @ v.co).y for v in curtain.data.vertices]
+    assert max(ys) <= 9.0, f"cortina chega a y={max(ys):.3f}"
+
+
 def test_fixtures_come_in_pairs():
     """O engine esconde todo `Fixture_*` na queda de energia: a peça apagada precisa ficar num objeto à parte."""
     scene = world_scene()
@@ -435,7 +443,8 @@ _ORDER = ["test_doors", "test_door_leaf_closes_the_gap", "test_windows_garage_an
           "test_openings_are_passable_and_walls_solid", "test_stairs_match_layout", "test_floor_hole_and_landing",
           "test_normals_face_outward", "test_budget_and_materials", "test_every_canonical_material_is_built",
           "test_world_textures_are_smooth_and_sized", "test_interior_shell_budget", "test_doors_are_built_not_boxed",
-          "test_windows_have_sashes_and_coverings", "test_fixtures_come_in_pairs",
+          "test_windows_have_sashes_and_coverings", "test_den_curtain_leaves_the_cork_board_free",
+          "test_fixtures_come_in_pairs",
           "test_wood_floors_are_individual_boards", "test_stairs_have_runner_railing_and_turned_balusters",
           "test_every_textured_material_has_relief",
           "test_ceiling_lights", "test_quality_levels"]

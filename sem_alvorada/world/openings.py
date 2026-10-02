@@ -2,10 +2,8 @@
 
 As conversões de coordenadas de parede e a guarnição simples usadas pelo portão ficam aqui.
 """
-from .. import conventions as C
 from .. import layout
 from . import arches, doors, garage_door, windows
-from .meshkit import MeshBuilder, attach, empty
 
 CASING_WIDTH = 0.075
 CASING_PROUD = 0.03

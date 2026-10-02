@@ -37,6 +37,7 @@ class WindowStyle:
     length: str = "long"          # 'long' (até o piso) ou 'short' (cortina de café)
     glass: str = "window_glass"
     torn: bool = False
+    stack: str = "both"           # 'both' (abre para os dois lados) ou 'low' (recolhe só no lado de menor u)
     cracked: bool = False         # um vidro trincado, remendado com fita
     blinds_drop: float = 1.0      # fração do vão coberta pela persiana
     crooked: float = 0.0          # inclinação da barra da persiana (m)
@@ -44,7 +45,8 @@ class WindowStyle:
 
 STYLES = {
     "w_living_s": WindowStyle("curtain_open"), "w_living_w": WindowStyle("curtain_open"),
-    "w_dining_s": WindowStyle("curtain_closed"), "w_den_w": WindowStyle("curtain_open"),
+    "w_dining_s": WindowStyle("curtain_closed"),
+    "w_den_w": WindowStyle("curtain_open", stack="low"),     # o quadro de cortiça ocupa a parede ao norte da janela
     "w_den_n": WindowStyle("blinds", blinds_drop=0.55),
     "w_kitchen_n": WindowStyle("curtain_open", "short"),
     "w_kitchen_e": WindowStyle("blinds", blinds_drop=1.0),

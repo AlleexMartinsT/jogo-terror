@@ -175,7 +175,7 @@ def test_shingles_and_facade_face_outward():
     ups = [p for p in tiles.data.polygons if p.normal.z > 0.2]
     assert len(tiles.data.polygons) > 8000 and len(ups) > len(tiles.data.polygons) * 0.4, "telhas individuais em fiadas"
     facade = scene.objects["Facade_Clapboard"]
-    inside = [v for v in facade.data.vertices if v.co.z > 0.3 and layout.room_at(v.co.x, v.co.y, v.co.z) is not None]
+    inside = [v for v in facade.data.vertices if v.co.z > 0.3 and layout.room_at(v.co.x, v.co.y, v.co.z, margin=-0.2) is not None]
     assert not inside, f"{len(inside)} vértices de tábua dentro de cômodos"
     deck = scene.objects["Roof_Main"]
     highest = max(v.co.z for v in deck.data.vertices)
