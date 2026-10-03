@@ -19,7 +19,7 @@ class BrainTuning:
     still_vision: float = 0.7           # parado também
     run_vision: float = 1.25            # correr chama atenção
     still_speed: float = 0.15           # m/s abaixo disto o jogador está "parado"
-    run_speed: float = 3.6              # m/s acima disto é "correndo"
+    run_speed: float = 2.85             # m/s acima disto é "correndo" (no meio entre andar 1,7 e correr 4,0, como 3,6 entre 2,6 e 4,6)
     touch_range: float = 1.3            # colado nele, ignora o cone
     # ---- consciência (0..1) ---------------------------------------------
     gain_far: float = 0.35              # por segundo, jogador visível no limite do alcance
@@ -49,7 +49,7 @@ class BrainTuning:
     speed_chase: float = C.ENTITY_SPEED_CHASE
     speed_investigate_factor: float = 1.15
     patrol_speed_per_level: float = 0.15      # +15% por nível de agressividade
-    chase_speed_per_level: float = 0.20       # +0.2 m/s por nível
+    chase_speed_per_level: float = 0.174      # +0,174 m/s por nível (era 0,20 com a perseguição a 4,1; mesma proporção)
     turn_rate_walk: float = 3.0               # rad/s
     turn_rate_chase: float = 6.0
     # ---- tempos --------------------------------------------------------------
@@ -64,7 +64,7 @@ class BrainTuning:
     stalk_cooldown: float = 6.0               # depois de desistir de espreitar, não espreita de novo por isto
     stalk_radius: float = 7.0
     stalk_quiet_level: float = 0.12           # ruído do jogador abaixo disto = quieto
-    stalk_quiet_speed: float = 1.5
+    stalk_quiet_speed: float = 0.99     # entre agachar (0,8) e andar (1,7), na mesma posição que 1,5 entre 1,2 e 2,6
     attack_windup: float = 0.35
     attack_cancel_factor: float = 1.8         # jogador fugiu além disto x distância de morte: cancela
     replan_seconds: float = 0.35              # perseguição com o alvo à vista

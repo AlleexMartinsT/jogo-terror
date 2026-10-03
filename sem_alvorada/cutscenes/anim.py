@@ -16,7 +16,7 @@ from .curves import Curve, Pendulum, Spring, clamp, clamp01, ease, hash01, noise
 from .stage import Actor
 
 GRAVITY = 9.81
-WHEEL_RADIUS = 0.33
+WHEEL_RADIUS = 0.33            # DERIVADO: pneu 205/70R15, 381 mm de aro + 2 x 143,5 mm de flanco = D 0,668 m
 
 
 # --------------------------------------------------------------------------
@@ -277,19 +277,105 @@ class ClockGlitch(Actor):
 # --------------------------------------------------------------------------
 # O carro
 # --------------------------------------------------------------------------
-SILL_CROSSINGS = ((1.45, 1.0), (-1.45, -0.8))      # (y do centro do carro quando o eixo passa na soleira, sentido do tranco)
+# Física do sedã (derivações, fontes e a conferência com um modelo independente: tools/movimento_ref/fisica/carro.py).
+# DERIVADO = sai de uma lei a partir do modelo 3D; ESTIMADO = engenharia lembrada de memória (faixa entre parênteses).
+CAR_WHEELBASE = 2.90            # DERIVADO: props/car_shape.py (WHEEL_Y = 1,45)
+CAR_MASS = 1500.0               # ESTIMADO (1400 a 1700 kg)
+CAR_FRONT_WEIGHT = 0.55         # ESTIMADO: fração do peso sobre o eixo dianteiro (55 a 60%)
+CAR_CG_HEIGHT = 0.55            # ESTIMADO (0,50 a 0,60 m)
+CAR_GYRATION = 1.2              # ESTIMADO: raio de giro da arfagem, I = m k^2 (1,1 a 1,3 m)
+RIDE_FRONT_HZ, RIDE_REAR_HZ = 1.15, 1.30          # ESTIMADO: frequência de passeio de um sedã macio (1,0 a 1,5 Hz)
+CAR_ZETA = 0.30                 # ESTIMADO: razão de amortecimento (0,2 a 0,4)
+ROLL_GRADIENT = math.radians(6.0) / GRAVITY       # ESTIMADO: 6 graus por g (4 a 8) para um sedã americano macio
+ROLL_HZ = 1.3                   # ESTIMADO (1,0 a 1,6 Hz)
+ENGINE_ROLL_KICK = 0.0026       # rad: torque do motor pegando (~200 N m) sobre a rigidez de rolagem (77 kN m/rad)
+STEERING_RATIO = 15.0           # ESTIMADO: volante / roda, direção hidráulica americana (14 a 18)
+IDLE_HZ = 700.0 / 60.0          # DERIVADO: 1a ordem do motor a 700 rpm (11,7 Hz)
+IDLE_ACCEL_RMS = 0.35           # m/s2 vertical no assoalho em marcha lenta (ESTIMADO 0,05 a 0,4): o teto da faixa, para aparecer
+WANDER_WAVELENGTH = 9.0         # m: correção lenta de volante; uma onda mais curta pediria curva mais fechada que o carro faz
+TAU = 2.0 * math.pi
+IDLE_AMPLITUDE = IDLE_ACCEL_RMS * math.sqrt(2.0) / (TAU * IDLE_HZ) ** 2     # m de pico: a = x (2 pi f)^2
+
+# Altura do terreno sob a pista do carro (x = 15,5), lida do mundo 3D por raios verticais: (y, z). A soleira do portão
+# tem 8 mm; depois a entrada de carros desce 0,62 graus até a rua (y = -5 está a -0,054).
+DRIVEWAY = ((1.0, 0.0), (0.2, 0.0), (0.0, 0.0), (-0.2, 0.008), (-0.5, -0.004), (-1.0, -0.010), (-2.0, -0.021),
+            (-3.0, -0.032), (-4.0, -0.043), (-5.0, -0.054), (-6.0, -0.060), (-12.0, -0.060))
+_DRIVEWAY_Y = np.array([p[0] for p in DRIVEWAY][::-1])
+_DRIVEWAY_Z = np.array([p[1] for p in DRIVEWAY][::-1])
+CONTACT_PATCH = 0.15            # m: o pneu alisa o chão numa janela do tamanho da sua mancha de contato
+
+
+def ground_height(y):
+    """Altura do terreno em `y` (m), alisada pela mancha de contato do pneu."""
+    taps = (-0.5, -0.25, 0.0, 0.25, 0.5)
+    return float(sum(np.interp(y + CONTACT_PATCH * d, _DRIVEWAY_Y, _DRIVEWAY_Z) for d in taps) / len(taps))
+
+
+class HalfCar:
+    """Meio carro: vertical e arfagem de uma massa sobre duas molas amortecidas (uma por eixo), excitado pelo chão sob
+    cada eixo e pela aceleração (a inércia no centro de gravidade vira momento de arfagem).
+
+        m z'' = -F_frente - F_trás
+        I th'' = -a F_frente + b F_trás + m h a_x         (th > 0: nariz para cima)
+
+    Integrado em passos fixos (símplético), então é estável com qualquer `dt` de quadro.
+    """
+    STEP = 1.0 / 480.0
+
+    def __init__(self):
+        b = CAR_FRONT_WEIGHT * CAR_WHEELBASE
+        a = CAR_WHEELBASE - b
+        m_front, m_rear = CAR_MASS * b / CAR_WHEELBASE, CAR_MASS * a / CAR_WHEELBASE
+        w_front, w_rear = TAU * RIDE_FRONT_HZ, TAU * RIDE_REAR_HZ
+        self.a, self.b = a, b
+        self.k_front, self.k_rear = m_front * w_front ** 2, m_rear * w_rear ** 2
+        self.c_front = 2.0 * CAR_ZETA * math.sqrt(self.k_front * m_front)
+        self.c_rear = 2.0 * CAR_ZETA * math.sqrt(self.k_rear * m_rear)
+        self.inertia = CAR_MASS * CAR_GYRATION ** 2
+        self.z = self.vz = self.theta = self.omega = 0.0
+
+    def rest_on(self, front, rear):
+        """Parado sobre o chão: a altura e a inclinação que os dois apoios mandam."""
+        self.z = (self.b * front + self.a * rear) / CAR_WHEELBASE
+        self.theta = (front - rear) / CAR_WHEELBASE
+        self.vz = self.omega = 0.0
+
+    def advance(self, dt, front, rear, a_forward):
+        """`front` e `rear`: (altura no início do quadro, no fim) do chão sob cada eixo."""
+        steps = max(1, int(math.ceil(dt / self.STEP)))
+        h = dt / steps
+        for k in range(steps):
+            u = (k + 0.5) / steps
+            r_front = front[0] + (front[1] - front[0]) * u
+            r_rear = rear[0] + (rear[1] - rear[0]) * u
+            rate_front, rate_rear = (front[1] - front[0]) / dt, (rear[1] - rear[0]) / dt
+            f_front = self.k_front * (self.z + self.a * self.theta - r_front) + self.c_front * (
+                self.vz + self.a * self.omega - rate_front)
+            f_rear = self.k_rear * (self.z - self.b * self.theta - r_rear) + self.c_rear * (
+                self.vz - self.b * self.omega - rate_rear)
+            self.vz += -(f_front + f_rear) / CAR_MASS * h
+            self.omega += (-self.a * f_front + self.b * f_rear + CAR_MASS * CAR_CG_HEIGHT * a_forward) / self.inertia * h
+            self.z += self.vz * h
+            self.theta += self.omega * h
+
+    @property
+    def origin_height(self):
+        """Altura do centro da base (meio do entre-eixos), que é a origem do objeto `Car`."""
+        return self.z + 0.5 * (self.a - self.b) * self.theta
 
 
 class CarMotion(Actor):
     """O carro sai da garagem: aceleração suave, suspensão, rolagem, motor em marcha lenta e rodas girando.
 
-    O deslocamento é analítico (`smoother`), então a velocidade e a aceleração são contínuas. A suspensão é uma
-    mola amortecida alimentada pela aceleração longitudinal (o carro "senta" ao arrancar e "cai" ao frear) e por
-    pancadas nas soleiras. Publica `stage.signals["car"]` para o coelhinho, o volante e a câmera presa ao carro.
+    O deslocamento é analítico (`smoother`, mínima sacudida: um motorista cuidadoso), então a velocidade e a aceleração
+    são contínuas. A suspensão é o meio carro (`HalfCar`) alimentado pela aceleração longitudinal e pelo chão sob cada
+    eixo; a rolagem é uma mola alimentada pela aceleração lateral da curva. As rodas rolam sem deslizar (giro = distância
+    / raio) e o esterçamento é o de Ackermann para a curvatura do caminho. Publica `stage.signals["car"]` para o
+    coelhinho, o volante e a câmera presa ao carro; todas as grandezas no referencial do carro (+Y frente, +X direita).
     """
 
     def __init__(self, home, stop, move_start, move_end, yaw_deg=180.0, crank_start=None, catch=None, lights_on=None,
-                 object_name=C.OBJ_CAR, wander=0.05):
+                 object_name=C.OBJ_CAR, wander=0.04):
         self.home, self.stop_point = home, stop
         self.t0, self.t1 = move_start, move_end
         self.yaw0 = math.radians(yaw_deg)
@@ -297,11 +383,9 @@ class CarMotion(Actor):
         self.lights_on = lights_on
         self.name = object_name
         self.wander = wander
-        self._pitch = Spring(1.9, 0.30)
-        self._roll = Spring(2.3, 0.28)
-        self._heave = Spring(2.6, 0.35)
-        self._prev_y = home[1]
-        self._crossed = set()
+        self._suspension = HalfCar()
+        self._roll = Spring(ROLL_HZ, CAR_ZETA)
+        self._prev_ground = None
         self._obj = None
         self._wheels = {}
 
@@ -311,6 +395,7 @@ class CarMotion(Actor):
             obj = stage.touch(stage.obj(f"Car_Wheel_{wheel}"))
             if obj is not None:
                 self._wheels[wheel] = obj
+        self._prev_ground = None
         stage.set_mount(self.name, self.home, (0.0, 0.0, self.yaw0))
 
     # ---- trajetória (analítica: velocidade e aceleração contínuas)
@@ -338,44 +423,59 @@ class CarMotion(Actor):
         settle = clamp01((t - self.catch) / 0.35)
         return crank_level * (1.0 - settle) + (1.0 + 0.25 * (1.0 - settle)) * settle, False
 
+    def _path(self, forward):
+        """Desvio lateral da correção de volante (m, para a direita), a inclinação dele e a curvatura (1/m, positiva = esquerda)."""
+        if not self.wander:
+            return 0.0, 0.0, 0.0
+        k = TAU / WANDER_WAVELENGTH
+        fade, fade_rate = clamp01(forward / 2.0), (0.5 if 0.0 < forward < 2.0 else 0.0)
+        sine, cosine = math.sin(k * forward), math.cos(k * forward)
+        e = self.wander * sine * fade
+        slope = self.wander * (k * cosine * fade + sine * fade_rate)
+        bend = self.wander * (-k * k * sine * fade + 2.0 * k * cosine * fade_rate)
+        return e, slope, -bend / (1.0 + slope * slope)
+
     def update(self, stage, dt):
         t = stage.t
-        s, v, a_long = self._travel(t)
-        total = self.stop_point[1] - self.home[1]
-        fade_in = min(1.0, abs(s) / 2.0)
-        x = self.home[0] + self.wander * math.sin(2.1 * s) * fade_in               # a mão corrige o volante na rampa
-        yaw_extra = math.atan(self.wander * 2.1 * math.cos(2.1 * s) * fade_in) if s else 0.0
-        y = self.home[1] + s
+        s, v_world, a_world = self._travel(t)
+        way = math.cos(self.yaw0)                                 # +1 se a frente do carro aponta para +Y do mundo
+        forward, v_forward, a_forward = s * way, v_world * way, a_world * way
+        offset, slope, curvature = self._path(forward)
+        heading = -math.atan(slope)                               # o carro aponta ao longo do caminho que faz
+        yaw = self.yaw0 + heading
+        x = self.home[0] + offset * math.cos(self.yaw0)
+        y = self.home[1] + s + offset * math.sin(self.yaw0)
         engine, cranking = self._engine(t)
-        for index, (threshold, direction) in enumerate(SILL_CROSSINGS):
-            if index not in self._crossed and y <= threshold < self._prev_y:
-                self._crossed.add(index)
-                self._pitch.v += 0.30 * direction
-                self._heave.v += 0.20
-        self._prev_y = y
-        lateral = v * v * yaw_extra
-        grade = math.atan(0.054 / abs(total or 1.0)) * clamp01(-s / 2.0)         # a entrada de carros desce até a rua
-        pitch = self._pitch.advance(dt, target=0.0105 * a_long)
-        roll = self._roll.advance(dt, target=-0.004 * lateral + 0.003 * clamp01(1.0 - abs(t - (self.catch or -9.0)) / 0.3))
-        heave = self._heave.advance(dt, target=0.0)
-        shudder = engine * (0.0004 * noise(t * 150.0, 1.0) + 0.0003 * math.sin(t * 2 * math.pi * 11.0))
+
+        front_y, rear_y = y + way * CAR_WHEELBASE / 2.0, y - way * CAR_WHEELBASE / 2.0
+        ground = (ground_height(front_y) + self.home[2], ground_height(rear_y) + self.home[2])
+        if self._prev_ground is None:
+            self._suspension.rest_on(*ground)
+            self._prev_ground = ground
+        self._suspension.advance(dt, (self._prev_ground[0], ground[0]), (self._prev_ground[1], ground[1]), a_forward)
+        self._prev_ground = ground
+
+        a_side = -v_forward * v_forward * curvature               # aceleração lateral (+X local = direita)
+        kick = ENGINE_ROLL_KICK * clamp01(1.0 - abs(t - (self.catch or -9.0)) / 0.3)
+        roll = self._roll.advance(dt, target=-ROLL_GRADIENT * a_side + kick)
+        shudder = engine * IDLE_AMPLITUDE * (0.75 * math.sin(TAU * IDLE_HZ * t) + 0.25 * noise(t * 70.0, 1.0))
         shudder *= 3.0 if cranking else 1.0
-        z = self.home[2] - 0.054 * clamp01(-s / max(abs(total), 1e-3)) + heave * 0.02 + shudder
-        pitch_total = pitch - grade + 0.0006 * engine * noise(t * 70.0, 5.0)
-        roll_total = roll + 0.0005 * engine * noise(t * 83.0, 6.0)
-        euler = (pitch_total, roll_total, self.yaw0 + yaw_extra)
+        z = self._suspension.origin_height + shudder
+        pitch_total = self._suspension.theta + 0.0002 * engine * noise(t * 70.0, 5.0)
+        roll_total = roll + 0.00017 * engine * noise(t * 83.0, 6.0)
+        euler = (pitch_total, roll_total, yaw)
         origin = (x, y, z)
         stage.set_mount(self.name, origin, euler)
         if self._obj is not None:
             self._obj.location = origin
             self._obj.rotation_euler = euler
-        spin = -(s / WHEEL_RADIUS)
-        steer = clamp(yaw_extra * 2.4, -0.45, 0.45)
+        spin = -forward / WHEEL_RADIUS                            # rolar para a frente gira a roda no sentido de -X
+        steer = math.atan(CAR_WHEELBASE * curvature)              # Ackermann
         for wheel, obj in self._wheels.items():
             obj.rotation_euler = (spin, 0.0, steer if wheel.startswith("F") else 0.0)
-        stage.signals["car"] = {"accel": a_long, "lateral": lateral, "speed": v, "engine": engine,
+        stage.signals["car"] = {"accel": a_forward, "lateral": a_side, "speed": v_forward, "engine": engine,
                                 "cranking": cranking, "steer": steer, "pitch": pitch_total, "roll": roll_total,
-                                "travel": s}
+                                "travel": forward}
         self._drive_headlights(stage, t, cranking)
 
     def _drive_headlights(self, stage, t, cranking):
@@ -449,14 +549,31 @@ class PropPath(Actor):
         self._obj = None
 
 
+# Pêndulos pendurados: o comprimento equivalente de um corpo rígido que balança é l = I / (m d) (pêndulo composto), com
+# I em torno do pivô e d a distância dele ao centro de massa. Calculados sobre as malhas do .blend (densidade uniforme):
+#     Cut_Bunny     l = 0,171 m  (T = 0,83 s)       Cut_KeyCharm  l = 0,099 m  (T = 0,63 s)
+# Amortecimento de um brinquedo pequeno no ar e atrito do gancho: razão 0,04 (ESTIMADO 0,02 a 0,08).
+BUNNY_LENGTH = 0.171
+KEY_CHARM_LENGTH = 0.099
+CHARM_ZETA = 0.04
+
+
+def charm_damping(length, zeta=CHARM_ZETA):
+    """Coeficiente de amortecimento viscoso (1/s) de um pêndulo de comprimento `length` com razão `zeta`."""
+    return 2.0 * zeta * math.sqrt(GRAVITY / length)
+
+
 class CharmPendulum(Actor):
     """Coelhinho do retrovisor (ou chaveiro): pêndulo em dois eixos, movido pela aceleração do suporte e pelo motor.
 
     `source`: "car" lê `stage.signals["car"]`; "prop:<objeto>" lê a aceleração publicada por um `PropPath`.
+    O ângulo é medido contra a vertical do mundo; o objeto é filho do carro, que também arfa e rola, então a rotação
+    gravada é o ângulo do mundo menos a do corpo.
     """
 
-    def __init__(self, object_name="Cut_Bunny", length=0.22, damping=0.55, source="car", pivot_axis_sign=1.0):
+    def __init__(self, object_name="Cut_Bunny", length=BUNNY_LENGTH, damping=None, source="car", pivot_axis_sign=1.0):
         self.object_name, self.source = object_name, source
+        damping = charm_damping(length) if damping is None else damping
         self._x = Pendulum(length, damping)
         self._y = Pendulum(length, damping)
         self._obj = None
@@ -478,13 +595,13 @@ class CharmPendulum(Actor):
         return clamp(ay, -12.0, 12.0), clamp(-ax, -12.0, 12.0), 0.0, 0.0, 0.0
 
     def update(self, stage, dt):
-        a_long, a_side, engine, pitch, roll = self._support(stage)
+        a_forward, a_side, engine, pitch, roll = self._support(stage)
         t = stage.t
         shake = engine * (0.9 * noise(t * 11.0, 7.0) + 0.5 * math.sin(t * 2 * math.pi * 12.5))
-        ax = self._x.advance(dt, a_long + 0.25 * shake)
-        ay = self._y.advance(dt, -a_side + 0.2 * shake)
+        ax = self._x.advance(dt, a_forward + 0.25 * shake)
+        ay = self._y.advance(dt, a_side + 0.2 * shake)
         if self._obj is not None:
-            self._obj.rotation_euler = (ax - pitch * 0.35, -(ay + roll * 0.35), 0.0)
+            self._obj.rotation_euler = (ax - pitch, -(ay + roll), 0.0)
         stage.signals[f"charm:{self.object_name}"] = (ax, ay)
 
     def stop(self, stage):
@@ -492,10 +609,11 @@ class CharmPendulum(Actor):
 
 
 class SteeringWheel(Actor):
-    """Volante: gira com a direção do carro (relação ~12:1) e treme com o motor, em torno do eixo inclinado da modelagem.
+    """Volante: gira com a direção do carro (relação 15:1) e treme com o motor, em torno do eixo inclinado da modelagem.
 
     A malha (`Cut_Wheel`) guarda a inclinação (rx = 65 graus) nos vértices; o giro é um quaternion em torno
-    do eixo que essa inclinação deu ao eixo Z do aro.
+    do eixo que essa inclinação deu ao eixo Z do aro. O eixo aponta para o motorista, então o giro positivo é
+    anti-horário para ele: virar à esquerda (esterçamento positivo) gira o volante no sentido positivo.
     """
     AXIS = (0.0, -math.sin(math.radians(65.0)), math.cos(math.radians(65.0)))
 
@@ -516,7 +634,7 @@ class SteeringWheel(Actor):
         car = stage.signals.get("car")
         engine = car["engine"] if car else 0.0
         steer = car["steer"] if car else 0.0
-        spin = self.angle - steer * 9.0 + 0.004 * engine * noise(stage.t * 41.0, 8.0)
+        spin = self.angle + steer * STEERING_RATIO + 0.004 * engine * noise(stage.t * 41.0, 8.0)
         if self._obj is not None:
             s, c = math.sin(spin / 2.0), math.cos(spin / 2.0)
             self._obj.rotation_quaternion = (c, self.AXIS[0] * s, self.AXIS[1] * s, self.AXIS[2] * s)
@@ -525,11 +643,28 @@ class SteeringWheel(Actor):
         self._obj = None
 
 
-class GarageLift(Actor):
-    """Portão de enrolar subindo: a mola ruge e o abridor puxa. Parte devagar (folga da corrente), acelera,
-    chacoalha nas guias e para com um repique. `sa_open_lift` do objeto manda na altura final.
+# Abridor de portão: o motor puxa a folha a velocidade constante (ESTIMADO 15 a 20 cm/s para um abridor residencial)
+# com partida e parada suaves (rampa de 1 s, ESTIMADO 0,5 a 2 s). A mola de torção equilibra o peso, então a folha
+# não acelera por conta própria: a velocidade é a do motor e a subida de 2,3 m leva ~12 s.
+OPENER_SPEED = 0.19
+OPENER_RAMP = 1.0
 
-    O repique usa uma mola (a folha passa um pouco da altura e volta).
+
+def opener_seconds(lift, speed=OPENER_SPEED, ramp=OPENER_RAMP):
+    """Duração total da subida de `lift` m: velocidade de cruzeiro `speed` e uma rampa suave em cada ponta."""
+    return lift / speed + ramp
+
+
+def _smooth_ramp_distance(u):
+    """Integral de smoothstep de 0 a u (0..1): a distância andada numa rampa de velocidade 3u^2 - 2u^3."""
+    return u ** 3 - 0.5 * u ** 4
+
+
+class GarageLift(Actor):
+    """Portão subindo: o abridor puxa a velocidade constante, com partida e parada suaves; ao arrancar a corrente
+    folgada dá um tranco curto, nas guias a folha chacoalha, e ao parar assenta um fio.
+
+    `sa_open_lift` do objeto manda na altura final; `duration` é a duração total (veja `opener_seconds`).
     """
 
     def __init__(self, start, duration, default_lift=2.3, object_name=C.OBJ_GARAGE_ROLLUP):
@@ -545,20 +680,33 @@ class GarageLift(Actor):
         if self._obj is not None:
             self.lift = float(self._obj.get("sa_open_lift", self.default_lift))
 
+    def height(self, tau):
+        """Altura (m) da folha `tau` s depois de o abridor ligar: velocidade em rampa suave, constante, rampa suave."""
+        ramp = min(OPENER_RAMP, self.dur / 3.0)
+        cruise = self.lift / (self.dur - ramp)
+        if tau <= 0.0:
+            return 0.0
+        if tau >= self.dur:
+            return self.lift
+        if tau < ramp:
+            return cruise * ramp * _smooth_ramp_distance(tau / ramp)
+        if tau < self.dur - ramp:
+            return cruise * (0.5 * ramp + (tau - ramp))
+        return self.lift - cruise * ramp * _smooth_ramp_distance((self.dur - tau) / ramp)
+
     def update(self, stage, dt):
         if self._obj is None:
             return
         t = stage.t
-        u = clamp01((t - self.t0) / self.dur)
-        # a sacudida do começo (mola tensionando) e a subida em S; o repique vem da mola
-        z = self.lift * ease("smoother", u)
-        if u >= 1.0 and not self._hit:
+        tau = t - self.t0
+        z = self.height(tau)
+        if tau >= self.dur and not self._hit:
             self._hit = True
-            self._bounce.v = 0.35
-        bounce = self._bounce.advance(dt) * 0.12 if u >= 1.0 else 0.0
-        moving = 0.0 < u < 1.0
+            self._bounce.v = 0.08                                 # assenta: a folha chega com velocidade quase nula
+        bounce = self._bounce.advance(dt) * 0.12 if tau >= self.dur else 0.0
+        moving = 0.0 < tau < self.dur
         rattle = (0.0016 * noise(t * 38.0, 1.0) + 0.0009 * math.sin(t * 90.0)) if moving else 0.0
-        jerk = 0.004 * math.exp(-8.0 * max(t - self.t0, 0.0)) * math.sin(60.0 * (t - self.t0)) if t > self.t0 else 0.0
+        jerk = 0.004 * math.exp(-8.0 * max(tau, 0.0)) * math.sin(60.0 * tau) if tau > 0.0 else 0.0
         self._obj.location = (self._obj.location[0], self._obj.location[1], z + bounce + jerk)
         self._obj.rotation_euler = (rattle, rattle * 0.6, 0.0)
 

@@ -287,7 +287,13 @@ def test_flicker_pattern_is_two_to_four_dips_with_shrinking_gaps():
     gaps = [b - a for a, b in zip(starts, starts[1:])]
     assert all(g2 < g1 for g1, g2 in zip(gaps, gaps[1:])), gaps
     curve = [burst_curve(i / 100.0) for i in range(101)]
-    assert curve[0] == 1.0 and abs(curve[-1] - 1.0) < 1e-9 and min(curve) < 0.15 and max(curve) > 1.05
+    assert curve[0] == 1.0 and abs(curve[-1] - 1.0) < 1e-9 and min(curve) == 0.0 and max(curve) > 1.05
+    # a corrente de uma rajada abre o contato por milissegundos: nenhuma abertura passa de 60 ms
+    from sem_alvorada.engine import flashlight as fl
+    longest = max(b - a for a, b in fl.CHATTER) * max(length for _, length in bursts)
+    assert longest < 0.060, longest
+    # e o filamento sobe e desce em dezenas de ms (ESTIMADO 20 a 80 ms de 10 a 90%)
+    assert 0.020 <= math.log(9.0) * fl.FILAMENT_TAU_UP <= 0.080 and 0.020 <= math.log(9.0) * fl.FILAMENT_TAU_DOWN <= 0.080
 
 
 # --------------------------------------------------------------------------
@@ -320,9 +326,12 @@ def test_first_flashlight_pickup_ends_lit_after_two_to_four_blinks():
     assert abs(state.battery - C.FLASHLIGHT_FOUND_CHARGE) < 0.01, state.battery
     assert state.flashlight_on and levels[-1] > 0.99, "a primeira vez termina com a luz acesa"
     assert game.hands.held == C.ITEM_FLASHLIGHT and not game.hands.busy
-    dips = sum(1 for a, b in zip(levels, levels[1:]) if a >= 0.5 > b)
-    assert 2 <= dips <= 4, f"{dips} piscadas"
-    assert levels.index(max(levels)) > 0 and min(l for l in levels if l > 0) < 0.15, "a piscada devia ir ao fundo"
+    # cada piscada é uma rajada de mau contato (várias aberturas de ms que o filamento alisa): quedas a menos de
+    # 0,2 s uma da outra contam como a mesma piscada
+    drops = [i for i, (a, b) in enumerate(zip(levels, levels[1:])) if a >= 0.5 > b]
+    blinks = sum(1 for k, i in enumerate(drops) if k == 0 or (i - drops[k - 1]) * FRAME > 0.2)
+    assert 2 <= blinks <= 4, f"{blinks} piscadas"
+    assert levels.index(max(levels)) > 0 and min(l for l in levels if l > 0) < 0.35, "a piscada devia ir ao fundo"
     recorder.assert_smooth()
     assert kinds_logged(game, "flash_click"), "o clique do polegar é ruído"
     sounds = game.audio.played_names()

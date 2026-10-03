@@ -24,7 +24,7 @@ from .perception import (Hearing, awareness_change, entity_head, flashlight_poin
                          player_target)
 from .tuning import BrainTuning
 
-MAX_CHASE_SPEED = 4.5          # abaixo da corrida do jogador (4.6) mesmo com agressividade máxima
+MAX_CHASE_SPEED = 3.91         # 97,8% da corrida do jogador (4,0), a mesma razão de antes (4,5 / 4,6), com agressividade máxima
 DOOR_BLOCK_SECONDS = 8.0
 DOOR_WAIT_GIVE_UP = 6.0
 STUCK_STREAK_TO_UNSTICK = 3

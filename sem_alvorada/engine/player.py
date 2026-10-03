@@ -1,24 +1,39 @@
-"""Jogador: movimento, colisão, fôlego, agachar, passos com ruído e head bob."""
+"""Jogador: movimento, colisão, fôlego, agachar, passos com ruído e a cabeça que acompanha a passada.
+
+A passada vem de `gait` (tabelas medidas em mocap real): `stride_phase` avança com a distância andada, o passo é
+mais longo quanto mais rápido se anda, e a cabeça (altura, lado, giros) é a da tabela na MESMA fase que as pernas do
+corpo usam. O som de cada passo sai quando a fase cruza um toque de calcanhar (cada pi), não por distância.
+"""
 import math
 
 from .. import conventions as C
-from .. import layout
+from .. import gait, layout
 from . import angles, collision
 
 STAND_HEIGHT = 1.80
 CROUCH_HEIGHT = 1.20
 PITCH_LIMIT = math.radians(85.0)
-ACCELERATION = 14.0            # 1/s: quão rápido a velocidade alcança a desejada (leve inércia)
+ACCELERATION = 14.0            # 1/s: perto da velocidade desejada a aproximação é exponencial (acabamento suave)
 BACKWARD_FACTOR = 0.8
 EYE_FOLLOW = 9.0
-Z_FOLLOW = 18.0                # suaviza os degraus da escada na câmera
-STRIDE_METERS = {"crouch": 0.9, "walk": 1.15, "run": 1.6}
+Z_FOLLOW = 18.0                # suaviza o piso sob os pés (desníveis pequenos)
+Z_FOLLOW_STAIRS = 6.0          # na escada o corpo sobe de degrau em degrau, mas a cabeça sobe em rampa (83_27: ~0,5 s/degrau)
+SPEED_FILTER = 0.08            # s: constante do filtro da velocidade que alimenta a passada
 STEP_KIND = {"crouch": "crouch_walk", "walk": "walk", "run": "run"}
-BOB_AMPLITUDE = {"crouch": 0.010, "walk": 0.020, "run": 0.034}
 BREATH_STAMINA = 0.30
 BREATH_NOISE_INTERVAL = 1.0
 STAIRS_CREAK_CHANCE = 0.10
-MIN_STEP_SPEED = 0.3
+MIN_STEP_SPEED = gait.MIN_SPEED
+RESTART_AMPLITUDE = 0.15       # ao arrancar com a passada já apagada, o ciclo recomeça no apoio médio do pé esquerdo
+# Respiração e postura da cabeça parada. Vertical e lateral MEDIDOS nas janelas mais quietas de 77_02, 111_28,
+# 113_21, 140_06, 140_07 e 82_08 (cabeça: 1,4 mm rms na vertical, 5 a 7 mm rms de lado); frequências e a respiração
+# ofegante são ESTIMADOS (12 a 16 respirações/min em repouso, 35 a 45 depois de esforço).
+IDLE_BREATH_HZ, HARD_BREATH_HZ = 0.25, 0.65
+IDLE_BREATH_Z, HARD_BREATH_Z = 0.0020, 0.0055          # amplitude da subida da cabeça (m)
+IDLE_BREATH_PITCH, HARD_BREATH_PITCH = math.radians(0.12), math.radians(0.40)
+IDLE_SWAY = 0.0065                                       # m, deslocamento lateral lento
+RUN_HEAD_DROP = 0.03           # m: a cabeça corre mais baixa que parada (16_57 e 143_02: 2 a 4 cm)
+HEAD_ROTATION_GAIN = 1.0       # fração dos giros medidos da cabeça (roll, pitch, yaw) que a câmera reproduz
 
 
 class Player:
@@ -33,15 +48,22 @@ class Player:
         self.exhausted = False
         self.running = False
         self.speed = 0.0
+        self.gait_speed = 0.0      # velocidade filtrada: o que a passada, o corpo e os pés leem
+        self.step_length = 0.0     # m, passo atual (um pé ao outro)
+        self.on_stairs = False
         self.eye = C.PLAYER_EYE_STAND
         self.z_visual = self.z
         self.room_id = None
         self._vx = self._vy = 0.0
-        self._stride_left = STRIDE_METERS["walk"]
-        self._bob_phase = 0.0
-        self._bob_gain = 0.0
-        self._bob_mode = "walk"
-        self._breath_clock = 0.0
+        self._cycle = gait.START_CYCLE          # fração do ciclo: 0 = toque do calcanhar esquerdo
+        self._amp = 0.0                          # 0..1: amplitude da passada (apaga ao parar)
+        self._was_moving = False
+        self._last_step = int(self._cycle * 2.0)   # índice do último toque de calcanhar (meio ciclo cada)
+        self._head = (0.0, 0.0, 0.0, 0.0, 0.0)   # lateral (m), vertical (m), roll, pitch, yaw (rad) da cabeça
+        self._breath_clock = 0.0                 # cronômetro do ruído de respiração
+        self._breath_phase = 0.0
+        self._breath_mix = 0.0                   # 0 repouso .. 1 ofegante
+        self._sway_clock = 0.0
         self._travelled = 0.0      # metros andados no último tick
         self._dt = 1.0 / 60.0
         self._refresh_room()
@@ -67,40 +89,55 @@ class Player:
     def breathing_hard(self):
         return self.exhausted or self.stamina < BREATH_STAMINA
 
+    @property
+    def crouch_fraction(self):
+        """0 em pé .. 1 agachado, pela altura dos olhos (suave, como o corpo a vê)."""
+        span = C.PLAYER_EYE_STAND - C.PLAYER_EYE_CROUCH
+        return max(0.0, min(1.0, (C.PLAYER_EYE_STAND - self.eye) / span))
+
     def forward(self):
         """Direção da mira (vetor unitário 3D)."""
         flat = math.cos(self.pitch)
         return (-math.sin(self.yaw) * flat, math.cos(self.yaw) * flat, math.sin(self.pitch))
 
     def surface(self):
-        if layout.STAIRS.contains(self.x, self.y) and 0.05 < self.z < layout.LEVEL_Z[1] - 0.05:
+        if self._on_stairs_now():
             return "stairs"
         room = layout.room_at(self.x, self.y, self.z)
         return room.surface if room else "concrete"
 
+    def _on_stairs_now(self):
+        return layout.STAIRS.contains(self.x, self.y) and 0.05 < self.z < layout.LEVEL_Z[1] - 0.05
+
     @property
     def stride_phase(self):
-        """Fase da passada em radianos: cada pi é um passo (um pé), 2 pi é o ciclo completo. Mesma do head bob."""
-        return self._bob_phase
+        """Fase da passada em radianos: cada pi é um passo (um toque de calcanhar), 2 pi é o ciclo completo.
+
+        0 = toque do calcanhar esquerdo, pi = o do direito. É a fase das pernas do corpo e da cabeça da câmera."""
+        return self._cycle * 2.0 * math.pi
 
     def bob_offset(self):
-        """(lateral, vertical) do head bob em metros, para a câmera e o viewmodel."""
-        amplitude = BOB_AMPLITUDE[self._bob_mode] * self._bob_gain
-        return (0.6 * amplitude * math.sin(self._bob_phase), amplitude * math.sin(2 * self._bob_phase))
+        """(lateral, vertical) da cabeça em metros em relação ao ponto de repouso, para a câmera e as mãos."""
+        return (self._head[0], self._head[1])
 
     def camera_pose(self):
-        """Posição e rotação (euler XYZ) da câmera, já com head bob."""
-        lateral, vertical = self.bob_offset()
+        """Posição e rotação (euler XYZ) da câmera: olhos, passada medida, respiração e giros da cabeça."""
+        lateral, vertical, roll, pitch, yaw = self._head
         right_x, right_y = math.cos(self.yaw), math.sin(self.yaw)
         position = (self.x + right_x * lateral, self.y + right_y * lateral, self.z_visual + self.eye + vertical)
-        return position, (math.pi / 2 + self.pitch, lateral * 0.35, self.yaw)
+        return position, gait.camera_euler(self.yaw + yaw, self.pitch + pitch, roll)
 
     # ---- comandos ----
     def place(self, x, y, z, yaw, pitch=0.0):
         self.x, self.y, self.z, self.yaw, self.pitch = x, y, z, yaw, pitch
         self.z_visual = z
         self._vx = self._vy = 0.0
-        self.speed = 0.0
+        self.speed = self.gait_speed = 0.0
+        self._amp = 0.0
+        self._cycle = gait.START_CYCLE
+        self._last_step = int(self._cycle * 2.0)
+        self._was_moving = False
+        self._head = (0.0, 0.0, 0.0, 0.0, 0.0)
         self._refresh_room()
 
     def reset_body(self):
@@ -114,10 +151,10 @@ class Player:
         self._crouch(inp)
         self._move(dt, inp)
         self._recover_stamina(dt)
-        self._footsteps()
+        self._advance_gait(dt)
         self._breathe(dt)
         self._follow_height(dt)
-        self._advance_bob()
+        self._update_head(dt)
         self._refresh_room()
 
     def _look(self, inp):
@@ -150,16 +187,32 @@ class Player:
                    and wish_length > 0.1)
         self.running = can_run
         if self.crouching:
-            return C.SPEED_CROUCH
-        return C.SPEED_RUN if can_run else C.SPEED_WALK
+            target, mode = C.SPEED_CROUCH, "crouch"
+        elif can_run:
+            target, mode = C.SPEED_RUN, "run"
+        else:
+            target, mode = C.SPEED_WALK, "walk"
+        if self.on_stairs:
+            # na escada o ritmo é o dos degraus (passos por segundo x profundidade do degrau), não o do corredor
+            target = min(target, C.STAIRS_STEPS_PER_SECOND[mode] * layout.STAIRS.tread_depth)
+        return target
 
     def _move(self, dt, inp):
+        self.on_stairs = self._on_stairs_now()
         wx, wy, forward = self._wish(inp)
         wish_length = math.hypot(wx, wy)
         target = self._target_speed(inp, wish_length)
-        follow = 1.0 - math.exp(-ACCELERATION * dt)
-        self._vx += (wx * target - self._vx) * follow
-        self._vy += (wy * target - self._vy) * follow
+        goal_x, goal_y = wx * target, wy * target
+        # aceleração limitada pelo que uma pessoa faz (partida 7 m/s2 em 143_03, parada até 8 m/s2 em 143_02),
+        # com acabamento exponencial perto da velocidade desejada
+        delta_x, delta_y = goal_x - self._vx, goal_y - self._vy
+        delta = math.hypot(delta_x, delta_y)
+        if delta > 1e-9:
+            speeding_up = math.hypot(goal_x, goal_y) > math.hypot(self._vx, self._vy)
+            limit = C.ACCEL_START if speeding_up else C.ACCEL_BRAKE
+            change = delta if delta < 1e-4 else min(delta, limit * dt, delta * ACCELERATION * dt)
+            self._vx += delta_x / delta * change
+            self._vy += delta_y / delta * change
         old_x, old_y = self.x, self.y
         segments = self.game.doors.segments(self.level)
         self.x, self.y, self.z = collision.move_and_slide(
@@ -189,14 +242,36 @@ class Player:
             return "crouch"
         return "run" if self.running and self.speed > C.SPEED_WALK * 1.1 else "walk"
 
-    def _footsteps(self):
-        if self.speed < MIN_STEP_SPEED:
+    # ---- passada, passos e cabeça ----
+    def _advance_gait(self, dt):
+        """Avança o ciclo com a distância andada, conta os toques de calcanhar e faz o som de cada um."""
+        smooth = 1.0 - math.exp(-dt / SPEED_FILTER) if dt > 0 else 1.0
+        self.gait_speed += (self.speed - self.gait_speed) * smooth
+        self._amp = gait.amplitude(self.gait_speed)
+        moving = self.speed >= MIN_STEP_SPEED
+        if moving and not self._was_moving and self._amp < RESTART_AMPLITUDE:
+            self._cycle = gait.START_CYCLE
+            self._last_step = int(self._cycle * 2.0)
+        self._was_moving = moving
+        weights = gait.mode_weights(self.gait_speed, self.crouch_fraction)
+        step = gait.step_length(max(self.gait_speed, self.speed), weights)
+        if self.on_stairs:
+            step = min(step, layout.STAIRS.tread_depth)         # um pé por degrau
+        self.step_length = step
+        if not moving:
             return
+        self._cycle += self._travelled / (2.0 * step)
+        index = int(math.floor(self._cycle * 2.0))
+        while self._last_step < index:
+            self._last_step += 1
+            self._footstep(self._last_step % 2)
+        if self._cycle > 64.0:                       # mantém o número pequeno sem mexer na fase
+            self._cycle -= 64.0
+            self._last_step -= 128
+
+    def _footstep(self, foot):
+        """Toque de calcanhar: `foot` 0 = esquerdo, 1 = direito. O som sai neste instante da animação."""
         mode = self._step_mode()
-        self._stride_left -= self._travelled
-        if self._stride_left > 0:
-            return
-        self._stride_left = STRIDE_METERS[mode]
         surface = self.surface()
         kind = STEP_KIND[mode]
         loudness = C.NOISE_PLAYER[kind] * C.SURFACE_NOISE_MULT[surface]
@@ -219,15 +294,37 @@ class Player:
         self.eye += (target_eye - self.eye) * (1.0 - math.exp(-EYE_FOLLOW * dt))
         if abs(self.z - self.z_visual) > 0.6:
             self.z_visual = self.z
-        self.z_visual += (self.z - self.z_visual) * (1.0 - math.exp(-Z_FOLLOW * dt))
+        rate = Z_FOLLOW_STAIRS if self.on_stairs or abs(self.z - self.z_visual) > 0.03 else Z_FOLLOW
+        self.z_visual += (self.z - self.z_visual) * (1.0 - math.exp(-rate * dt))
 
-    def _advance_bob(self):
-        mode = self._step_mode()
-        moving = self.speed >= MIN_STEP_SPEED
-        self._bob_mode = mode
-        self._bob_gain += ((1.0 if moving else 0.0) - self._bob_gain) * min(1.0, 8.0 * self._dt)
-        if moving:
-            self._bob_phase += self._travelled / STRIDE_METERS[mode] * math.pi
+    def _update_head(self, dt):
+        """Cabeça = passada medida (na fase do corpo) + respiração + balanço lento de quem está parado."""
+        hard = 1.0 if self.breathing_hard else 0.0
+        self._breath_mix += (hard - self._breath_mix) * (1.0 - math.exp(-1.5 * dt))
+        mix = self._breath_mix
+        self._breath_phase += dt * 2.0 * math.pi * (IDLE_BREATH_HZ + (HARD_BREATH_HZ - IDLE_BREATH_HZ) * mix)
+        self._sway_clock += dt
+        breath = math.sin(self._breath_phase)
+        still = 1.0 - self._amp
+        breath_z = (IDLE_BREATH_Z + (HARD_BREATH_Z - IDLE_BREATH_Z) * mix) * breath
+        breath_pitch = (IDLE_BREATH_PITCH + (HARD_BREATH_PITCH - IDLE_BREATH_PITCH) * mix) * breath
+        sway = IDLE_SWAY * (0.6 * math.sin(self._sway_clock * 2.0 * math.pi * 0.17)
+                            + 0.4 * math.sin(self._sway_clock * 2.0 * math.pi * 0.29 + 1.3)) * still
+        lateral = sway
+        vertical = breath_z
+        roll = 0.0
+        pitch = breath_pitch
+        yaw = 0.0
+        if self._amp > 1e-3:
+            s = gait.evaluate(self._cycle, max(self.gait_speed, 0.05), self.crouch_fraction, gait.HEAD_KEYS)
+            v = s.values
+            amp = self._amp
+            lateral += v["cab_y"] * amp
+            vertical += (v["cab_z"] - RUN_HEAD_DROP * s.weights[1]) * amp
+            roll += math.radians(v["cab_roll"]) * amp * HEAD_ROTATION_GAIN
+            pitch += math.radians(v["cab_pitch"]) * amp * HEAD_ROTATION_GAIN
+            yaw += math.radians(v["cab_yaw"]) * amp * HEAD_ROTATION_GAIN
+        self._head = (lateral, vertical, roll, pitch, yaw)
 
     def _refresh_room(self):
         room = layout.room_at(self.x, self.y, self.z)

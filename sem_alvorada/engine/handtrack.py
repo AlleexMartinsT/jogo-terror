@@ -12,6 +12,12 @@ eventos nomeados (`contact`, `click`, `done`...). O executor garante:
 Os valores são sempre tuplas de floats (escalares viram tuplas de um item). As rotações (canais `*.rot`) são
 quaternions (w, x, y, z): interpolar ângulos de Euler passa por orientações absurdas perto de um eixo
 vertical ("gimbal"), e várias garras da mão ficam exatamente ali.
+
+Perfil de velocidade (fase 4). Entre duas chaves `stop` a curva é o polinômio de quinto grau de jerk mínimo
+(Flash e Hogan, 1985): 10 s^3 - 15 s^4 + 6 s^5, velocidade em sino com o pico a 50% e 1,875 vezes a velocidade
+média. É o perfil que os alcances reais medidos no mocap da CMU seguem (pico a 49 +- 6% da duração, índice de
+sino 1,77 +- 0,18). Em chaves de passagem a curva é o Hermite de quinto grau com aceleração zero nas chaves
+(continuidade C2) e tangente pela média das inclinações vizinhas.
 """
 import math
 from bisect import bisect_right
@@ -22,6 +28,23 @@ from mathutils import Quaternion
 
 FOLLOW_RATE = 13.0          # 1/s: quão depressa uma emenda é absorvida (~0,35 s para sumir)
 VELOCITY_PROBE = 1.0 / 240.0
+ABSOLUTE_SPACES = frozenset({"rest"})      # espaços de âncora cujo valor SUBSTITUI o da chave (os demais somam a ele)
+TANGENT_LIMIT = 2.0        # o Hermite de quinto grau (aceleração nula nas chaves) segue monótono até 2x a menor inclinação
+
+
+def quintic_basis(s):
+    """Bases do Hermite de quinto grau com aceleração nula nas pontas: (valor inicial, tangente inicial, valor final,
+    tangente final). Com tangentes nulas sai o jerk mínimo, 10 s^3 - 15 s^4 + 6 s^5."""
+    s2, s3 = s * s, s * s * s
+    s4, s5 = s3 * s, s3 * s2
+    return (1 - 10 * s3 + 15 * s4 - 6 * s5, s - 6 * s3 + 8 * s4 - 3 * s5,
+            10 * s3 - 15 * s4 + 6 * s5, -4 * s3 + 7 * s4 - 3 * s5)
+
+
+def min_jerk(s):
+    """Fração do caminho percorrida no instante normalizado `s` (0..1) por um alcance de jerk mínimo."""
+    s = 0.0 if s < 0.0 else 1.0 if s > 1.0 else s
+    return s * s * s * (10.0 + s * (-15.0 + 6.0 * s))
 
 
 @dataclass(frozen=True)
@@ -69,7 +92,7 @@ def track(*keys):
 
 
 class Track:
-    """Curva de um canal: Hermite cúbico monótono (não passa de uma chave a outra para além delas)."""
+    """Curva de um canal: Hermite de quinto grau monótono (não passa de uma chave a outra para além delas)."""
 
     def __init__(self, keys):
         self.keys = sorted(keys, key=lambda k: k.t)
@@ -84,6 +107,8 @@ class Track:
         key = self.keys[index]
         if key.space == "cam" or not anchors or key.space not in anchors:
             return key.value
+        if key.space in ABSOLUTE_SPACES:        # a âncora é a própria posição; o valor da chave é só o padrão
+            return tuple(anchors[key.space])
         return tuple(a + b for a, b in zip(key.value, anchors[key.space]))
 
     def _tangent(self, index, anchors):
@@ -101,7 +126,7 @@ class Track:
                 tangent.append(0.0)                    # extremo local: sem sobressalto entre as chaves
             else:
                 m = (h1 * d0 + h0 * d1) / (h0 + h1)    # média ponderada pelo tempo
-                limit = 3.0 * min(abs(d0), abs(d1))
+                limit = TANGENT_LIMIT * min(abs(d0), abs(d1))
                 tangent.append(math.copysign(min(abs(m), limit), m))
         return tuple(tangent)
 
@@ -115,10 +140,32 @@ class Track:
         s = (t - self.times[i]) / h
         p0, p1 = self._resolved(i, anchors), self._resolved(i + 1, anchors)
         m0, m1 = self._tangent(i, anchors), self._tangent(i + 1, anchors)
-        s2, s3 = s * s, s * s * s
-        h00, h10, h01, h11 = 2 * s3 - 3 * s2 + 1, s3 - 2 * s2 + s, -2 * s3 + 3 * s2, s3 - s2
-        return tuple(h00 * a + h10 * h * ma + h01 * b + h11 * h * mb
+        b0, b1, b2, b3 = quintic_basis(s)
+        return tuple(b0 * a + b1 * h * ma + b2 * b + b3 * h * mb
                      for a, b, ma, mb in zip(p0, p1, m0, m1))
+
+    def phase(self, t):
+        """Progresso (0 = primeira chave, n-1 = última) com o mesmo perfil de velocidade da curva dos valores. As
+        rotações o usam para andar em fase com a posição."""
+        last = len(self.keys) - 1
+        if t <= self.times[0]:
+            return 0.0
+        if t >= self.times[-1]:
+            return float(last)
+        i = bisect_right(self.times, t) - 1
+        h = self.times[i + 1] - self.times[i]
+        s = (t - self.times[i]) / h
+        m0, m1 = self._phase_tangent(i), self._phase_tangent(i + 1)
+        b0, b1, b2, b3 = quintic_basis(s)
+        return i + b1 * h * m0 + b2 + b3 * h * m1
+
+    def _phase_tangent(self, index):
+        last = len(self.keys) - 1
+        if index == 0 or index == last or self.keys[index].stop:
+            return 0.0
+        h0 = self.keys[index].t - self.keys[index - 1].t
+        h1 = self.keys[index + 1].t - self.keys[index].t
+        return min(2.0 / (h0 + h1), TANGENT_LIMIT / max(h0, h1))
 
 
 def _align(q, reference):
@@ -178,7 +225,7 @@ class QuatTrack(Track):
         if t >= self.times[-1]:
             return tuple(self.keys[-1].value)
         i = bisect_right(self.times, t) - 1
-        u = (t - self.times[i]) / (self.times[i + 1] - self.times[i])
+        u = min(1.0, max(0.0, self.phase(t) - i))
         a, b = self._quats[i], self._quats[i + 1]
         edge = a.slerp(b, u)
         inner = self._control[i].slerp(self._control[i + 1], u)
@@ -202,11 +249,18 @@ def _add(a, b):
     return tuple(x + y for x, y in zip(a, b))
 
 
+def _spaces(anchor):
+    """`anchors[canal]` é uma tupla (âncora "grasp") ou já um {espaço: valor} ("grasp", "rest")."""
+    if anchor is None:
+        return None
+    return anchor if isinstance(anchor, dict) else {"grasp": anchor}
+
+
 class ClipPlayer:
     """Toca um `Clip` por vez sobre uma base (a pose de repouso de cada canal).
 
     `update(dt, base_fn, anchors, fire)`: `base_fn()` devolve {canal: valor} da pose de repouso (chamada depois
-    dos eventos, porque eles podem mudar o estado); `anchors` é {"grasp": {canal: valor}} para chaves com `space`;
+    dos eventos, porque eles podem mudar o estado); `anchors` é {canal: valor} (âncora "grasp") ou {canal: {espaço: valor}} para chaves com `space`;
     `fire(evento)` recebe cada evento na ordem. Devolve {canal: valor} de todos os canais da base e do clipe.
     """
 
@@ -256,9 +310,9 @@ class ClipPlayer:
         for name in names:
             if clip is not None and name in clip.tracks:
                 curve = clip.tracks[name]
-                grasp = anchors.get(name) if anchors else None
-                here = curve.sample(time, {"grasp": grasp} if grasp is not None else None)
-                ahead = curve.sample(time + VELOCITY_PROBE, {"grasp": grasp} if grasp is not None else None)
+                spaces = _spaces(anchors.get(name)) if anchors else None
+                here = curve.sample(time, spaces)
+                ahead = curve.sample(time + VELOCITY_PROBE, spaces)
                 source = (here, tuple((b - a) / VELOCITY_PROBE for a, b in zip(here, ahead)), f"clip{self.serial}")
             else:
                 value = base[name]
@@ -292,6 +346,8 @@ class ClipPlayer:
             if rotation and sum(a * b for a, b in zip(channel.out, value)) < 0.0:
                 channel.out = tuple(-x for x in channel.out)             # a mesma rotação, no hemisfério da fonte nova
                 channel.vel = tuple(-x for x in channel.vel)
+            if channel.kind == "base":
+                channel.vel = (0.0,) * len(channel.vel)       # a base é um repouso: sua deriva (a câmera girando) não vira velocidade do gesto
             channel.off = _sub(channel.out, value)
             channel.offv = _sub(channel.vel, source_velocity)
             channel.kind = kind

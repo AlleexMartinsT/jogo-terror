@@ -9,7 +9,7 @@ import math
 import random
 
 import bpy  # noqa: F401 - `mathutils` só existe depois deste import
-from mathutils import Matrix, Vector
+from mathutils import Euler, Matrix, Vector
 
 from .. import conventions as C
 from . import angles
@@ -32,25 +32,51 @@ LIGHT_FROM_GRIP = (LIGHT_XY[0] - VIEWMODEL_OFFSET[0], LIGHT_XY[1] - VIEWMODEL_OF
                    -LIGHT_FORWARD_MAX - VIEWMODEL_OFFSET[2])     # onde a luz nasce, a partir do punho da lanterna
 HOLD_MATRIX = Matrix.Translation(VIEWMODEL_OFFSET)
 BATTERY_FULL_ENOUGH = 0.9
-BURST_LOW = 0.03                          # brilho no fundo de uma piscada
-BURST_SURGE = 1.10                        # e o tranco de volta quando o contato fecha
-SWAY_FOLLOW = 9.0                         # 1/s: rapidez com que a luz alcança a câmera
-MAX_LAG = math.radians(7.0)
+BURST_SURGE = 1.10                        # corrente logo depois da última abertura: o contato fecha com um tranco
+BURST_SURGE_TIME = 0.010                  # e o tranco dura 10 ms
+# Mau contato da pilha: a corrente abre e fecha em milissegundos. Aberturas do contato como fração da rajada
+# (início, fim); a rajada típica dura 0,10 a 0,15 s, então a maior abertura tem ~50 ms e a menor ~13 ms.
+CHATTER = ((0.06, 0.42), (0.52, 0.72), (0.82, 0.92))
+# Lâmpada incandescente: a luz segue a corrente com a inércia térmica do filamento. ESTIMADO (lembrado de memória, faixa
+# de 20 a 80 ms para a subida de 10 a 90%): constantes de 14 ms na subida (31 ms de 10 a 90%) e 24 ms na descida (53 ms),
+# o filamento esfria mais devagar do que esquenta com a corrente toda.
+FILAMENT_TAU_UP = 0.014
+FILAMENT_TAU_DOWN = 0.024
+# Atraso da luz em relação ao olhar. MEDIDO no mocap 77_05 (olhar em volta com lanterna na mão direita): o antebraço
+# segue a guinada da cabeça com constante de 54 a 86 ms (correlação cruzada: 50 ms; ajuste de 1ª ordem: 54 a 70 ms), então
+# a luz alcança a câmera a 1/0,075 s = 13 por segundo (era 9). O limite angular é decisão de jogo: no mocap a mão chega a
+# 20 graus da cabeça (desvio-padrão), mas a luz tem de continuar dentro do campo que o jogador vê.
+SWAY_FOLLOW = 13.0                        # 1/s: rapidez com que a luz alcança a câmera
+MAX_LAG = math.radians(10.0)
 IDLE_SWAY = math.radians(0.35)
 WARM = (1.0, 0.93, 0.78)
 WEAK = (1.0, 0.80, 0.55)
 
 
-def burst_curve(u):
-    """Multiplicador de brilho ao longo de uma piscada (u de 0 a 1): cai, fica no fundo e volta com um tranco."""
-    if u < 0.18:
-        return 1.0 - (1.0 - BURST_LOW) * (u / 0.18)
-    if u < 0.52:
-        return BURST_LOW + 0.05 * math.sin((u - 0.18) * 38.0) ** 2
-    if u < 0.74:
-        k = (u - 0.52) / 0.22
-        return BURST_LOW + (BURST_SURGE - BURST_LOW) * k * k * (3.0 - 2.0 * k)
-    return BURST_SURGE + (1.0 - BURST_SURGE) * min(1.0, (u - 0.74) / 0.26)
+def burst_curve(u, length=0.13):
+    """Corrente (1 = contato fechado) em uma rajada de mau contato, `u` de 0 a 1 ao longo de `length` s: fecha, abre
+    três vezes em tempos cada vez menores e volta com um tranco."""
+    for a, b in CHATTER:
+        if a <= u < b:
+            return 0.0
+    surge_from = CHATTER[-1][1]
+    if surge_from <= u < surge_from + BURST_SURGE_TIME / length:
+        return BURST_SURGE
+    return 1.0
+
+
+def burst_average(t0, t1, length):
+    """Média da corrente da rajada no intervalo [t0, t1] (s desde o início dela): as aberturas de alguns milissegundos
+    são mais curtas que um quadro, então o quadro enxerga a média, que o filamento então alisa."""
+    t0, t1 = max(0.0, t0), min(length, t1)
+    if t1 <= t0:
+        return 1.0
+    total = 1.0 * (t1 - t0)
+    for a, b in CHATTER:
+        total -= max(0.0, min(t1, b * length) - max(t0, a * length))
+    surge = CHATTER[-1][1] * length
+    total += (BURST_SURGE - 1.0) * max(0.0, min(t1, surge + BURST_SURGE_TIME) - max(t0, surge))
+    return total / (t1 - t0)
 
 
 def low_battery_gain(level):
@@ -69,10 +95,9 @@ class Flashlight:
         self.rng = random.Random(seed)
         self.swap_left = 0.0
         self.intensity = 0.0               # brilho efetivo atual, 0..1
-        self._dropout_left = 0.0
-        self._dropout_gain = 1.0
         self._strobe_left = 0.0
-        self._bursts = []
+        self._bursts = []                  # [[tempo desde o início, duração]] de rajadas de mau contato em curso
+        self._filament = 0.0               # brilho do filamento (inércia térmica): 0 frio .. 1 incandescente
         self.lantern_matrix = None         # pose do viewmodel no espaço da câmera, entregue pelas mãos
         self._lag_yaw = 0.0
         self._lag_pitch = 0.0
@@ -111,7 +136,7 @@ class Flashlight:
         self._strobe_left = max(self._strobe_left, seconds)
 
     def burst(self, seconds):
-        """Uma piscada da carga fraca: cai, fica no fundo e volta com um tranco."""
+        """Uma rajada de mau contato de `seconds` s: três aberturas de alguns ms, cada vez menores, e um tranco."""
         self._bursts.append([0.0, seconds])
 
     def reload_blocker(self):
@@ -163,37 +188,40 @@ class Flashlight:
             self.game.sound("flash_off")
 
     def _effective_intensity(self, dt):
+        """Brilho do filamento: a corrente (pilha, mau contato, strobe) passa pela inércia térmica da lâmpada."""
         state = self.state
-        if not state.flashlight_on:
-            return 0.0
-        gain = low_battery_gain(state.battery) * self._dropout(dt)
-        if self._strobe_left > 0:
-            self._strobe_left -= dt
-            gain *= 0.0 if int(self._clock * 22) % 2 else 1.0
-        return gain * self._burst_gain(dt)
+        drive = 0.0
+        if state.flashlight_on:
+            drive = low_battery_gain(state.battery) * self._dropout(dt)
+            if self._strobe_left > 0:
+                self._strobe_left -= dt
+                drive *= 0.0 if int(self._clock * 22) % 2 else 1.0
+            drive *= self._burst_gain(dt)
+        else:
+            self._bursts.clear()
+        tau = FILAMENT_TAU_UP if drive > self._filament else FILAMENT_TAU_DOWN
+        self._filament += (drive - self._filament) * (1.0 - math.exp(-dt / tau))
+        if abs(drive - self._filament) < 1e-3:
+            self._filament = drive
+        return self._filament
 
     def _burst_gain(self, dt):
         gain = 1.0
         for burst in self._bursts:
+            gain = min(gain, burst_average(burst[0], burst[0] + dt, burst[1]))
             burst[0] += dt
-            gain = min(gain, burst_curve(burst[0] / burst[1]))
-        self._bursts = [b for b in self._bursts if b[0] < b[1]]
+        self._bursts = [b for b in self._bursts if b[0] < b[1] + BURST_SURGE_TIME]
         return gain
 
     def _dropout(self, dt):
-        """Quedas rápidas de luz que ficam mais frequentes e longas quanto menor a bateria."""
+        """Com a pilha fraca o contato falha em rajadas, mais frequentes e mais longas quanto menor a carga."""
         level = self.state.battery
         if level >= C.BATTERY_LOW:
-            self._dropout_left = 0.0
             return 1.0
-        if self._dropout_left > 0:
-            self._dropout_left -= dt
-            return self._dropout_gain
         weakness = 1.0 - level / C.BATTERY_LOW
-        if self.rng.random() < (0.4 + 5.0 * weakness) * dt:
-            longest = 0.18 + 0.35 * (1.0 if level < C.BATTERY_CRITICAL else 0.0)
-            self._dropout_left = self.rng.uniform(0.04, longest)
-            self._dropout_gain = self.rng.uniform(0.0, 0.3)
+        if not self._bursts and self.rng.random() < (0.4 + 5.0 * weakness) * dt:
+            longest = 0.16 + 0.24 * (1.0 if level < C.BATTERY_CRITICAL else 0.0)
+            self.burst(self.rng.uniform(0.06, longest))
             self.game.sound("flash_flicker", None, 0.5)
         return 1.0
 
@@ -255,5 +283,6 @@ class Flashlight:
         grip = self.lantern_matrix if self.lantern_matrix is not None else HOLD_MATRIX
         slide = LIGHT_FORWARD_MAX - self.forward_offset                 # recuo perto da parede, ao longo do cano
         light.location = grip @ Vector((LIGHT_FROM_GRIP[0], LIGHT_FROM_GRIP[1], LIGHT_FROM_GRIP[2] + slide))
-        tilt = grip.to_euler("XYZ")
-        light.rotation_euler = (tilt.x + pitch, tilt.y + yaw, tilt.z)
+        # o atraso gira o cano em torno dos eixos da CÂMERA (a lanterna na mão está rolada, os eixos do Euler dela não servem)
+        aim = Euler((pitch, yaw, 0.0), "XYZ").to_matrix() @ grip.to_3x3()
+        light.rotation_euler = aim.to_euler("XYZ")

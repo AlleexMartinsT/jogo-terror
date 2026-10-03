@@ -8,7 +8,7 @@ Convenções deste projeto, valem para qualquer coisa que use `Mocap`:
 quadro. Nada aqui importa `bpy`: roda com numpy puro, em qualquer Python.
 """
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -26,6 +26,7 @@ class Mocap:
     channels: list          # por junta: lista de nomes ("Xposition", "Zrotation"...)
     data: np.ndarray        # [T, canais] graus e unidades do arquivo (sem converter)
     unit: float = CMU_UNIT_M
+    ends: dict = field(default_factory=dict)       # junta -> deslocamento do "End Site" (metros, eixos do arquivo): ponta do pé, da mão...
 
     @property
     def frames(self):
@@ -71,6 +72,11 @@ class Mocap:
     def world(self, face_forward=True):
         """(posições [T, J, 3], rotações [T, J, 3, 3]) no mundo do jogo. `face_forward` vira o esqueleto do
         primeiro quadro para +Y (a direção que o quadril aponta)."""
+        positions, rotations, _pontas = self.world_com_pontas(face_forward)
+        return positions, rotations
+
+    def world_com_pontas(self, face_forward=True):
+        """Como `world`, mais as pontas dos "End Site" (por exemplo a ponta do pé): {nome da junta: [T, 3]}."""
         local = self._local_rotations()
         offsets = self.offset
         total, joints = self.frames, len(self.joints)
@@ -85,14 +91,18 @@ class Mocap:
             else:
                 rotations[:, j] = rotations[:, p] @ local[:, j]
                 positions[:, j] = positions[:, p] + np.einsum("tij,j->ti", rotations[:, p], offsets[j])
+        tips = {self.joints[j]: positions[:, j] + np.einsum("tij,j->ti", rotations[:, j], offset)
+                for j, offset in self.ends.items()}
         # eixos do arquivo -> mundo do jogo
         positions = positions @ YUP_TO_ZUP.T
+        tips = {name: point @ YUP_TO_ZUP.T for name, point in tips.items()}
         rotations = YUP_TO_ZUP @ rotations @ YUP_TO_ZUP.T
         if face_forward:
             turn = _yaw_to_forward(self, positions)
             positions = positions @ turn.T
+            tips = {name: point @ turn.T for name, point in tips.items()}
             rotations = turn @ rotations
-        return positions, rotations
+        return positions, rotations, tips
 
 
 def _axis(axis, radians):
@@ -122,8 +132,10 @@ def parse(text, name="clip"):
     """Lê o texto de um BVH."""
     header, _, motion = text.partition("MOTION")
     joints, parent, offsets, channels = [], [], [], []
+    ends = {}
     stack = []
     current = None
+    end_owner = None
     for raw in header.splitlines():
         line = raw.strip()
         if line.startswith(("ROOT", "JOINT")):
@@ -133,7 +145,7 @@ def parse(text, name="clip"):
             channels.append([])
             current = len(joints) - 1
         elif line.startswith("End Site"):
-            current = None
+            end_owner, current = current, None
         elif line == "{":
             stack.append(current)
         elif line == "}":
@@ -141,6 +153,9 @@ def parse(text, name="clip"):
             current = stack[-1] if stack else None
         elif line.startswith("OFFSET") and current is not None:
             offsets[current] = [float(v) for v in line.split()[1:4]]
+        elif line.startswith("OFFSET") and end_owner is not None:
+            ends[end_owner] = np.array([float(v) for v in line.split()[1:4]]) * CMU_UNIT_M
+            end_owner = None
         elif line.startswith("CHANNELS"):
             parts = line.split()
             channels[current] = parts[2:2 + int(parts[1])]
@@ -149,4 +164,4 @@ def parse(text, name="clip"):
     frame_time = float(re.search(r"Frame Time:\s*([0-9.eE+-]+)", lines[1]).group(1))
     data = np.array([[float(v) for v in row.split()] for row in lines[2:2 + count]])
     offset = np.array(offsets) * CMU_UNIT_M                          # metros, ainda nos eixos do arquivo (a FK roda assim)
-    return Mocap(name, 1.0 / frame_time, joints, parent, offset, channels, data)
+    return Mocap(name, 1.0 / frame_time, joints, parent, offset, channels, data, ends=ends)

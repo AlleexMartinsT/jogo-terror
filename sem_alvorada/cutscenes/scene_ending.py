@@ -28,7 +28,9 @@ from .. import story
 SHOT_A, SHOT_X, SHOT_B, SHOT_C = 0.0, 8.4, 12.8, 19.4
 TOTAL = 38.0
 CRANK, CATCH = 2.2, 3.5
-ROLLUP_START, ROLLUP_SECONDS = 5.0, 3.0
+# O abridor sobe a folha a ~19 cm/s (veja anim.GarageLift): são ~12 s, então liga logo no começo da cena e o carro só
+# sai (8,4 s) quando a folha já passou do teto dele.
+ROLLUP_START, ROLLUP_SECONDS = 0.4, anim.opener_seconds(2.3)
 MOVE_START, MOVE_END = 8.4, 15.6
 DRIVER_END = SHOT_C
 
@@ -113,12 +115,12 @@ def build():
         Cue(0.0, act.cut_light(CAR_CABIN, 35.0)),
         Cue(0.0, act.actor("car", lambda st: anim.CarMotion(car_home, car_stop, MOVE_START, MOVE_END, crank_start=CRANK,
                                                               catch=CATCH, lights_on=CRANK))),
-        Cue(0.0, act.actor("bunny", lambda st: anim.CharmPendulum("Cut_Bunny", 0.2, 0.5, "car"))),
+        Cue(0.0, act.actor("bunny", lambda st: anim.CharmPendulum("Cut_Bunny", anim.BUNNY_LENGTH, source="car"))),
         Cue(0.0, act.actor("wheel", lambda st: anim.SteeringWheel("Cut_Wheel"))),
         Cue(0.0, act.actor("key", lambda st: anim.PropPath(
             "Cut_Key", Path([Key(1.1, add(LOCK, (0.10, -0.15, 0.14))), Key(1.9, LOCK, True), Key(DRIVER_END, LOCK, True)]),
             key_rotation, 1.1, 19.1, also=("Cut_KeyCharm",), mount=C.OBJ_CAR))),
-        Cue(0.0, act.actor("key_charm", lambda st: anim.CharmPendulum("Cut_KeyCharm", 0.07, 0.35, "car"))),
+        Cue(0.0, act.actor("key_charm", lambda st: anim.CharmPendulum("Cut_KeyCharm", anim.KEY_CHARM_LENGTH, source="car"))),
         Cue(0.0, act.actor("dash", lambda st: anim.EmissionPulse("car_cluster", dash_level))),
         Cue(0.0, act.actor("dash2", lambda st: anim.EmissionPulse("digits_dash", dash_level))),
         Cue(0.0, act.actor("dash3", lambda st: anim.EmissionPulse("car_radio", dash_level))),
@@ -129,7 +131,7 @@ def build():
         Cue(CRANK, act.sound("car_start", None, 1.0)),
         Cue(CATCH, act.loop("engine", "car_idle", 0.7)),
         Cue(CATCH + 0.05, act.cut_light(CAR_CABIN, 6.0)),            # sobra um brilho fraco do painel: a cabine não some no escuro
-        Cue(ROLLUP_START - 0.1, act.sound("garage_rollup", None, 1.0)),
+        Cue(ROLLUP_START - 0.1, act.sound("garage_rollup", None, 1.0, pitch=4.0 / (ROLLUP_SECONDS - 0.1))),   # o estalo do fim cai no fim da subida
         Cue(ROLLUP_START + 0.5, act.cut_light(DRIVEWAY_LIGHT, 2500.0)),
     )
     shot_a = Shot(SHOT_X - SHOT_A, cam=rig_a, name="ignicao", cues=cues_a,

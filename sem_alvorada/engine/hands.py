@@ -23,6 +23,7 @@ from .handtrack import ClipPlayer, number
 FOV_ZOOM = 0.17                  # quanto o campo de visão fecha quando o rosto "se aproxima" de uma nota na parede
 MAP_LOOK_SECONDS = 1.6           # o mapa fica diante do rosto este tempo, se o jogador não apertar E de novo
 CLICK_DECAY = 9.0
+REST_SANITY = 1.4                # a palma do braço solto está a menos disto (m) da câmera; mais que isso é leitura velha
 TUCK_START = 0.62                # a parede mais perto que isto (m) faz as mãos recuarem e baixarem os itens
 TUCK_RANGE = 0.34
 TUCK_FOLLOW = 9.0
@@ -60,9 +61,11 @@ class Hands:
         self._last_note = None
         self._paper_size = (0.12, 0.16)
         self._lifted = None
+        self._rest_at_start = Vector(K.HANG_POS["L"])
         self._cam = (Matrix.Identity(4), Matrix.Identity(4))
         self._euler = {"R": Euler((0.0, 0.0, 0.0)), "L": Euler((0.0, 0.0, 0.0))}
         self._tuck = 0.0
+        self._rest = {side: Vector(K.HANG_POS[side]) for side in ("R", "L")}     # palma do braço solto, espaço da câmera
         self.reset()
 
     # ---- consultas ----
@@ -165,11 +168,13 @@ class Hands:
                 on_done()
             return True
         job = _Job("lantern" if item == C.ITEM_FLASHLIGHT else "pickup", target, item, on_contact, on_done)
+        side = "R" if item == C.ITEM_FLASHLIGHT else "L"
+        reach_s = K.move_time((self._reach_point(target) - self._rest[side]).length)
         if item == C.ITEM_FLASHLIGHT:
             self._interrupt()
-            self._start(factory(), job)
+            self._start(factory(reach_s), job)
         else:
-            self._when_left_free(lambda: self._start(factory(), job))
+            self._when_left_free(lambda: self._start(factory(reach_s), job))
         return True
 
     # ---- segurar ----
@@ -270,7 +275,8 @@ class Hands:
             return True
         job.origin = "wall" if self._is_wall_note(target) else "floor"
         factory = K.note_wall if job.origin == "wall" else K.note_pickup
-        self._when_left_free(lambda: self._start(factory(), job))
+        reach_s = K.move_time((self._reach_point(target) - self._rest["L"]).length)
+        self._when_left_free(lambda: self._start(factory(reach_s), job))
         return True
 
     def end_read(self):
@@ -315,6 +321,7 @@ class Hands:
     # ---- executor ----
     def _start(self, clip, job):
         self._job = job
+        self._rest_at_start = Vector(self._rest[clip.meta.get("side", "L")])     # a mão parte de onde o braço pende
         self.runner.start(clip)
 
     def _interrupt(self):
@@ -411,6 +418,7 @@ class Hands:
         self._active = True
         self._clock += dt
         self._update_camera_matrix()
+        self._track_rest()
         channels = self.runner.update(dt, self._base, self._anchors(), self._fire)
         self._tick_look_timer(dt)
         yaw_rate, pitch_rate = self._look_rates(dt)
@@ -424,6 +432,15 @@ class Hands:
         self._pose_hand("L", channels, dt, bob, yaw_rate, pitch_rate, hard)
         self._apply_extras(channels)
         self._apply_visibility()
+
+    def _track_rest(self):
+        """Onde a palma do braço solto está no espaço da câmera (muda com o olhar para baixo): é de onde os alcances saem."""
+        for side in ("R", "L"):
+            if not self._released[side]:
+                continue
+            point = self.game.body.arm(side).hand_world_position()
+            if point is not None and (Vector(point) - self._cam[0].translation).length < REST_SANITY:
+                self._rest[side] = self._cam[1] @ Vector(point)       # (depois de um teletransporte o corpo ainda atrasa um quadro)
 
     def _follow_wall(self, dt):
         """Perto de uma parede o item na mão atravessaria o cenário: a mão recua, baixa e inclina o item para baixo."""
@@ -460,21 +477,32 @@ class Hands:
             self._base_key = key
             self.runner.rebase()
         channels = {**K.rest_channels("R", self._visual["R"]), **K.rest_channels("L", left, mode)}
+        for side in ("R", "L"):
+            if channels[f"{side}.w"][0] == 0.0:
+                channels[f"{side}.pos"] = tuple(self._rest[side])       # solta: a mão fica onde o braço pende
         if ready:
             channels.update(K.ready_channels("L"))
         channels.update({name: number(value) for name, value in K.EXTRAS.items()})
         return channels
 
-    def _anchors(self):
-        clip, job = self.runner.clip, self._job
-        if clip is None or job is None or not clip.meta.get("grasp") or job.target is None:
-            return None
-        point = self._world_point(job.target)
-        reach = Vector(point)
+    def _reach_point(self, target):
+        """Onde a palma pega o item, no espaço da câmera: o ponto do item, limitado ao alcance do braço."""
+        reach = Vector(self._world_point(target))
         if reach.length > K.REACH_LIMIT:
             reach *= K.REACH_LIMIT / reach.length
         reach.z = min(reach.z, -0.20)
-        return {f"{clip.meta['grasp']}.pos": tuple(reach)}
+        return reach
+
+    def _anchors(self):
+        clip, job = self.runner.clip, self._job
+        if clip is None or job is None:
+            return None
+        spaces = {}
+        if clip.meta.get("rest"):
+            spaces["rest"] = tuple(self._rest_at_start)
+        if clip.meta.get("grasp") and job.target is not None:
+            spaces["grasp"] = tuple(self._reach_point(job.target))
+        return {f"{clip.meta['grasp']}.pos": spaces} if spaces and clip.meta.get("grasp") else None
 
     # ---- mundo -> câmera ----
     def _update_camera_matrix(self):
@@ -559,8 +587,7 @@ class Hands:
         job, clip = self._job, self.runner.clip
         if attach >= 0.999 or job is None or job.target is None or clip is None or not clip.meta.get("world_item"):
             return carried, (1.0, 1.0, 1.0)
-        mix = max(0.0, min(1.0, attach))
-        mix = mix * mix * (3.0 - 2.0 * mix)
+        mix = max(0.0, min(1.0, attach))                  # a trilha `attach` já tem o perfil de jerk mínimo
         world = self._world_model_matrix(job.target, kind)
         position = world.translation.lerp(carried.translation, mix)
         rotation = world.to_quaternion().slerp(carried.to_quaternion(), mix)

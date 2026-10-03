@@ -244,6 +244,8 @@ def test_flashlight_toggle_drain_flicker_and_death():
     assert kinds_logged(game, "flash_click")[-1][2] == C.NOISE_PLAYER["flash_click"]
     beam = game.scene.objects[C.OBJ_FLASHLIGHT].data
     expected = C.FLASH_ENERGY * game.flashlight._close_range_gain()     # perto de parede a luz se adapta
+    assert 0.5 * expected < beam.energy < 0.99 * expected, "o filamento esquenta em dezenas de ms, não em degrau"
+    run_for(game, 0.2)
     assert abs(beam.energy - expected) < 1.0 and abs(math.degrees(beam.spot_size) - C.FLASH_SPOT_DEG) < 0.1
     tick_seconds(game, 100)
     assert abs(game.state.battery - (1.0 - 100 * C.BATTERY_DRAIN_PER_SEC)) < 0.02, game.state.battery

@@ -167,11 +167,11 @@ class Gait:
 
 GAITS = {
     "walk": Gait(stride=0.95, duty=0.62, lift=0.15, hip_drop=0.06, bob=0.035, sway=0.040, lean=7.0,
-                 nominal_speed=1.5),
+                 nominal_speed=0.98),
     "run": Gait(stride=1.10, duty=0.30, lift=0.32, hip_drop=0.24, bob=0.11, sway=0.030, lean=27.0,
-                nominal_speed=4.1),
+                nominal_speed=3.57),
     "stalk": Gait(stride=0.72, duty=0.78, lift=0.20, hip_drop=0.36, bob=0.020, sway=0.030, lean=30.0,
-                  nominal_speed=0.9),
+                  nominal_speed=0.60),
 }
 
 

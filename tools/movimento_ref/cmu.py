@@ -92,7 +92,20 @@ REFERENCIAS = {
 }
 
 
+# Vários clipes (de pessoas diferentes) do mesmo gesto: a faixa de +-1 desvio dos gráficos e a tolerância vêm da
+# variação ENTRE pessoas. Cada clipe de caminhada tem só 2 a 4 passadas; juntos dão dezenas de ciclos.
+GRUPOS = {
+    # caminhada normal, 1,2 a 1,6 m/s, sujeitos 2, 7, 8, 16, 35, 38 e 39
+    "andar": ["07_01", "07_06", "08_01", "08_02", "08_03", "16_32", "16_47", "35_01", "35_02", "38_01", "39_01", "02_01"],
+    "correr": ["09_01", "09_09", "09_11"],
+}
+
+
 if __name__ == "__main__":
     for nome, (clip_id, motivo) in REFERENCIAS.items():
         caminho = baixar(clip_id)
         print(f"{nome:15s} {clip_id}  {os.path.getsize(caminho) / 1e3:7.0f} KB  {motivo}")
+    for nome, clipes in GRUPOS.items():
+        for clip_id in clipes:
+            baixar(clip_id)
+        print(f"grupo {nome}: {len(clipes)} clipes")

@@ -79,9 +79,18 @@ PLAYER_EYE_STAND = 1.65
 PLAYER_EYE_CROUCH = 1.05
 PLAYER_RADIUS = 0.30
 PLAYER_STEP_HEIGHT = 0.35
-SPEED_CROUCH = 1.2
-SPEED_WALK = 2.6
-SPEED_RUN = 4.6
+# Velocidades de uma pessoa de verdade (fase 4). Medidas em mocap da CMU (docs/FASE4.md): andar 0,93 a 1,75 m/s nas
+# caminhadas em linha reta (1,3 normal, 1,67 rápido), correr 3,0 a 4,15 m/s, andar agachado 0,8 m/s (136_09, 136_10).
+# Antes: 1,2 / 2,6 / 4,6 m/s; 2,6 é um trote (o passo de 1,15 m ficava curto e o pé deslizava) e 4,6 é de velocista.
+SPEED_CROUCH = 0.8
+SPEED_WALK = 1.7
+SPEED_RUN = 4.0
+ACCEL_START = 5.0         # m/s2, partida: ~70% do que 143_03 mede (7,2 m/s2 até 4,9 m/s em 0,68 s)
+ACCEL_BRAKE = 6.0         # m/s2, parada: 143_02 (corrida) freia a 7,8; 16_08 e 16_57 (corrida, parada suave) a 1,9 a 2,4
+# Escada: o ritmo é dos degraus. Medido em 83_27 a 83_35 (8 clipes, degraus de 12 a 16 cm): um degrau a cada 0,79 a 0,90 s
+# (1,17 passo/s). Usamos 1,5 passo/s andando (ESTIMADO, 1,5 a 1,8 na literatura para subida confortável), 2,4 correndo e
+# 1,1 agachado, vezes a profundidade do degrau do jogo (0,3 m): 0,45 / 0,72 / 0,33 m/s.
+STAIRS_STEPS_PER_SECOND = {"walk": 1.5, "run": 2.4, "crouch": 1.1}
 STAMINA_MAX = 1.0
 STAMINA_DRAIN = 0.22      # por segundo correndo
 STAMINA_REGEN = 0.15      # por segundo
@@ -164,9 +173,11 @@ NOISE_MASK_FACTOR = 0.9           # o ruído ambiente do cômodo do ouvinte é s
 # --------------------------------------------------------------------------
 ENTITY_HEIGHT = 2.65
 ENTITY_RADIUS = 0.38
-ENTITY_SPEED_STALK = 0.9
-ENTITY_SPEED_PATROL = 1.5
-ENTITY_SPEED_CHASE = 4.1          # um pouco menor que correr (4.6): dá pra fugir se houver fôlego
+# Mesmas razões de antes em relação ao modo equivalente do jogador (espreita/agachar 0,75, patrulha/andar 0,577,
+# perseguição/correr 0,891), aplicadas às velocidades novas do jogador.
+ENTITY_SPEED_STALK = 0.60
+ENTITY_SPEED_PATROL = 0.98
+ENTITY_SPEED_CHASE = 3.57         # 89% da corrida do jogador: dá pra fugir se houver fôlego
 ENTITY_KILL_DISTANCE = 1.15
 ENTITY_STATES = ("dormant", "patrol", "investigate", "stalk", "chase", "search", "attack")
 

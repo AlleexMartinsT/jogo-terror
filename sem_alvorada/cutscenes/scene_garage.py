@@ -96,7 +96,7 @@ def build():
         Cue(0.0, act.actor("body", lambda st: BodyDriver([BodyFollow(0.0)]))),
         Cue(0.0, act.actor("hand_key", lambda st: HandActor("L", hand_keys, space="world"))),
         Cue(0.0, act.actor("key", lambda st: anim.PropPath("Cut_Key", key_path, key_rotation, 1.0, 4.1, also=("Cut_KeyCharm",)))),
-        Cue(0.0, act.actor("charm", lambda st: anim.CharmPendulum("Cut_KeyCharm", 0.07, 0.35, "prop:Cut_Key"))),
+        Cue(0.0, act.actor("charm", lambda st: anim.CharmPendulum("Cut_KeyCharm", anim.KEY_CHARM_LENGTH, source="prop:Cut_Key"))),
         Cue(1.1, act.sound("hand_reach", None, 0.4)),
         Cue(1.4, act.sound("key_jingle", handle, 0.8)),
         Cue(2.7, act.sound("key_jingle", handle, 0.4)),
