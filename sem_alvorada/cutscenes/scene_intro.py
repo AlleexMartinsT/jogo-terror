@@ -88,7 +88,7 @@ def build():
         (WALK_FROM + 2.4, heading(WALK_FROM + 2.4)),
         (WALK_FROM + 4.0, heading(WALK_FROM + 4.0)),
         (WALK_TO - 0.2, add(end_eye, (-3.0, 0.0, -0.3))),
-        (WALK_TO + 1.3, add(end_eye, (0.0, -3.0, -0.3))),
+        (WALK_TO + 1.3, add(end_eye, (0.0, 3.0, -0.35))),            # a meia-volta passa pela cama, não pela parede vazia
         (WALK_TO + 2.8, ahead(end_eye, yaw, 6.0)),
         (DURATION - 0.01, ahead(end_eye, yaw, 6.0), True),
     ], distance=2.0)
