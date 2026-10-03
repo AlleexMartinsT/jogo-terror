@@ -158,7 +158,7 @@ def build():
     rig_b = Rig(
         eye=path((0.0, add(DRIVER, (0.0, 0.0, 0.03)), True), (2.6, peer), (dur_b, add(peer, (0.0, 0.03, 0.0)), True)),
         look=looking((0.0, AHEAD, True), (1.2, AHEAD), (3.0, figure_head), (dur_b, figure_head, True)),
-        fov=curve((0.0, 64.0), (2.0, 56.0), (4.5, 48.0), (dur_b, 42.0)),
+        fov=curve((0.0, 64.0), (2.0, 56.0), (4.5, 44.0), (dur_b, 34.0)),
         roll=curve((0.0, 0.0), (dur_b, 0.0)),
         hand=Hand("drive", Curve([(0.0, 0.7), (dur_b, 1.3)])),
         focus=curve((0.0, 3.2), (1.2, 0.9), (2.4, 0.9), (3.4, 6.0), (dur_b, 6.0)),
@@ -194,11 +194,13 @@ def build():
     sit_root = root_for("sit_bed", sitting, SIT_YAW)
     stand_yaw = math.radians(-25.0)
     stand_root = root_for("stand", window, stand_yaw)
-    body_c = (BodyPose(0.0, "lying_bed", 0.0, lying_root, -math.pi / 2),
-              BodyPose(3.0, "sit_bed", 2.6, Path([Key(3.0, lying_root), Key(5.6, sit_root)]),
-                       Curve([(3.0, -math.pi / 2), (5.6, SIT_YAW)])),
-              BodyPose(9.0, "stand", 2.0, Path([Key(9.0, sit_root), Key(11.0, stand_root)]),
-                       Curve([(9.0, SIT_YAW), (11.0, stand_yaw)])))
+    # os segmentos do corpo e as curvas dos atores usam o tempo absoluto da cutscene; a câmera e as cues, o do plano
+    at = lambda t: SHOT_C + t  # noqa: E731
+    body_c = (BodyPose(at(0.0), "lying_bed", 0.0, lying_root, -math.pi / 2),
+              BodyPose(at(3.4), "sit_bed", 3.6, Path([Key(at(3.4), lying_root), Key(at(7.0), sit_root)]),   # o corpo senta junto da câmera:
+                       Curve([(at(3.4), -math.pi / 2), (at(7.0), SIT_YAW)])),                              # ela nunca fica abaixo dos olhos dele
+              BodyPose(at(9.0), "stand", 2.0, Path([Key(at(9.0), sit_root), Key(at(11.0), stand_root)]),
+                       Curve([(at(9.0), SIT_YAW), (at(11.0), stand_yaw)])))
     cues_c = (
         *(Cue(0.0, act.stop_actor(key)) for key in ("car", "bunny", "wheel", "key", "key_charm", "dash", "dash2", "dash3",
                                                       "rollup")),
@@ -212,7 +214,7 @@ def build():
         Cue(0.0, act.cut_light(CLOCK_GLOW, 4.0)),
         Cue(0.0, act.cut_light(BED_LAMP, 28.0)),
         Cue(0.0, act.actor("body", lambda st: BodyDriver(body_c))),
-        Cue(0.0, act.actor("curtains", lambda st: anim.CurtainWind(MASTER_CURTAINS, 0.5, Curve([(0.0, 0.2), (dur_c, 0.8)])))),
+        Cue(0.0, act.actor("curtains", lambda st: anim.CurtainWind(MASTER_CURTAINS, 0.5, Curve([(at(0.0), 0.2), (at(dur_c), 0.8)])))),
         Cue(0.0, act.actor("dawn_light", lambda st: anim.EmissionPulse("cut_clock_digits", lambda t: 0.94 + 0.06 * math.sin(t * 1.3)))),
     )
     tracks_c = (Track(0.0, 20.0, act.light_ramp(DAWN_LIGHT, 0.0, 90.0), "linear"),

@@ -11,7 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 import bpy  # noqa: E402
-from mathutils import Euler, Matrix, Vector  # noqa: E402
+from mathutils import Euler, Matrix, Quaternion, Vector  # noqa: E402
 
 from sem_alvorada import body, build  # noqa: E402
 from sem_alvorada import conventions as C  # noqa: E402
@@ -172,6 +172,27 @@ def test_arm_ik_reaches_target(scene):
         arm.release()
         settle(rig, player, 0.1, speed=0.0)
         assert arm._weight == 0.0 and not arm._has_target
+
+
+def test_elbow_swivels_out_of_the_camera_view():
+    """Se o cotovelo cairia à vista da câmera, o IK gira o cotovelo em torno da linha ombro-pulso e a mão continua no alvo."""
+    side = "L"
+    shoulder = S.BONE_MAP[f"UpperArm.{side}"].head
+    target = Vector((-0.16, 0.38, 1.30))
+    pole = Vector((-0.35, -0.30, -1.0))
+    plain = V.solve(V.PoseSpec(arms={side: V.ArmGoal(target, Quaternion((1, 0, 0, 0)), pole)}))
+    elbow = plain.head[S.BONE_INDEX[f"Forearm.{side}"]]
+    forward = (elbow - Vector((-0.05, -0.05, 1.45))).normalized()
+    right = forward.cross(Vector((0, 0, 1))).normalized()
+    up = right.cross(forward).normalized()
+    view = (elbow - forward * 0.30, forward, right, up)
+    assert V._elbow_in_view(elbow, view), "preparo do teste: a câmera precisa enxergar o cotovelo"
+    goal = V.ArmGoal(target, Quaternion((1, 0, 0, 0)), pole, view=view)
+    solution = V.solve(V.PoseSpec(arms={side: goal}))
+    moved = solution.head[S.BONE_INDEX[f"Forearm.{side}"]]
+    assert not V._elbow_in_view(moved, view), "o cotovelo continuou à vista"
+    assert (solution.head[S.BONE_INDEX[f"Hand.{side}"]] - target).length < 0.005
+    assert abs((moved - shoulder).length - S.BONE_MAP[f"UpperArm.{side}"].length) < 1e-4
 
 
 def test_arm_weight_blends(scene):
@@ -629,7 +650,7 @@ def test_body_does_not_cast_flashlight_shadow(scene):
 def main():
     scene = fresh_scene()
     tests = [test_objects_and_budget, test_weights, test_parity_with_null_body, test_pose_matches_blender,
-             test_arm_ik_reaches_target, test_arm_weight_blends, test_arms_swing_when_free,
+             test_arm_ik_reaches_target, test_elbow_swivels_out_of_the_camera_view, test_arm_weight_blends, test_arms_swing_when_free,
              test_gait_periodic_and_symmetric, test_feet_follow_stride_phase, test_crouch_and_run,
              test_chest_follows_camera, test_stairs_and_height_follow, test_finger_presets,
              test_hand_frame_helpers, test_set_fingers_blend, test_held_objects_follow_hand, test_poses, test_eye_positions_match_the_cutscene_contract, test_attach_view,

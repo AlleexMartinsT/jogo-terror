@@ -446,6 +446,9 @@ def test_body_integration_with_a_recording_body():
                 f"{name}: o corpo volta ao jogo (reset) no fim e nenhuma pose vem depois"
         if name == "intro":
             assert body.poses()[:3] == ["lying_bed", "sit_bed", "stand"], body.poses()
+        if name == "ending":
+            # os segmentos do corpo usam tempo absoluto: com tempo do plano o último segmento valia desde o início
+            assert body.poses() == ["driving", "lying_bed", "sit_bed", "stand"], body.poses()
         null_host = host_for(name, body=NullBody())
         _, null_player, _ = run_to_end(name, constant(1 / 30), null_host)
         assert null_player.errors == [], (name, null_player.errors)

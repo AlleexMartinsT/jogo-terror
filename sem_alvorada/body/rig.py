@@ -166,7 +166,10 @@ class ArmControl:
         palm_body = body_from_world @ (palm_world - frame.root)
         wrist = palm_body - hand_body @ self._palm_offset
         pole = Vector((self._sx * 0.35, -0.30, -1.0))
-        return ArmGoal(wrist, hand_q, pole, self._weight, palm=palm_body, palm_offset=self._palm_offset, swivel=self._swivel)
+        view = (body_from_world @ (cam_pos - frame.root), body_from_world @ (cam_basis @ Vector((0.0, 0.0, -1.0))),
+                body_from_world @ (cam_basis @ Vector((1.0, 0.0, 0.0))), body_from_world @ (cam_basis @ Vector((0.0, 1.0, 0.0))))
+        return ArmGoal(wrist, hand_q, pole, self._weight, palm=palm_body, palm_offset=self._palm_offset, swivel=self._swivel,
+                       view=view)
 
 
 class BodyRig:

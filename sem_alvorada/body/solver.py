@@ -16,6 +16,9 @@ IDENTITY = S.IDENTITY
 MAX_WRIST_SWING = math.radians(80.0)       # quanto a mão dobra em relação ao antebraço (flexão e desvio)
 SWIVEL_STEP = math.radians(4.0)           # passo da busca do giro do cotovelo em torno da linha ombro-pulso
 SWIVEL_MAX = math.radians(84.0)
+VIEW_TAN_H, VIEW_TAN_V = math.tan(math.radians(40.0)), math.tan(math.radians(27.0))    # campo de visão da câmera + folga da manga
+VIEW_COST = 1.0                           # o cotovelo à vista pesa como 19 graus de flexão a mais no pulso
+WRIST_COST = 3.0                          # por radiano acima do limite do pulso
 MAX_ANKLE_BEND = math.radians(70.0)
 ROLL_SHARE = 0.62                          # fatia da torção que o osso do meio do antebraço assume
 
@@ -30,11 +33,12 @@ _LENGTH = [b.length for b in S.BONES]
 
 class ArmGoal:
     """Onde o pulso deve chegar (espaço do corpo), a orientação absoluta da mão e o polo do cotovelo."""
-    __slots__ = ("wrist", "hand_q", "pole", "weight", "palm", "palm_offset", "swivel")
+    __slots__ = ("wrist", "hand_q", "pole", "weight", "palm", "palm_offset", "swivel", "view")
 
-    def __init__(self, wrist, hand_q, pole, weight=1.0, palm=None, palm_offset=None, swivel=0.0):
+    def __init__(self, wrist, hand_q, pole, weight=1.0, palm=None, palm_offset=None, swivel=0.0, view=None):
         self.wrist, self.hand_q, self.pole, self.weight = wrist, hand_q, pole, weight
         self.swivel = swivel          # giro do cotovelo (rad) usado no quadro anterior: a busca começa por ele
+        self.view = view              # (posição, frente, direita, cima) da câmera no espaço do corpo: o cotovelo foge dela
         # com `palm` (alvo do centro da palma) o solver corrige o pulso quando o limite de flexão muda a orientação
         self.palm, self.palm_offset = palm, palm_offset
 
@@ -148,6 +152,18 @@ def _swivel_candidates(hint):
         k += 1
 
 
+def _elbow_in_view(joint, view):
+    """O cotovelo (com a manga em volta) cai dentro do campo de visão da câmera?"""
+    if view is None:
+        return False
+    position, forward, right, up = view
+    offset = joint - position
+    depth = offset.dot(forward)
+    if depth < 0.03:
+        return False
+    return abs(offset.dot(right)) < VIEW_TAN_H * depth + 0.04 and abs(offset.dot(up)) < VIEW_TAN_V * depth + 0.04
+
+
 def _arm_attempt(upper_name, origin, goal, arm_len, fore_len, pole, fore_axis):
     """Uma tentativa de IK do braço com um polo: devolve o quadro completo e o ângulo de flexão do pulso."""
     wrist = goal.wrist
@@ -181,11 +197,14 @@ def _solve_arm(upper_name, origin, parent_world, goal, rot, last_swivel):
     for candidate in _swivel_candidates(goal.swivel):
         pole = Quaternion(chord, candidate) @ goal.pole if candidate else goal.pole
         attempt = _arm_attempt(upper_name, origin, goal, arm_len, fore_len, pole, fore_axis)
-        if best is None or attempt[-1] < best[0][-1] - 1e-9:
-            best = (attempt, candidate)
-        if attempt[-1] <= MAX_WRIST_SWING + 1e-6:
-            best = (attempt, candidate)
+        excess = max(0.0, attempt[-1] - MAX_WRIST_SWING)
+        seen = _elbow_in_view(attempt[0], goal.view)
+        cost = WRIST_COST * excess + (VIEW_COST if seen else 0.0) + 1e-3 * abs(candidate - goal.swivel)
+        if best is None or cost < best[2] - 1e-9:
+            best = (attempt, candidate, cost)
+        if excess <= 1e-6 and not seen:
             break
+    best = best[:2]
     attempt, chosen = best
     joint, end, upper_q, fore_q, twist, swing, hand_q, _angle = attempt
     last_swivel[0] = chosen

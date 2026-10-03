@@ -159,7 +159,7 @@ def build_buttons():
 # --------------------------------------------------------------------------
 # Manga
 # --------------------------------------------------------------------------
-CUFF_START, CUFF_END = 0.092, 0.146             # início e fim do punho dobrado, medidos a partir do cotovelo
+CUFF_START, CUFF_END = 0.118, 0.170             # início e fim do punho dobrado, medidos a partir do cotovelo (rente ao pulso: aparece mais manga)
 UPPER_LEN = S.UPPER_ARM_LEN
 
 
@@ -229,7 +229,7 @@ def build_sleeve():
     to_shoulder = float(np.linalg.norm(shoulder - top))
     samples = [-0.041, -0.038, -0.032, -0.024, -0.014, -0.003, 0.012, 0.032, 0.060, 0.110, 0.170, 0.230, 0.290, 0.325,
                UPPER_LEN, UPPER_LEN + 0.020, UPPER_LEN + 0.045, UPPER_LEN + CUFF_START - 0.012, UPPER_LEN + CUFF_START - 0.004,
-               UPPER_LEN + CUFF_START + 0.004, UPPER_LEN + CUFF_START + 0.014, UPPER_LEN + 0.12, UPPER_LEN + CUFF_END - 0.012,
+               UPPER_LEN + CUFF_START + 0.004, UPPER_LEN + CUFF_START + 0.014, UPPER_LEN + 0.5 * (CUFF_START + CUFF_END), UPPER_LEN + CUFF_END - 0.012,
                UPPER_LEN + CUFF_END - 0.004, UPPER_LEN + CUFF_END + 0.001]
     rings = []
     for index, s in enumerate(samples):

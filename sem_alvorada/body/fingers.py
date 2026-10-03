@@ -22,9 +22,9 @@ THUMB_CLOSED = {0: (-52.4, 1.2, 59.4), 1: (0.0, 32.0, 0.0), 2: (0.0, 64.3, 0.0)}
 
 # presets: (curls do polegar ao mindinho, spread). Usados por quem posiciona as mãos (`PRESETS[nome]`).
 PRESETS = {
-    "relaxed": ((0.30, 0.22, 0.28, 0.34, 0.40), 0.05),
+    "relaxed": ((0.52, 0.22, 0.28, 0.34, 0.40), 0.05),     # polegar quase junto do indicador, não aberto para o lado
     "open": ((0.0, 0.0, 0.0, 0.0, 0.0), 0.55),
-    "flat": ((0.0, 0.0, 0.0, 0.0, 0.0), 0.12),
+    "flat": ((0.18, 0.0, 0.0, 0.0, 0.0), 0.12),
     "grip_cylinder": ((0.57, 0.61, 0.73, 0.75, 0.92), 0.0),
     "pinch": ((0.61, 0.57, 0.40, 0.48, 0.56), 0.0),
     "point": ((0.35, 0.0, 0.92, 0.95, 0.97), 0.0),
