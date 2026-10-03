@@ -173,5 +173,9 @@ class NullBody:
     def pose(self, name, seconds=0.0):
         pass
 
+    def eye_position(self, pose="stand"):
+        """Sem corpo, os olhos ficam na altura do jogador em pé, no ponto de `place`."""
+        return (0.0, 0.0, 1.65)
+
     def reset(self):
         pass

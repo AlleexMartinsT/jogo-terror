@@ -20,7 +20,7 @@ from .. import conventions as C
 from . import fingers as F
 from . import skeleton as S
 from .locomotion import Frame, Locomotion
-from .poses import PoseBlend, pose_data
+from .poses import PoseBlend, eye_in_pose, pose_data
 from .solver import ArmGoal, PoseSpec, solve
 
 HAND_BLEND_RATE = 24.0         # 1/s: suavização dos dedos entre um preset e outro
@@ -308,14 +308,18 @@ class BodyRig:
         return frame
 
     def _view_of(self, frame):
+        """(posição, orientação 3x3) da câmera de referência. Lê a matriz do objeto, então vale para qualquer modo de rotação."""
         camera = self._view
         if camera is None:
             return frame.cam_pos, frame.cam_basis
-        if camera.parent is None:
-            basis = camera.rotation_euler.to_matrix()
-            return Vector(camera.location), basis
-        matrix = camera.matrix_world
-        return matrix.translation.copy(), matrix.to_3x3()
+        # sem pai, `matrix_basis` já reflete location/rotation do objeto neste instante (matrix_world só muda no depsgraph)
+        matrix = camera.matrix_basis if camera.parent is None else camera.matrix_world
+        return matrix.translation.copy(), matrix.to_3x3().normalized()
+
+    def eye_position(self, pose="stand"):
+        """Onde ficam os olhos (x, y, z) na pose `pose`, relativos ao ponto de `place(x, y, z, yaw)` e aos eixos do corpo
+        (+Y para onde ele olha). Serve para pôr a câmera de uma cutscene exatamente nos olhos do corpo."""
+        return eye_in_pose(pose)
 
     def _finish(self, dt, frame):
         frame.body_from_world = Matrix.Rotation(-frame.yaw, 3, "Z")

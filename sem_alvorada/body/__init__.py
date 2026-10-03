@@ -16,6 +16,7 @@ Como usar (mãos, agente 3):
     arm.hold(obj, (0, 0, -0.03)); arm.drop(obj)               # offset no referencial da mão (ver handframe.py)
     arm.release(blend)                                        # volta à pose solta; blend = fração do caminho por chamada
     body.hand_rotation(fingers=(0, 0, -1), palm=(-1, 0, 0))   # Euler (graus) a partir de para onde a mão aponta
+    body.eye_position("lying_bed")                             # olhos (x, y, z) da pose, relativos ao ponto de place()
     # lanterna: set_fingers(*fingers.preset("grip_cylinder")); set_target(pos, body.grip_rotation("R", barrel=(0, .05, -1)), 1)
     #           hold(obj, body.grip_offset("R"))   # obj com o cano ao longo de -Z e a origem no meio da pegada
 `weight` e `blend` agem por chamada: chame todo quadro com o valor que sua animação pede.
@@ -36,6 +37,7 @@ Arquivos: `skeleton` (ossos e medidas), `solver` (FK e IK de dois ossos com dobr
 """
 from . import fingers
 from .handframe import grip_offset, grip_rotation, hand_rotation
+from .poses import eye_in_pose as eye_position
 from .rig import BodyRig
 
 
@@ -47,4 +49,4 @@ def build(ctx):
     ctx.log(f"corpo: {assemble.triangle_count(body)} triângulos, {len(S.BONES)} ossos")
 
 
-__all__ = ["BodyRig", "build", "fingers", "grip_offset", "grip_rotation", "hand_rotation"]
+__all__ = ["BodyRig", "build", "eye_position", "fingers", "grip_offset", "grip_rotation", "hand_rotation"]

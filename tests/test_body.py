@@ -511,22 +511,41 @@ def test_eye_positions_match_the_cutscene_contract():
 
 
 def test_attach_view(scene):
+    """A câmera de referência dos alvos pode estar em qualquer modo de rotação (euler, quaternion, eixo-ângulo) e ter pai."""
     rig = body.BodyRig(scene)
     rig.set_visible(True)
     camera = bpy.data.objects.new("_cutcam", bpy.data.cameras.new("_cutcam"))
     scene.collection.objects.link(camera)
     camera.location = (5.0, 5.0, 1.6)
-    camera.rotation_euler = (math.pi / 2, 0.0, math.radians(180))
     rig.place(5.0, 5.0, 0.0, math.radians(180))
     rig.attach_view(camera)
     arm = rig.arm("R")
     arm.set_target((0.2, -0.1, -0.4), (0, 0, 0), 1.0)
-    rig.update(DT, None)
-    want = Vector(camera.location) + camera.rotation_euler.to_matrix() @ Vector((0.2, -0.1, -0.4))
-    assert (Vector(arm.hand_world_position()) - want).length < 0.005
+    rotation = Euler((math.pi / 2, 0.0, math.radians(180)), "XYZ")
+    for mode in ("XYZ", "QUATERNION", "AXIS_ANGLE"):
+        camera.rotation_mode = mode
+        if mode == "QUATERNION":
+            camera.rotation_quaternion = rotation.to_quaternion()
+        elif mode == "AXIS_ANGLE":
+            axis, angle = rotation.to_quaternion().to_axis_angle()
+            camera.rotation_axis_angle = (angle, *axis)
+        else:
+            camera.rotation_euler = rotation
+        rig.update(DT, None)
+        want = Vector(camera.location) + rotation.to_matrix() @ Vector((0.2, -0.1, -0.4))
+        assert (Vector(arm.hand_world_position()) - want).length < 0.005, mode
     rig.attach_view(None)
     rig.reset()
     bpy.data.objects.remove(camera)
+
+
+def test_eye_position_api(scene):
+    from sem_alvorada.body import poses
+    rig = body.BodyRig(scene)
+    for name in poses.POSE_NAMES:
+        assert tuple(rig.eye_position(name)) == tuple(poses.eye_in_pose(name)) == tuple(body.eye_position(name))
+    assert abs(rig.eye_position("stand")[2] - 1.65) < 1e-6
+    assert NullBody().eye_position("stand")[2] == 1.65
 
 
 def test_nothing_crosses_the_clip_plane(scene):
@@ -653,7 +672,7 @@ def main():
              test_arm_ik_reaches_target, test_elbow_swivels_out_of_the_camera_view, test_arm_weight_blends, test_arms_swing_when_free,
              test_gait_periodic_and_symmetric, test_feet_follow_stride_phase, test_crouch_and_run,
              test_chest_follows_camera, test_stairs_and_height_follow, test_finger_presets,
-             test_hand_frame_helpers, test_set_fingers_blend, test_held_objects_follow_hand, test_poses, test_eye_positions_match_the_cutscene_contract, test_attach_view,
+             test_hand_frame_helpers, test_set_fingers_blend, test_held_objects_follow_hand, test_poses, test_eye_positions_match_the_cutscene_contract, test_attach_view, test_eye_position_api,
              test_nothing_crosses_the_clip_plane, test_clothes_follow_the_bones, test_update_cost, test_hidden_costs_nothing,
              test_body_does_not_cast_flashlight_shadow, test_game_uses_the_body]
     failures = []
