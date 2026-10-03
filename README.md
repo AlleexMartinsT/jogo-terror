@@ -2,7 +2,9 @@
 
 Jogo de terror psicológico em primeira pessoa, feito inteiramente dentro do Blender. Modelos, texturas, sons e lógica são gerados por código Python: não há nenhum arquivo de arte, áudio ou modelo vindo de fora.
 
-A segunda fase refez a ambientação. Nada é mais caixa com textura: móveis têm chanfro, costura e desgaste, o tecido cai com simulação de pano, o carro é uma carroceria esculpida por seções, o telhado tem telha por telha. O padrão de acabamento está em [`docs/ACABAMENTO.md`](docs/ACABAMENTO.md). O Alto (a entidade) ainda é o modelo da primeira fase e fica para a próxima.
+A segunda fase refez a ambientação. Nada é mais caixa com textura: móveis têm chanfro, costura e desgaste, o tecido cai com simulação de pano, o carro é uma carroceria esculpida por seções, o telhado tem telha por telha. O padrão de acabamento está em [`docs/ACABAMENTO.md`](docs/ACABAMENTO.md).
+
+A terceira fase pôs o jogo para se mexer. Daniel tem corpo (olhar para baixo mostra peito, cinto, pernas e botas) e mãos que pegam cada item de um jeito próprio: a lanterna sai desligada, acende e pisca porque a pilha já não é nova; a chave balança com o coelhinho; o mapa se desdobra em dois tempos. As portas abrem com aceleração e podem ranger, e o ranger é ruído que a entidade escuta. O HUD ficou quase vazio (objetivos só no Esc), o personagem só fala no começo e ao pegar item principal, e o inventário é uma roda de cinco itens. As cinco cutscenes foram refeitas com caminhos de câmera contínuos e o corpo do Daniel em quadro. O contrato dessa fase está em [`docs/FASE3.md`](docs/FASE3.md). O Alto (a entidade) ainda é o modelo da primeira fase e fica para a próxima.
 
 Domingo, 6:47, Harlan Ridge, Ohio. O sol devia ter nascido às 6:12 e a janela continua preta. Daniel acorda sozinho numa casa americana de dois andares e precisa de três coisas para sair dela: a **chave do carro**, o **mapa da cidade** e **três pilhas reserva** para a lanterna. Com tudo em mãos, a porta da garagem destranca. Enquanto isso, o Alto, uma figura de 2,65 m com olhos brancos, anda pela casa. Ele escuta melhor do que enxerga.
 
@@ -10,12 +12,19 @@ Domingo, 6:47, Harlan Ridge, Ohio. O sol devia ter nascido às 6:12 e a janela c
 
 ![Quarto onde o jogo começa](docs/capturas/01_quarto.jpg)
 ![A lanterna no criado-mudo](docs/capturas/02_lanterna_no_criado_mudo.jpg)
-![Sala de estar, antes do apagão, com a lanterna na mão](docs/capturas/08_sala_luz_acesa.jpg)
-![O Alto ao fundo do corredor de cima](docs/capturas/06_corredor_o_alto.jpg)
+![Sala de estar antes do apagão, com a lanterna na mão](docs/capturas/08_sala_luz_acesa.jpg)
 ![Cozinha, de lanterna](docs/capturas/15_cozinha.jpg)
-![Portão da garagem, vista de dentro](docs/capturas/18_garagem_portao.jpg)
+![Portão da garagem, visto de dentro](docs/capturas/18_garagem_portao.jpg)
 
-Mais em [`docs/capturas`](docs/capturas): os dois quartos de cima, banheiro, escada, escritório com o quadro de cortiça, hall, sala de jantar, o carro, o leitor de notas, a tela de título e quadros das cutscenes. Os arquivos `estudio_*` mostram o exterior e o carro sob luz de apoio (veja os limites abaixo).
+**Fase 3: corpo, HUD e inventário**
+
+![Em jogo só a mira e a barra de som](docs/capturas/30_hud_minimo.jpg)
+![Roda de itens, com o mapa destacado](docs/capturas/32_roda_de_itens_mapa.jpg)
+![Menu de pausa: objetivo, coleta, medidor e controles](docs/capturas/34_pausa_com_objetivos.jpg)
+![O corpo do Daniel, olhando para baixo](docs/capturas/35_corpo_olhando_para_baixo.jpg)
+![Cutscene final](docs/capturas/54_cutscene_final.jpg)
+
+Mais em [`docs/capturas`](docs/capturas): os dois quartos de cima, banheiro, escada, escritório com o quadro de cortiça, hall, sala de jantar, o carro, o leitor de notas, a tela de título, as sequências dos gestos de cada item (`38` a `42`) e as folhas das cinco cutscenes (`50` a `54`). Os arquivos `estudio_*` mostram o exterior e o carro sob luz de apoio (veja os limites abaixo).
 
 Essas imagens não são gravações da janela do Blender. As de dentro da casa foram geradas por `tools/prints.py`, que monta o jogo de verdade (`Game`), posiciona o jogador, renderiza a câmera dele no EEVEE e desenha o HUD por cima com o mesmo código de layout que o jogo usa na GPU. O visual ao vivo deve ser parecido, mas o desempenho e o compositor em tempo real só se confirmam abrindo o jogo.
 
@@ -96,14 +105,16 @@ sem_alvorada/
   world/               casa, texturas procedurais, luzes, rua, Sol Negro, pós-processamento
   props/               móveis, itens, notas, carro
   entity/              o Alto: modelo, esqueleto e animação procedural
-  cutscenes/           roteiro e player das cinco cenas
-  engine/              jogador, lanterna, portas, HUD, operador modal
+  body/                corpo do jogador: modelo, armadura de 54 ossos, IK dos braços, dedos, locomoção
+  cutscenes/           roteiro e player das cinco cenas, câmera em caminhos, atores e animação de objetos
+  engine/              jogador, mãos e itens, inventário, lanterna, portas, HUD, operador modal
   audio/               síntese dos sons, reprodução 3D e sistema de ruído
   ai/                  cérebro da entidade e malha de navegação
 assets/models/         malhas pré-calculadas (.npz) de peças que dependem de bibliotecas externas
 tools/                 capturas (prints.py), inspeção de objeto e scripts de modelagem auxiliar
 docs/CONTRACT.md       contrato entre os módulos
 docs/ACABAMENTO.md     padrão de modelagem da fase 2
+docs/FASE3.md          contrato da fase 3: corpo, mãos, roda de itens, HUD, portas, cutscenes
 tests/                 testes (scripts com assert)
 ```
 
@@ -116,7 +127,7 @@ Algumas peças (a carroceria do carro, o tampo da pia com cuba) precisam de oper
 O `.blend` é gerado por código. Para refazê-lo:
 
 ```
-blender -b --python construir.py -- --quality medium     # com o Blender instalado (cerca de 2 min em CPU, arquivo de ~50 MB)
+blender -b --python construir.py -- --quality medium     # com o Blender instalado (cerca de 100 s em CPU, arquivo de ~53 MB)
 python construir.py                                      # com o módulo bpy (pip install bpy)
 python -m sem_alvorada.build --stages world,props --out out/parcial.blend   # só algumas etapas
 python -m sem_alvorada.audio.synth                       # regenera os 99 sons em assets/audio
@@ -131,6 +142,12 @@ python tests/sim_playthrough.py --rebuild  # um robô joga: coleta tudo, destran
 python tests/test_world_geometry.py        # casca da casa: vãos, escadas, exterior, orçamentos
 python tests/test_props_layout.py          # móveis e itens: posição, alcance, texturas, orçamentos
 python tests/test_engine_core.py
+python tests/test_body.py                # corpo: ossos, pesos, IK, passada, plano de corte, custo por quadro
+python tests/test_hands.py               # gestos dos itens, eventos, continuidade, lanterna
+python tests/test_inventory.py           # roda de itens
+python tests/test_speech_rule.py         # o personagem só fala nos casos previstos
+python tests/test_doors.py               # curva das portas, ranger e reação da entidade
+python tests/test_cutscenes_fluency.py   # continuidade da câmera a 60 Hz nas cinco cenas
 python tests/test_audio_noise.py
 python tests/test_ai_brain.py
 ```
@@ -147,8 +164,13 @@ O Blender removeu o Game Engine na versão 2.80. Este jogo roda como um operador
 - Tudo que exige janela e placa de vídeo reais (desenho do HUD com `gpu`, captura do mouse, compositor ao vivo, 30 fps no EEVEE, áudio em dispositivo real) foi escrito contra a API do Blender 5.0.1 e testado por introspecção, mas não foi executado numa GUI.
 - O timbre dos sons foi conferido por números e espectrogramas, não de ouvido.
 - O equilíbrio da dificuldade foi pouco exercitado: o robô de teste não se esconde.
-- A cena tem cerca de 960 mil triângulos (teto de 1,2 milhão no teste de integração) e 216 props. Em GPU de entrada isso pode pesar no EEVEE: use `--quality low` e, se for preciso, esconda o exterior, que só aparece pelas janelas e no final.
+- A cena tem cerca de 1,0 milhão de triângulos (teto de 1,2 milhão no teste de integração) e 216 props. Em GPU de entrada isso pode pesar no EEVEE: use `--quality low` e, se for preciso, esconda o exterior, que só aparece pelas janelas e no final.
 - O exterior é quase preto no jogo, de propósito. As imagens `docs/capturas/estudio_*` (fachada, garagem, porta, telhado) foram feitas com `tools/vista_estudio.py`, e a do carro com `tools/inspect_object.py`, ambas com luz de apoio: mostram o modelo, não o que o jogador vê.
 - O Alto (a entidade) continua com o modelo da primeira fase. Ele destoa do resto, agora mais detalhado, e é o próximo item.
 - Ficaram simplificados: o interior do forno e do freezer (as tampas não abrem), as portas do carro (só fresta e maçaneta, sem animação) e o desenho de ranhuras do pneu (sulcos em geometria, relevo fino só em textura).
+- O corpo do Daniel não tem cabeça (o pescoço termina atrás da câmera) e as roupas são dobras assadas na malha, sem simulação de pano. As mãos ainda não têm o acabamento final: de perto, alguns presets de dedos parecem tubos. No escuro só aparece o que está no cone da lanterna; por isso materiais e mãos têm um brilho mínimo e há uma luz de 1,4 W junto às mãos quando seguram algo.
+- Os gestos de pegar a lanterna (2,9 s) e o mapa (2,6 s) passam do 1 s planejado. O jogador anda e olha durante todo o gesto; só o E fica bloqueado. A mesa fica além do alcance do braço (0,6 m), então o item "vem" até a mão em 0,26 s.
+- A passada usa a velocidade de caminhada do jogo (2,6 m/s), que para o passo de 1,15 m já é um trote: o pé desliza de 10 a 25% da velocidade do chão durante o apoio.
+- Na maçaneta, só a lingueta se mexe: as maçanetas da casa são peças torneadas e girá-las não muda a imagem.
+- Nas cutscenes, a profundidade de campo está ligada por padrão e pode ser desligada (`SA_CUTSCENE_DOF=0`); a lanterna não aparece na mão do Daniel dentro das cenas.
 - Duas famílias de funções de ruído para textura (`props/tex_noise.py` e `props/tex_ruido.py`) cobrem coisas parecidas e podem ser unificadas.

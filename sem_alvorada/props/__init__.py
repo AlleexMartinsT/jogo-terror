@@ -14,7 +14,7 @@ from . import kit
 
 def _is_props_object(obj):
     name = obj.name
-    return (name.startswith((C.N_ANCHOR, C.N_COL, C.N_ITEM, "Car_")) or name in (C.OBJ_CAR, C.OBJ_VIEW_FLASH)
+    return (name.startswith((C.N_ANCHOR, C.N_COL, C.N_ITEM, "Car_", "ViewModel_")) or name in (C.OBJ_CAR, "HandFill")
             or "sa_prop_mode" in obj or (name.startswith(C.N_LIGHT) and "_p" in name))
 
 

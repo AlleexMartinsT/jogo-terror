@@ -396,6 +396,8 @@ def main():
         rig.set_transform(ex, ey, ez, math.pi)
         rig.eyes(1.0)
         rig.update(0.1, 0.0)
+    if args.cenario not in ("quarto", "lanterna"):
+        hush(game)                          # a fala de abertura só vale no começo da partida
     scene.camera = game.player_cam
 
     raw_path = os.path.join(OUT, f"raw_{args.cenario}.png")
