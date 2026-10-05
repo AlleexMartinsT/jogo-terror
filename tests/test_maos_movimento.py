@@ -140,6 +140,14 @@ def test_elbow_stays_out_of_the_middle_of_the_screen():
         assert g["cotovelo_no_centro"] == 0, f"{nome}: o cotovelo ficou {g['cotovelo_no_centro']} quadros no meio da tela"
 
 
+def test_wrist_never_bends_past_what_a_wrist_can():
+    """O pulso real dobra até ~70 graus somando flexão e desvio; o solver comprime acima de 55 e nunca passa de 72
+    (antes encostava no limite de 80, e a manga ficava apertada no punho)."""
+    for nome, g in gestos().items():
+        assert g["dobra_do_pulso"] <= 73.0, f"{nome}: pulso dobrado a {g['dobra_do_pulso']:.0f} graus"
+    assert memo("postura", maos_tabela.medir_posicao_de_segurar)["dobra_do_pulso"] <= 73.0
+
+
 def test_pickup_gestures_are_not_longer_than_the_busy_limit():
     for nome, g in gestos().items():
         assert g["duracao_total"] < 3.3, f"{nome}: a mão ficou {g['duracao_total']:.2f} s sem controle"
@@ -244,6 +252,25 @@ def test_paper_is_a_cantilever_with_inertia():
         folha.step(1 / 60, 9.81)
     assert 0.0 < folha.value < folha.target(9.81), "sobe com atraso"
     assert handheld.PaperSheet(0.29).omega < handheld.PaperSheet(0.085).omega
+
+
+def test_held_note_droops_by_inertia_through_the_model_shape_key():
+    from sem_alvorada.engine.inputstate import InputState
+    jogo = maos.montar_jogo_maos()
+    maos.estado(jogo, notas=("NOTE_1",), segurar=C.ITEM_NOTE)
+    obj = jogo.hands.models.objects[C.ITEM_NOTE]
+    assert obj.data.shape_keys is not None and "Droop" in obj.data.shape_keys.key_blocks, "o modelo da folha tem a chave Droop"
+    valores = []
+    for _ in range(120):
+        jogo.tick(1 / 60, InputState())
+        valores.append(obj.data.shape_keys.key_blocks["Droop"].value)
+    assert max(abs(v) for v in valores) > 0.004, "a gravidade dobra a folha presa pela borda"
+    assert max(abs(v) for v in valores) < 0.8 * jogo.hands.models.sheet.length, "a flecha satura (com o sobressalto do amortecimento de 0,35)"
+    # sem a nota na mão a folha volta reta
+    jogo.hands.equip(None)
+    for _ in range(120):
+        jogo.tick(1 / 60, InputState())
+    assert abs(obj.data.shape_keys.key_blocks["Droop"].value) < 1e-9
 
 
 def test_map_panels_open_with_a_spring_and_settle():

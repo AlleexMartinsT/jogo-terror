@@ -6,7 +6,6 @@ Os modelos físicos estão em tools/movimento_ref/fisica/ (código independente,
 sem janela por `grava.py` e cada métrica tem uma faixa (DERIVADO de uma lei, ESTIMADO de engenharia, MEDIDO de mocap da CMU).
 Cada teste imprime a tabela do seu objeto e falha se alguma métrica sair da faixa.
 """
-import math
 import os
 import sys
 

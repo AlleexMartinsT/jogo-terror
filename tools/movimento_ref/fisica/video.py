@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 from . import carro as KC
-from . import comparar_carro as CC, comparar_porta as CP, cortina as KT, grava, medidas, porta as P, relogio as R
+from . import comparar_carro as CC, cortina as KT, grava, medidas, porta as P, relogio as R
 from .paineis import COR_ANTES, COR_JOGO, COR_MODELO, FUNDO, GRADE, TINTA, TINTA_SUAVE
 
 FPS = 30
@@ -76,7 +76,6 @@ def _interp(t, ts, ys):
 # Porta (vista de cima)
 # --------------------------------------------------------------------------
 def _sessao_porta(fps=240.0, total=9.5):
-    import random
     from sem_alvorada.engine import doors as door_module
     jogo = grava.JogoMinimo(False, 2.6)
     jogo.rng = grava.Sempre()
@@ -123,7 +122,6 @@ def _modelo_porta(t, duracao_abre=1.1, duracao_fecha=1.1):
 def cena_porta():
     t, theta_jogo, turn = _sessao_porta()
     theta_modelo = _modelo_porta(t)
-    antes = medidas.carregar_gravacao("porta")
     serie = {"m": (t, np.degrees(theta_modelo), COR_MODELO, "-", "modelo físico"),
              "j": (t, np.degrees(theta_jogo), COR_JOGO, "-", "jogo (depois)")}
     cena = Cena("Porta (25 kg, 0,88 m): abrir, fechar com trinco e bater", 0.0, 9.5, serie, "ângulo da folha (graus)")
@@ -255,9 +253,8 @@ def cena_carro(vertical=15.0):
             th = _interp(tempo, t, pitch)
             z = vertical * (_interp(tempo, t, zo))
             # corpo no plano (y para a esquerda é a frente: o carro anda para -Y); desenhado com a frente à ESQUERDA
-            comp, alt = 4.85, 1.35
+            alt = 1.35
             c, sn = math.cos(vertical * th), math.sin(vertical * th)
-            frente_x = -1.0       # eixo local +Y (frente) aponta para -x na imagem
             pontos = [(-2.42, 0.45), (-2.42, 0.85), (-1.4, 0.95), (-0.9, alt), (1.2, alt), (1.7, 0.95), (2.42, 0.85), (2.42, 0.45), (-2.42, 0.45)]
             xs = [y + (-p[0] * c) + p[1] * (-sn) * 0 for p in pontos]
             xs = [y + (-(p[0]) * c - (p[1] - 0.5) * sn) for p in pontos]

@@ -9,8 +9,6 @@ haste de latão e lentilha de 1,2 kg precisa de 1,024 m do pivô ao centro da le
 (tools/movimento_ref/fisica/relogio.py). O pivô fica logo abaixo do mostrador, na altura de 1,44 m; a lentilha pende
 com o centro em 0,416 m e aparece na janela do corpo, cuja travessa de baixo foi encurtada para isso.
 """
-import math
-
 import bpy
 
 from .. import craft

@@ -3,6 +3,9 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
+from .. import conventions as C
+
+STAIRS_LAYER = 2                # camada da escada em ai.nav (GROUND, UPPER, STAIRS = 0, 1, 2)
 OPEN_REQUEST_DISTANCE = 1.6     # a que distância da porta pede para abri-la
 DOOR_STOP_DISTANCE = 0.8        # fica parado aqui até a folha abrir o bastante
 DOOR_OPEN_ENOUGH = 0.6
@@ -75,6 +78,8 @@ class PathFollower:
     def step(self, body, speed, dt, now):
         """Anda `speed * dt` metros ao longo do caminho, respeitando portas."""
         report = StepReport()
+        if body.layer == STAIRS_LAYER:
+            speed = C.stairs_speed(speed)           # na escada o ritmo é o dos degraus, para o jogador e para a entidade
         budget = speed * dt
         while budget > 1e-9 and self.active:
             target = self.path[self.index]

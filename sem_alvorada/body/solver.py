@@ -13,7 +13,12 @@ from ..entity.skeleton import two_bone_joint
 from . import skeleton as S
 
 IDENTITY = S.IDENTITY
-MAX_WRIST_SWING = math.radians(80.0)       # quanto a mão dobra em relação ao antebraço (flexão e desvio)
+MAX_WRIST_SWING = math.radians(80.0)       # quanto a mão dobra em relação ao antebraço (flexão e desvio): pedido acima disto procura outro cotovelo
+# O pulso real dobra até ~70 graus somando flexão e desvio (flexão 70 a 80, extensão 60 a 70, desvio radial 20, ulnar 30 a 40;
+# ESTIMADO, livro-texto). Encostado no limite o punho da manga se aperta e a pele "estrangula" o tecido, então a dobra
+# acima de WRIST_COMFORT é comprimida suavemente (tanh) para no máximo WRIST_LIMIT: a mão alcança o que pede sem passar de 72.
+WRIST_COMFORT = math.radians(55.0)
+WRIST_LIMIT = math.radians(72.0)
 SWIVEL_STEP = math.radians(4.0)           # passo da busca do giro do cotovelo em torno da linha ombro-pulso
 SWIVEL_MAX = math.radians(84.0)
 VIEW_TAN_H, VIEW_TAN_V = math.tan(math.radians(40.0)), math.tan(math.radians(27.0))    # campo de visão da câmera + folga da manga
@@ -33,10 +38,11 @@ _LENGTH = [b.length for b in S.BONES]
 
 class ArmGoal:
     """Onde o pulso deve chegar (espaço do corpo), a orientação absoluta da mão e o polo do cotovelo."""
-    __slots__ = ("wrist", "hand_q", "pole", "weight", "palm", "palm_offset", "swivel", "view")
+    __slots__ = ("wrist", "hand_q", "pole", "weight", "palm", "palm_offset", "swivel", "view", "comfort")
 
-    def __init__(self, wrist, hand_q, pole, weight=1.0, palm=None, palm_offset=None, swivel=0.0, view=None):
+    def __init__(self, wrist, hand_q, pole, weight=1.0, palm=None, palm_offset=None, swivel=0.0, view=None, comfort=False):
         self.wrist, self.hand_q, self.pole, self.weight = wrist, hand_q, pole, weight
+        self.comfort = comfort        # comprime a dobra do pulso acima de WRIST_COMFORT (as mãos do engine pedem; a API crua não)
         self.swivel = swivel          # giro do cotovelo (rad) usado no quadro anterior: a busca começa por ele
         self.view = view              # (posição, frente, direita, cima) da câmera no espaço do corpo: o cotovelo foge dela
         # com `palm` (alvo do centro da palma) o solver corrige o pulso quando o limite de flexão muda a orientação
@@ -93,6 +99,15 @@ def _twist_swing(q, axis):
     twist_inv.normalize()
     swing_inv = inverse @ twist_inv.inverted()
     return twist_inv.inverted(), swing_inv.inverted()
+
+
+def _compress(q):
+    """A dobra do pulso até WRIST_COMFORT passa inteira; acima, cresce cada vez menos até WRIST_LIMIT."""
+    angle = q.angle
+    if angle <= WRIST_COMFORT or angle < 1e-9:
+        return q
+    span = WRIST_LIMIT - WRIST_COMFORT
+    return IDENTITY.slerp(q, (WRIST_COMFORT + span * math.tanh((angle - WRIST_COMFORT) / span)) / angle)
 
 
 def _limit(q, max_angle):
@@ -174,6 +189,8 @@ def _arm_attempt(upper_name, origin, goal, arm_len, fore_len, pole, fore_axis):
         twist, swing = _twist_swing(rel, fore_axis)
         angle = swing.angle
         swing = _limit(swing, MAX_WRIST_SWING)
+        if goal.comfort:
+            swing = _compress(swing)
         hand_q = fore_q @ twist @ swing
         if goal.palm is None:
             break

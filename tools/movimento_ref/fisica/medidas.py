@@ -3,7 +3,7 @@ import json
 import math
 import os
 import pickle
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 SAIDA = os.path.join(RAIZ, "out", "f4_4")

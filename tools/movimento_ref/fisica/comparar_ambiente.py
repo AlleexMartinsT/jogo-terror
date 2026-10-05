@@ -100,7 +100,7 @@ def _perfil_fisico(altura, duracao=600.0, fps=60.0):
 # --------------------------------------------------------------------------
 def velocidades_terminais_do_jogo(p):
     """Velocidade terminal de cada partícula (m/s), pela inclinação do fim da vida dela, e o tempo de relaxação medido."""
-    t, z, tam = p["t"], p["z"], p["tamanho"]
+    z, tam = p["z"], p["tamanho"]
     fps = p["fps"]
     v_term, tau = [], []
     for j in range(z.shape[1]):

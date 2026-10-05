@@ -288,6 +288,9 @@ HANG_ROT = {"R": _hang_rotation("R"), "L": _hang_rotation("L")}
 GLIDE = 0.40               # depois do contato o item que a mão não alcançou vem até o punho (a mesa fica abaixo do
                            # alcance do braço: o item sobe do lugar dele até a mão enquanto ela fecha)
 CLOSE_TIME = 0.20          # ESTIMADO: tempo que os dedos levam para fechar sobre o item
+GRASP_PITCH = 15.0                         # graus: dedos um pouco acima da horizontal. A palma pega a ~0,5 m do rosto com o
+                                           # cotovelo baixo (antebraço quase vertical): com os dedos 46 graus para baixo o pulso
+                                           # dobrava até o limite do solver (80 graus); a +15 fica em ~58
 GRASP_NOMINAL = (0.0, -0.08, -0.51)        # onde a palma costuma pegar (o limite do alcance, abaixo da linha do olhar)
 NOMINAL_RETURN = 0.60      # e da pose de mostrar até a mão solta
 REACH_DEFAULT = move_time(0.65)      # alcance típico: da mão solta ao item sobre uma mesa, 0,65 m
@@ -336,7 +339,7 @@ def lantern_first(reach_s=REACH_DEFAULT):
     click_at = at_chest - 0.04
     leave = click_at + 0.38
     arrive = leave + move_time(math.dist(chest, hold))
-    reach(path, reach_s, (0.0, 0.018, 0.0), (-46.0, 0.0, -4.0), OPEN, FLASH_GRAB)
+    reach(path, reach_s, (0.0, 0.018, 0.0), (GRASP_PITCH, 0.0, -4.0), OPEN, FLASH_GRAB)
     path.item(at_chest, chest, chest_rot, FLASH_FIST, stop=True)
     path.curl(click_at - 0.10, FLASH_FIST)
     path.curl(click_at, FLASH_CLICK, stop=True)
@@ -363,7 +366,7 @@ def battery_pickup(reach_s=REACH_DEFAULT):
     show, show_rot = (-0.100, -0.050, -0.335), (-14.0, -8.0, 4.0)
     at_show = lift + move_time(math.dist(GRASP_NOMINAL, show))
     look = at_show + 0.25                                  # ESTIMADO: o tempo de olhar a pilha na palma
-    reach(path, reach_s, (0.0, 0.016, 0.0), (-46.0, 2.0, 4.0), OPEN, CUP)
+    reach(path, reach_s, (0.0, 0.016, 0.0), (GRASP_PITCH, 2.0, 4.0), OPEN, CUP)
     path.item(at_show, show, show_rot, CUP, stop=True)           # no caminho a mão gira meio giro: palma de lado
     path.item(look, show, show_rot, CUP, stop=True)
     end = withdraw(path, look)
@@ -385,7 +388,7 @@ def key_pickup(reach_s=REACH_DEFAULT):
     hang = HOLD_ITEM[("L", C.ITEM_KEY)][0]
     flick, swing = (-0.150, -0.020, -0.390), (-0.236, -0.030, -0.385)
     at_hang = lift + move_time(math.dist(GRASP_NOMINAL, hang))
-    reach(path, reach_s, (0.0, 0.015, 0.0), (-48.0, 2.0, 4.0), OPEN, PINCH)
+    reach(path, reach_s, (0.0, 0.015, 0.0), (GRASP_PITCH, 2.0, 4.0), OPEN, PINCH)
     path.item(at_hang, hang, (0.0, 0.0, 0.0), PINCH, stop=True)
     # o puxão que faz o chaveiro balançar: um meio ciclo de punho de ~4 Hz, sem parar nas pontas
     path.item(at_hang + 0.12, flick, (0.0, 0.0, 0.0), PINCH)
@@ -415,7 +418,7 @@ def map_pickup(reach_s=REACH_DEFAULT):
     shown, shown_rot = HOLD_ITEM[("L", C.ITEM_MAP)]
     at_held = lift + move_time(math.dist(GRASP_NOMINAL, held))
     at_shown = at_held + move_time(math.dist(held, shown))
-    reach(path, reach_s, (0.0, 0.016, 0.0), (-46.0, 2.0, 4.0), OPEN, PINCH)
+    reach(path, reach_s, (0.0, 0.016, 0.0), (GRASP_PITCH, 2.0, 4.0), OPEN, PINCH)
     path.item(at_held, held, held_rot, PINCH, stop=True)
     path.item(at_shown, shown, shown_rot, PINCH, stop=True)
     first = at_held - 0.25                      # a primeira dobra abre ainda subindo
@@ -442,7 +445,7 @@ def note_pickup(reach_s=REACH_DEFAULT):
     lift = reach_s + GRASP_DWELL
     face, face_rot = FACE_ITEM[C.ITEM_NOTE]
     at_face = lift + move_time(math.dist(GRASP_NOMINAL, face))
-    reach(path, reach_s, (0.0, 0.012, 0.0), (-40.0, 2.0, 4.0), OPEN, HOLD_SHEET)
+    reach(path, reach_s, (0.0, 0.012, 0.0), (GRASP_PITCH, 2.0, 4.0), OPEN, HOLD_SHEET)
     path.item(at_face, face, face_rot, HOLD_SHEET, stop=True)
     path.attach(contact, 0.0, stop=True).attach(contact + GLIDE, 1.0, stop=True)
     events = [ev(0.04, "sound", "hand_reach"), ev(contact, "contact", essential=True),

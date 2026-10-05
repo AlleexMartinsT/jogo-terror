@@ -261,16 +261,20 @@ def scenario_ambient_distraction(seed=3):
 
 
 def scenario_chase_across_floors(seed=4, close_door_behind=True, seconds=70.0):
-    """A entidade vê o jogador (lanterna apontada) pelo arco da sala de jantar; ele foge escada acima
-    até o quarto do casal, fecha a porta e espera lá dentro."""
-    sim = Sim(seed, player_at=(6.9, 2.0, 0.0), entity_at=(11.0, 1.75, 0.0), entity_yaw=C.dir_yaw(-1, 0), entity_pause=20.0)
+    """A entidade, já caçando, está ao pé da escada; o jogador, no alto dela, foge até o quarto do casal, fecha a porta e
+    espera lá dentro.
+
+    Na escada o ritmo é o dos degraus (C.stairs_speed), tanto para o jogador quanto para a entidade: quem foge pelo plano
+    com a entidade a 4 m é alcançado antes de a entidade pisar na escada, então a fuga só tem história quando o jogador já
+    está lá em cima."""
+    sim = Sim(seed, player_at=(5.6, 8.2, 2.8), entity_at=(5.6, 2.0, 0.0), hunt=True, entity_yaw=C.dir_yaw(0, 1), entity_pause=0.0)
     player = sim.player
     player.flashlight = True
-    player.aim = (11.0, 1.75, 1.4)
+    player.aim = (5.6, 2.0, 1.4)
     phase = {"go": False, "closed": False, "waiting": False}
 
     def script(s, out):
-        if not phase["go"] and out.state == "chase":
+        if not phase["go"]:
             phase["go"] = True
             player.goto(2.0, 8.6, 2.8, "run")
         if phase["go"] and not phase["closed"] and player.body.layer == nav_module.UPPER and player.body.x < 4.4:

@@ -203,7 +203,6 @@ def carro(duracao=20.0, fps=120.0):
     palco.start_actor("key_charm", anim.CharmPendulum("Cut_KeyCharm", anim.KEY_CHARM_LENGTH, source="car"))
     palco.start_actor("wheel", anim.SteeringWheel("Cut_Wheel"))
     n = int(round(duracao * fps))
-    campos = ("t", "pos", "euler", "roda_FL", "roda_FR", "roda_RL", "roda_RR", "coelho", "chaveiro", "sinal")
     s = {"t": np.zeros(n), "pos": np.zeros((n, 3)), "euler": np.zeros((n, 3)), "coelho": np.zeros((n, 3)),
          "chaveiro": np.zeros((n, 3)), "roda": np.zeros((n, 4, 3)), "roda_pos": np.zeros((n, 4, 3)),
          "volante": np.zeros((n, 4))}

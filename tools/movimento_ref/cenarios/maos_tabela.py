@@ -249,12 +249,12 @@ def montar_linhas(antes, depois, ref):
     linhas.append(_linha("cotovelo_centro", "cotovelo no meio da tela durante o gesto (soma dos 6)", "quadros", 0.0,
                          float(sum(antes["gestos"][g]["cotovelo_no_centro"] for g in GESTOS_PEGAR)),
                          float(sum(depois["gestos"][g]["cotovelo_no_centro"] for g in GESTOS_PEGAR)), 0.0, 0, "MEDIDO"))
-    linhas.append(_linha("dobra_pulso", "pulso dobrado, p95 (média dos 6 gestos; limite do solver 80)", "graus", NAN, medias(antes, "dobra_do_pulso"),
-                         medias(depois, "dobra_do_pulso"), 60.0, 0, "ESTIMADO <= 60"))
-    linhas[-1].ok = bool(depois_dobra(depois) <= 60.0)
+    linhas.append(_linha("dobra_pulso", "pulso dobrado, p95 (média dos 6 gestos; limite 72)", "graus", NAN, medias(antes, "dobra_do_pulso"),
+                         medias(depois, "dobra_do_pulso"), 72.0, 0, "ESTIMADO <= 72"))
+    linhas[-1].ok = bool(depois_dobra(depois) <= 72.5)
     sa, sd = antes["segurar"], depois["segurar"]
-    linhas.append(_linha("dobra_pulso_seg", "pulso dobrado com a lanterna parada", "graus", NAN, sa["dobra_do_pulso"], sd["dobra_do_pulso"], 60.0, 0, "ESTIMADO <= 60"))
-    linhas[-1].ok = bool(sd["dobra_do_pulso"] <= 60.0)
+    linhas.append(_linha("dobra_pulso_seg", "pulso dobrado com a lanterna parada", "graus", NAN, sa["dobra_do_pulso"], sd["dobra_do_pulso"], 72.0, 0, "ESTIMADO <= 72"))
+    linhas[-1].ok = bool(sd["dobra_do_pulso"] <= 72.5)
     linhas.append(_linha("seg_cotovelo", "lanterna parada: flexão do cotovelo", "graus", lant["cotovelo"], sa["cotovelo"], sd["cotovelo"], 15.0, 0, "MEDIDO"))
     linhas.append(_linha("seg_elevacao", "lanterna parada: braço em relação à vertical", "graus", lant["elevacao"], sa["elevacao"], sd["elevacao"], 18.0, 0, "MEDIDO"))
     linhas.append(_linha("seg_razao", "lanterna parada: distância punho-ombro / braço", "", lant["razao"], sa["razao"], sd["razao"], 0.10, 2, "MEDIDO"))

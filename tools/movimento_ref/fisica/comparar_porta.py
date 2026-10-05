@@ -2,8 +2,6 @@
 
     python -m tools.movimento_ref.fisica.comparar_porta [--antes]      # --antes guarda o jogo de agora como "antes"
 """
-import math
-import os
 import sys
 
 import numpy as np
@@ -101,7 +99,6 @@ def metricas(g):
     add = out.append
     abre = g["abre"]["normal"]
     massa = massa_da_porta(abre)
-    t_min = P.tempo_minimo(P.F_CONFORTO, massa)
 
     # ---- abrir: a trajetória
     add(Metrica.igual(GRUPO, "abrir: desvio da trajetória de mínima variação de torque", "fração do curso", 0.0,

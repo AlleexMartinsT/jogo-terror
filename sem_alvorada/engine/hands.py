@@ -568,6 +568,7 @@ class Hands:
 
     def _drive_arm(self, side, pos, rot, curl, weight):
         arm = self.game.body.arm(side)
+        arm.wrist_comfort = True                     # o pulso real não dobra tudo o que o clipe poderia pedir
         if weight > 0.01:
             arm.set_target(pos, rot, min(1.0, weight))
             arm.set_fingers(tuple(min(1.0, max(0.0, c)) for c in curl))

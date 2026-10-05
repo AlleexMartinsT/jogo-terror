@@ -60,6 +60,7 @@ class ArmControl:
         self._palm_offset = S.palm_offset(side)
         self._palm_world = None
         self._swivel = 0.0               # giro do cotovelo escolhido no quadro anterior (rad)
+        self.wrist_comfort = False       # True: o pulso não passa de ~72 graus de dobra (as mãos do jogo ligam; ver solver.WRIST_LIMIT)
 
     # ------------------------------------------------------------------ contrato
     def set_target(self, position, rotation_deg=(0.0, 0.0, 0.0), weight=1.0):
@@ -167,7 +168,7 @@ class ArmControl:
         view = (body_from_world @ (cam_pos - frame.root), body_from_world @ (cam_basis @ Vector((0.0, 0.0, -1.0))),
                 body_from_world @ (cam_basis @ Vector((1.0, 0.0, 0.0))), body_from_world @ (cam_basis @ Vector((0.0, 1.0, 0.0))))
         return ArmGoal(wrist, hand_q, pole, self._weight, palm=palm_body, palm_offset=self._palm_offset, swivel=self._swivel,
-                       view=view)
+                       view=view, comfort=self.wrist_comfort)
 
 
 class BodyRig:

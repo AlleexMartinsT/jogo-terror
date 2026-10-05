@@ -90,7 +90,16 @@ ACCEL_BRAKE = 6.0         # m/s2, parada: 143_02 (corrida) freia a 7,8; 16_08 e 
 # Escada: o ritmo é dos degraus. Medido em 83_27 a 83_35 (8 clipes, degraus de 12 a 16 cm): um degrau a cada 0,79 a 0,90 s
 # (1,17 passo/s). Usamos 1,5 passo/s andando (ESTIMADO, 1,5 a 1,8 na literatura para subida confortável), 2,4 correndo e
 # 1,1 agachado, vezes a profundidade do degrau do jogo (0,3 m): 0,45 / 0,72 / 0,33 m/s.
-STAIRS_STEPS_PER_SECOND = {"walk": 1.5, "run": 2.4, "crouch": 1.1}
+STAIRS_STEPS_PER_SECOND = {"walk": 1.5, "run": 2.5, "crouch": 1.1}
+STAIRS_RATIO_WALK = 0.45 / 1.7        # velocidade na escada / velocidade no plano, andando e correndo (0,75 / 4,0)
+STAIRS_RATIO_RUN = 0.75 / 4.0
+
+
+def stairs_speed(speed):
+    """Velocidade na escada de quem andaria a `speed` m/s no plano: a razão vai de andar (1,7) a correr (4,0). A entidade
+    usa isto para manter na escada as mesmas razões que tem com o jogador no plano."""
+    t = max(0.0, min(1.0, (speed - SPEED_WALK) / (SPEED_RUN - SPEED_WALK)))
+    return speed * (STAIRS_RATIO_WALK + (STAIRS_RATIO_RUN - STAIRS_RATIO_WALK) * t)
 STAMINA_MAX = 1.0
 STAMINA_DRAIN = 0.22      # por segundo correndo
 STAMINA_REGEN = 0.15      # por segundo

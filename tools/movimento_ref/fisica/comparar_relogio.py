@@ -3,7 +3,6 @@
     python -m tools.movimento_ref.fisica.comparar_relogio
 """
 import math
-import sys
 
 import numpy as np
 
