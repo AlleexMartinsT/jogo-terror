@@ -1,5 +1,5 @@
-"""Medição da marcha (agente 2 da fase 4): o mesmo conjunto de métricas sobre captura real (CMU) e sobre o jogo.
+"""Medição da marcha (agente 2 da fase 4).
 
-`medir.py`   métricas de marcha sobre "pontos nomeados" (a mesma função para o mocap e para o corpo do jogo)
-`extrair.py` regressões do mocap (passo x velocidade) e as curvas médias que viram `sem_alvorada/body/gait_data.py`
+`extrair.py` extrai do mocap da CMU, com as métricas de `tools.movimento_ref`, as tabelas de `sem_alvorada/gait_data.py`
+e a referência `assets/referencia/marcha_ref.json` que `tests/test_locomocao.py` usa.
 """

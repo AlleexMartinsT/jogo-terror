@@ -126,3 +126,31 @@ def classes_de_poeira():
 def tempo_de_relaxacao(v_terminal):
     """DERIVADO: com arrasto linear, v(t) = v_t (1 - e^(-t/tau)) e tau = v_t / g."""
     return np.asarray(v_terminal) / G
+
+
+def simular_alturas(altura, fracoes, duracao=60.0, fps=60.0, semente=3, zeta=ZETA_PANO, modos=3):
+    """Como `simular`, mas devolve o deslocamento (normalizado pelo desvio padrão da bainha) em várias alturas relativas.
+
+    Devolve (t, y[t, len(fracoes)])."""
+    rng = np.random.default_rng(semente)
+    n = int(duracao * fps)
+    t = np.arange(n) / fps
+    frequencias = np.fft.rfftfreq(n, 1.0 / fps)
+    amplitude = np.sqrt(espectro_do_vento(frequencias))
+    ruido = np.fft.irfft(amplitude * (rng.normal(size=len(frequencias)) + 1j * rng.normal(size=len(frequencias))), n)
+    ruido /= np.std(ruido)
+    f = frequencias_dos_modos(altura, modos)
+    w1 = 2.0 * math.pi * f[0]
+    y = np.zeros((n, len(fracoes)))
+    for k in range(modos):
+        w = 2.0 * math.pi * f[k]
+        gama = participacao(k + 1)
+        formas = forma_do_modo(np.asarray(fracoes), k + 1)
+        q, v, h = 0.0, 0.0, 1.0 / fps
+        for i in range(n):
+            for _ in range(4):
+                a = gama * ruido[i] * w1 * w1 - 2.0 * zeta * w * v - w * w * q
+                v += a * h / 4
+                q += v * h / 4
+            y[i] += q * formas
+    return t, y / np.std(y[:, -1])

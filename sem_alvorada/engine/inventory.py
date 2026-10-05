@@ -17,7 +17,7 @@ MAX_SLOTS = len(SLOTS)
 SECTOR_WIDTH = math.tau / MAX_SLOTS
 DEAD_ZONE = 0.06          # rad de mouse acumulado: dentro disso nenhum setor é escolhido
 POINTER_RADIUS = 0.30     # o vetor acumulado não passa daqui; quem foi longe demais volta em poucos pixels
-PENDING_SECONDS = 2.0     # quanto tempo um pedido de troca espera a mão ficar livre antes de ser esquecido
+PENDING_SECONDS = 3.2     # quanto tempo um pedido de troca espera a mão ficar livre antes de ser esquecido (a troca de pilhas leva ~2,5 s)
 
 
 def sector_at(dx, dy):

@@ -60,7 +60,7 @@ class Player:
         self._amp = 0.0                          # 0..1: amplitude da passada (apaga ao parar)
         self._was_moving = False
         self._last_step = int(self._cycle * 2.0)   # índice do último toque de calcanhar (meio ciclo cada)
-        self._head = (0.0, 0.0, 0.0, 0.0, 0.0)   # lateral (m), vertical (m), roll, pitch, yaw (rad) da cabeça
+        self._head = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   # lateral (m), vertical (m), roll, pitch, yaw (rad) da cabeça e avanço (m)
         self._breath_clock = 0.0                 # cronômetro do ruído de respiração
         self._breath_phase = 0.0
         self._breath_mix = 0.0                   # 0 repouso .. 1 ofegante
@@ -133,9 +133,10 @@ class Player:
 
     def camera_pose(self):
         """Posição e rotação (euler XYZ) da câmera: olhos, passada medida, respiração e giros da cabeça."""
-        lateral, vertical, roll, pitch, yaw = self._head
+        lateral, vertical, roll, pitch, yaw, ahead = self._head
         right_x, right_y = math.cos(self.yaw), math.sin(self.yaw)
-        position = (self.x + right_x * lateral, self.y + right_y * lateral, self.z_visual + self.eye + vertical)
+        position = (self.x + right_x * lateral - math.sin(self.yaw) * ahead, self.y + right_y * lateral + math.cos(self.yaw) * ahead,
+                    self.z_visual + self.eye + vertical)
         return position, gait.camera_euler(self.yaw + yaw, self.pitch + pitch, roll)
 
     # ---- comandos ----
@@ -148,7 +149,7 @@ class Player:
         self._cycle = gait.START_CYCLE
         self._last_step = int(self._cycle * 2.0)
         self._was_moving = False
-        self._head = (0.0, 0.0, 0.0, 0.0, 0.0)
+        self._head = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         self._refresh_room()
 
     def reset_body(self):
@@ -326,16 +327,18 @@ class Player:
         roll = 0.0
         pitch = breath_pitch
         yaw = 0.0
+        ahead = 0.0
         if self._amp > 1e-3:
             s = gait.evaluate(self._cycle, max(self.gait_speed, 0.05), self.crouch_fraction, gait.HEAD_KEYS)
             v = s.values
             amp = self._amp
             lateral += v["cab_y"] * amp
+            ahead += v["cab_x"] * amp
             vertical += (v["cab_z"] - s.drop) * amp          # s.drop: o quadril anda mais baixo que com a perna esticada
             roll += math.radians(v["cab_roll"]) * amp * HEAD_ROTATION_GAIN
             pitch += math.radians(v["cab_pitch"]) * amp * HEAD_ROTATION_GAIN
             yaw += math.radians(v["cab_yaw"]) * amp * HEAD_ROTATION_GAIN
-        self._head = (lateral, vertical, roll, pitch, yaw)
+        self._head = (lateral, vertical, roll, pitch, yaw, ahead)
 
     def _refresh_room(self):
         room = layout.room_at(self.x, self.y, self.z)

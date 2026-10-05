@@ -25,16 +25,19 @@ LEAN_PER_PITCH = 0.06                  # graus de tronco inclinado por grau de o
 MAX_LAG = math.radians(68.0)           # quanto o corpo pode ficar para trás da câmera, em guinada
 TOE_OUT = math.radians(5.0)
 SOLE_BACK, BALL_FRONT = -0.065, 0.16   # calcanhar e articulação da bola do pé em relação ao tornozelo (m)
-LEAN_GAIN = 1.0                        # graus de coluna por grau de inclinação (pelve->pescoço) medida; calibrado nos testes
-TOE_UP_MAX = math.radians(35.0)        # dedos dobrados para cima no fim do apoio (o pé rola sobre a bola)
+LEAN_GAIN = 0.95                       # graus de coluna por grau de inclinação lombar->C7 (a coluna toda gira 0,85 do que o segmento mede)
+CROUCH_LEAN_MAX = 45.0                 # graus de coluna: agachado de olho a 1,05 m, mais que isso o tronco deitaria sobre as coxas
+TOE_UP_MAX = math.radians(50.0)        # dedos dobrados para cima no fim do apoio (o pé rola sobre a bola)
 GROUND_FOLLOW = 30.0                   # 1/s: o pé acompanha o degrau sob a sola
-HIP_AHEAD_CORRECTION = 0.07          # m: a junta do quadril do mocap fica 3,76 cm à frente da raiz Hips; a do Daniel, 1 cm (3,76 - 1,0)
+HIP_AHEAD_CORRECTION = {"walk": 0.09, "run": -0.05, "crouch": 0.09}      # calibrada contra a curva do quadril; ver docs/FASE4.md
+# antiga:          # m: a junta do quadril do mocap fica 3,76 cm à frente da raiz Hips; a do Daniel, 1 cm (3,76 - 1,0)
 TOE_HINGE, TOE_LENGTH = 0.16, 0.105    # articulação dos dedos (bola) e comprimento do dedão ao tornozelo (m), de skeleton.py
 TOE_RELAX = 0.15                       # fração do ciclo que os dedos levam para relaxar depois de o pé sair do chão
 SWING_MARGIN = 0.015                   # m: folga entre a ponta do pé e o chão no balanço
 RUN_ROCKER_OFF = 1.0                   # 1: na corrida vale só a trajetória medida do pé (o pé não rola como no passo)
 FRONT_SCALE = 1.0                      # encurta o pé à frente do quadril (o pé do Daniel é mais comprido que o do mocap)
-STANCE_BLEND = 0.02                    # metade da janela (fração do ciclo) em que o apoio rolante e a trajetória medida se misturam
+RAMP_FRACTION = 0.15
+STANCE_RAMP = 0.12                     # fração do ciclo que o apoio rolante leva para entrar e sair
 PELVIS_FOLLOW = 0.5                    # s: o "ponto suave da pelve" (referência das tabelas do pé) é o quadril filtrado
 STEP_HALF_WIDTH = 0.0425               # m: metade da largura do passo ao andar (0,085 m nos 10 clipes de andar rápido; em pé é LEG_X)
 
@@ -182,7 +185,10 @@ class Locomotion:
         """Graus de tronco inclinado: o do andar/correr (medido, apagado quando parado) e o do agachado, mais o olhar."""
         down = max(0.0, -math.degrees(pitch))
         up = max(0.0, math.degrees(pitch))
-        return ((sampled.lean * self.gain + sampled.lean_crouch) * LEAN_GAIN + down * LEAN_PER_PITCH - up * 0.08)
+        lean = (sampled.lean * self.gain + sampled.lean_crouch) * LEAN_GAIN
+        if sampled.lean_crouch > 0.0:
+            lean = min(lean, CROUCH_LEAN_MAX)
+        return lean + down * LEAN_PER_PITCH - up * 0.08
 
     def _spine(self, rot, lean, lag, sampled, player):
         shares = (("Hips", 0.10), ("Spine1", 0.28), ("Spine2", 0.32), ("Spine3", 0.30))
@@ -208,11 +214,12 @@ class Locomotion:
         reach_scale = 0.62 + 0.38 * abs(direction.y)
         perp = Vector((direction.y, -direction.x))             # direita do movimento
         # as tabelas medem o pé em relação ao ponto suave da pelve (a raiz Hips do mocap); no Daniel esse ponto é o quadril filtrado
-        bias = S.BONE_MAP["Hips"].head.y + self.pelvis_y - HIP_AHEAD_CORRECTION
+        correction = sum(w * c for w, c in zip(sampled.weights, (HIP_AHEAD_CORRECTION["walk"], HIP_AHEAD_CORRECTION["run"], HIP_AHEAD_CORRECTION["crouch"])))
+        bias = S.BONE_MAP["Hips"].head.y + self.pelvis_y - correction
         for side, table, mirror, cycle in (("L", sampled.values, 1.0, sampled.c), ("R", sampled.other, -1.0, sampled.c + 0.5)):
             sx = S.side_sign(side)
             pitch = math.radians(table["pe"])
-            phase, weight, relax = self._foot_phase(cycle, sampled.duty)
+            phase, weight, relax = self._foot_phase(cycle, sampled.roll)
             toe = min(TOE_UP_MAX, max(0.0, -pitch)) * relax          # dedos dobrados enquanto o pé rola sobre a bola
             along_table = table["pe_frente"] * gait.LEG * scale * reach_scale
             if along_table > 0.0:
@@ -235,17 +242,20 @@ class Locomotion:
             spec.rot[f"Toe.{side}"] = Quaternion(AXIS_X, toe * amp)
 
     @staticmethod
-    def _foot_phase(cycle, duty):
-        """(fase do pé com o toque do calcanhar em 0, peso do apoio rolante, relaxamento dos dedos)."""
+    def _foot_phase(cycle, roll):
+        """(fase do pé com o toque do calcanhar em 0, peso do apoio rolante, relaxamento dos dedos).
+
+        O peso sobe do toque do calcanhar até `STANCE_RAMP` e cai até o fim do rolamento: nas pontas do apoio a trajetória
+        medida do tornozelo (que inclui o rolar do pé do sujeito do mocap) manda; no meio, o pé fica preso ao chão."""
         phase = cycle % 1.0
-        if phase > duty + 0.5 * (1.0 - duty):
+        if phase > roll + 0.5 * (1.0 - roll):
             phase -= 1.0
-        weight = (smoothstep((phase + STANCE_BLEND) / (2.0 * STANCE_BLEND))
-                  * (1.0 - smoothstep((phase - duty + STANCE_BLEND) / (2.0 * STANCE_BLEND))))
+        ramp = min(STANCE_RAMP, RAMP_FRACTION * roll)
+        weight = smoothstep(phase / ramp) * (1.0 - smoothstep((phase - roll + ramp) / ramp)) if 0.0 <= phase <= roll else 0.0
         if phase < 0.0:
             relax = 0.0
         else:
-            relax = 1.0 - smoothstep((phase - duty) / TOE_RELAX)
+            relax = 1.0 - smoothstep((phase - roll) / TOE_RELAX)
         return phase, weight, relax
 
     @staticmethod

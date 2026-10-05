@@ -230,8 +230,9 @@ def golpe_de_porta(forca=F_PICO, duracao=0.15, massa=25.0, partida=ABERTURA):
     # o empurrão fecha: torque negativo
     pulso = pulso_de_mao(forca, duracao)
     serie = simular(lambda t: -pulso(t), partida, 0.0, 1.2, massa)
-    t_chegada, w = chegada(serie, 0.0, partida)
-    return serie, t_chegada, abs(w), abs(w) * LARGURA
+    t_chegada, _ = chegada(serie, 0.0, partida)
+    w = abs(serie["batidas"][0][1])             # velocidade ANTES do rebote
+    return serie, t_chegada, w, w * LARGURA
 
 
 def reverter(theta, omega, massa=25.0, forca=F_REVERTER, raio=RAIO_MACANETA):

@@ -536,7 +536,7 @@ def stow(kind):
     path = Path("L", kind)
     pos, rot = HOLD_ITEM[("L", kind)]
     gone = (pos[0] - 0.08, pos[1] - 0.26, pos[2] + 0.06)
-    seconds = move_time(math.dist(pos, gone))
+    seconds = EXIT_FACTOR * move_time(math.dist(pos, gone))          # só sai do quadro: sem alvo a acertar
     path.item(0.00, pos, rot, HOLD_CURL[kind], stop=True)
     path.item(seconds, gone, (rot[0] - 14.0, rot[1], rot[2] + 8.0), HOLD_CURL[kind], stop=True)
     path.weight(seconds * 0.5, 1.0).weight(seconds, 0.0, stop=True)
@@ -623,7 +623,7 @@ def swap(left_start, left_end):
     t_lined = arrive + 0.10                                       # alinha com a boca
     t_in = t_lined + 0.30                                         # e desce pelo cano
     cap_close = (t_in + 0.04, t_in + 0.24)
-    t_back = cap_close[0] + 0.12                                  # a direita volta a segurar quando a esquerda já se afasta
+    t_back = t_in + 0.04                                          # a direita volta a segurar quando a esquerda já se afasta
     t_hold = t_back + move_time(math.dist(hold, tilted))
     click = t_hold - 0.02
     right.item(0.00, hold, hold_rot, FLASH_FIST, stop=True)

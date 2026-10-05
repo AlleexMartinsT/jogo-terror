@@ -118,7 +118,7 @@ def test_clock_follows_the_physical_model():
 
 def test_clock_chime_waits_for_a_tick():
     mecanismo = clockwork.ClockWork(None)
-    mecanismo.pendulum = object()
+    mecanismo.pendulum = grava.ObjetoFalso(clockwork.PENDULUM)
     mecanismo.sync()
     for _ in range(30):
         mecanismo.update(1 / 60)

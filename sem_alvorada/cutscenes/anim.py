@@ -712,9 +712,10 @@ class CharmPendulum(Actor):
     def update(self, stage, dt):
         a_forward, a_side, engine, pitch, roll = self._support(stage)
         t = stage.t
-        shake = engine * (0.9 * noise(t * 11.0, 7.0) + 0.5 * math.sin(t * 2 * math.pi * 12.5))
-        ax = self._x.advance(dt, a_forward + 0.25 * shake)
-        ay = self._y.advance(dt, a_side + 0.2 * shake)
+        # o tremor do motor em marcha lenta (11,7 Hz) mexe o suporte, mas o pêndulo (1,2 Hz) mal responde: ~0,03 grau
+        shake = engine * IDLE_ACCEL_RMS * math.sqrt(2.0) * math.sin(TAU * IDLE_HZ * t)
+        ax = self._x.advance(dt, a_forward + shake)
+        ay = self._y.advance(dt, a_side + 0.7 * shake)
         if self._obj is not None:
             self._obj.rotation_euler = (ax - pitch, -(ay + roll), 0.0)
         stage.signals[f"charm:{self.object_name}"] = (ax, ay)

@@ -1,7 +1,7 @@
 """Cenários das mãos, dos itens e da lanterna: o jogo contra o mocap real (CMU) e contra as leis da física.
 
     LIBGL_ALWAYS_SOFTWARE=1 python -m tools.movimento_ref.cenarios.maos --lista
-    LIBGL_ALWAYS_SOFTWARE=1 python -m tools.movimento_ref.cenarios.maos --tabela out/f4_3/final        # todas as métricas
+    LIBGL_ALWAYS_SOFTWARE=1 python -m tools.movimento_ref.cenarios.maos_tabela medir out/f4_3/jogo_depois.json   # mede o jogo
     LIBGL_ALWAYS_SOFTWARE=1 python -m tools.movimento_ref.comparar pegar_chave --saida out/movimento/pegar_chave
     LIBGL_ALWAYS_SOFTWARE=1 python -m tools.movimento_ref.cenarios.maos --gerar-referencia          # remede o mocap
 
@@ -29,7 +29,7 @@ os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
 
 import numpy as np  # noqa: E402
 
-from tools.movimento_ref import cmu, graficos, grava, metricas  # noqa: E402
+from tools.movimento_ref import cmu, grava, metricas  # noqa: E402
 from tools.movimento_ref.cenarios import registrar  # noqa: E402
 from tools.movimento_ref.cenarios.base import Alinhamento, Cenario, Preparado, Real  # noqa: E402
 from tools.movimento_ref.movimento import movimento_de_mocap  # noqa: E402
@@ -365,6 +365,9 @@ GESTOS = {
     "nota": dict(item="NOTE_1", lado="e", estado=dict(), tecla="interact", duracao=2.6),
     "troca": dict(item=None, lado="d", estado=dict(carga=0.2, pilhas=2, segurar="BATTERY"), tecla="reload", duracao=2.8),
     "segurar": dict(item=None, lado="d", estado=dict(), tecla=None, duracao=3.0),
+    # olhar em volta com a lanterna acesa: guinadas de 60 graus em ~0,5 s (a cabeça do 77_05 faz 50 a 140 graus em 0,2 a 0,6 s)
+    "varrer": dict(item=None, lado="d", estado=dict(), tecla=None, duracao=3.2,
+                   giros=((0.5, 120.0), (0.2, 0.0), (0.9, -120.0), (0.2, 0.0), (0.8, 90.0), (0.6, 0.0))),
 }
 
 
@@ -382,10 +385,26 @@ def gravar_gesto(nome):
         else:
             j.player.pitch = math.radians(-6.0)
 
-    roteiro = [grava.Passo(0.8, ao_iniciar=preparar, rotulo="esperar"),
-               grava.Passo(g["duracao"], entradas={g["tecla"]: True} if g["tecla"] else {}, rotulo=nome)]
+    ocupada = jogo.busy_log = []                       # `hands.busy` a cada tique: a duração do gesto (a mão sem controle)
+    tique = jogo.tick
+
+    def tique_com_registro(dt, entrada):
+        tique(dt, entrada)
+        ocupada.append(bool(jogo.hands.busy))
+    jogo.tick = tique_com_registro
+    roteiro = [grava.Passo(0.8, ao_iniciar=preparar, rotulo="esperar")]
+    if g.get("giros"):
+        roteiro += [grava.Passo(duracao, giro=giro, rotulo=nome) for duracao, giro in g["giros"]]
+    else:
+        roteiro.append(grava.Passo(g["duracao"], entradas={g["tecla"]: True} if g["tecla"] else {}, rotulo=nome))
     rec = grava.gravar(jogo, roteiro, nome=nome, ossos="armadura")
     return rec, rec.passos[1][0], jogo
+
+
+def duracao_ocupada(jogo):
+    """Segundos em que a mão ficou sem controle do jogador (`hands.busy`) no gesto gravado por `gravar_gesto`."""
+    log = np.array(jogo.busy_log, bool)
+    return float(log.sum() / 60.0)
 
 
 def alcance_do_jogo(rec, lado, t_inicio, vel_minima=VEL_MINIMA):
@@ -405,12 +424,30 @@ class ResultadoMao:
         self.v, self.curvas, self.eventos, self.perfil = v, {}, None, perfil
 
 
+def melhor_alcance(mov, lado, vel_minima=0.3):
+    """O alcance de maior pico (e ao menos 15 cm) da mão `lado` de um `Movimento` já relativo ao quadril."""
+    achados = [r for r in alcances_da_mao(mov, lado, vel_minima=vel_minima) if r["reta"] >= 0.15]
+    return max(achados, key=lambda r: r["pico"]) if achados else None
+
+
+def marcas_de_fase(r):
+    """Início, pico de velocidade e fim de um alcance: as marcas que alinham o real ao jogo."""
+    return [r["inicio"], r["inicio"] + r["pico_fracao"] * (r["fim"] - r["inicio"]), r["fim"]]
+
+
 class CenarioMao(Cenario):
-    """Base dos cenários de mão: declare `clip`, `lado_real`, `gesto` (chave de `GESTOS`) e, se quiser, `trecho`."""
+    """Base dos cenários de mão: declare `clip`, `lado_real`, `gesto` (chave de `GESTOS`) e, se quiser, `trecho`.
+
+    O real é o Daniel retargetado com os braços por IK (`retarget.retargetar(bracos="ik")`: o punho vai ao ponto do mocap
+    escalado pelo comprimento do braço, então distâncias e velocidades já estão na escala do Daniel). O alinhamento é por fase:
+    início, pico de velocidade e fim do alcance em cada relógio."""
     lado_real = "d"
     gesto = "chave"
+    relativo = True               # punho relativo ao quadril; False quando o corpo todo se move com a mão (agachar para pegar)
     palco_minimo = True
     vistas = ("frente", "lado", "primeira")
+    lento = 0.5
+    destaques = ("alcance_t6", "alcance_pico_fracao", "alcance_pico_razao", "alcance_r2")
 
     def carregar_real(self):
         from .. import retarget
@@ -419,34 +456,156 @@ class CenarioMao(Cenario):
         alvo = retarget.retargetar(clip, inicio, fim, bracos="ik")
         return Real(f"CMU {self.clip}", alvo.origem, alvo, [alvo.origem], descricao=self.resumo)
 
-    def gravar_jogo(self, jogo=None):
-        rec, t0, _jogo = gravar_gesto(self.gesto)
-        self._t0 = t0
-        return rec
-
-    def recorte_jogo(self, rec):
-        return rec.movimento(), 0.0
-
-    def medir(self, mov):
-        rel = relativo_ao_quadril(mov)
-        achados = alcances_da_mao(rel, self.lado_real, a_partir_de=getattr(self, "_t0", 0.0))
-        r = achados[0] if achados else None
+    def medir(self, mov, lado=None, a_partir_de=None, relativo=None):
+        rel = relativo_ao_quadril(mov) if (self.relativo if relativo is None else relativo) else mov
+        lado = lado or self.lado_real
+        r = melhor_alcance(rel, lado) if a_partir_de is None else next(iter(alcances_da_mao(rel, lado, a_partir_de=a_partir_de)), None)
         v = {}
         if r is not None:
             aj = r["ajuste"] or {}
-            v = dict(alcance_t6=r["t6"], alcance_distancia=r["reta"], alcance_pico_fracao=aj.get("pico_fracao", float("nan")),
-                     alcance_pico_razao=aj.get("pico_razao", float("nan")), alcance_r2=aj.get("r2_jerk_minimo", float("nan")))
-        return ResultadoMao(v, metricas.perfil_mao(rel, self.lado_real))
+            v = dict(alcance_t6=r["t6"], alcance_distancia=r["reta"], alcance_pico_fracao=100 * r["pico_fracao"],
+                     alcance_pico_razao=aj.get("pico_razao", float("nan")), alcance_r2=aj.get("r2_jerk_minimo", float("nan")),
+                     alcance_pico=r["pico"])
+        resultado = ResultadoMao(v, metricas.perfil_mao(rel, lado))
+        resultado.alcance = r
+        return resultado
 
-    def alinhar(self, real, jogo):
-        return Alinhamento([0.0], [0.0])
+    def preparar(self, jogo=None):
+        real = self.carregar_real()
+        rec, t0, _jogo = gravar_gesto(self.gesto)
+        lado_jogo = GESTOS[self.gesto]["lado"]
+        mov_jogo = rec.movimento()
+        daniel = real.alvo.movimento()
+        medida_real = self.medir(daniel)
+        medida_jogo = self.medir(mov_jogo, lado_jogo, a_partir_de=t0, relativo=True)
+        r_real, r_jogo = medida_real.alcance, medida_jogo.alcance
+        if r_real is not None and r_jogo is not None:
+            alinhamento = Alinhamento(marcas_de_fase(r_real), marcas_de_fase(r_jogo))
+        else:
+            alinhamento = Alinhamento([0.0], [t0])
+        real.movimento = daniel
+        return Preparado(self, real, rec, mov_jogo, 0.0, alinhamento, medida_real, [medida_real], medida_jogo)
 
     def fases_chave(self, prep):
-        duracao = prep.real.movimento.duracao
-        return [(f"{int(100 * f)}%", f * duracao) for f in (0.15, 0.4, 0.65, 0.9)]
+        r = prep.marcha_real.alcance
+        if r is None:
+            duracao = prep.real.movimento.duracao
+            return [(f"{int(100 * f)}%", f * duracao) for f in (0.15, 0.4, 0.65, 0.9)]
+        a, b = r["inicio"], r["fim"]
+        return [("antes do alcance", max(0.0, a - 0.15)), ("meio da subida", a + 0.3 * (b - a)), ("pico de velocidade", a + r["pico_fracao"] * (b - a)),
+                ("fim do alcance", b)]
 
     def legenda(self, prep):
-        return (f"REAL  {prep.real.rotulo}", self.resumo[:38]), (f"{self.rotulo_jogo}  {self.gesto}", "")
+        v_real, v_jogo = prep.marcha_real.v, prep.marcha_jogo.v
+        real = (f"REAL  {prep.real.rotulo}", f"alcance {v_real.get('alcance_t6', float('nan')):.2f} s, {v_real.get('alcance_distancia', float('nan')):.2f} m")
+        jogo = (f"{self.rotulo_jogo}  {self.gesto}", f"alcance {v_jogo.get('alcance_t6', float('nan')):.2f} s, {v_jogo.get('alcance_distancia', float('nan')):.2f} m")
+        return real, jogo
+
+    def executar(self, saida, vistas=None, fps=30, celula=None, video=True, folha=True, preparado=None, max_quadros=None, motor="workbench", **_):
+        """Tabela do alcance, perfil de velocidade, folha de contato [real | jogo] e vídeo."""
+        import time
+        from .. import comparar
+        inicio = time.time()
+        os.makedirs(saida, exist_ok=True)
+        celula = celula or comparar.CELULA
+        vistas = comparar.normalizar_vistas(vistas or self.vistas)
+        primeira = "primeira_pessoa" in vistas
+        terceira = [v for v in vistas if v != "primeira_pessoa"]
+        prep = preparado or self.preparar()
+        arquivos = self.medidas(prep, saida)
+        desenhista = DesenhistaMao(prep, celula, motor)
+        if folha:
+            caminho, _fases = comparar.folha_de_contato(desenhista, saida, terceira, primeira)
+            arquivos["folha_contato"] = caminho
+        if video and prep.marcha_real.alcance is not None:
+            r = prep.marcha_real.alcance
+            t_ini, t_fim = max(0.0, r["inicio"] - 0.3), min(prep.real.movimento.duracao, r["fim"] + 0.5)
+            total = int((t_fim - t_ini) / self.lento * fps)
+            t_max_jogo = prep.gravacao.t[-1]
+            while total > 1 and float(prep.alinhamento.jogo_de_real(t_ini + ((total - 1) / fps) * self.lento)) > t_max_jogo:
+                total -= 1
+            if max_quadros:
+                total = min(total, max_quadros)
+            colunas = 3 if len(terceira) + (2 if primeira else 0) + 1 > 4 else 2
+
+            def quadros():
+                for n in range(total):
+                    t_real = t_ini + (n / fps) * self.lento
+                    yield comparar._quadro_video(desenhista, terceira, primeira, t_real, f"quadro {n + 1}/{total}", colunas)
+
+            caminho, escritos = comparar.escrever_mp4(quadros(), os.path.join(saida, "video.mp4"), fps)
+            arquivos["video"] = caminho
+        print(f"[maos] {self.nome}: {', '.join(f'{k}={v}' for k, v in arquivos.items())} em {time.time() - inicio:.0f} s", flush=True)
+        return arquivos
+
+    def medidas(self, prep, saida):
+        """perfil.png (velocidade do punho normalizada pelo alcance, real e jogo) e metricas.json."""
+        from .. import graficos
+        arquivos = {}
+        perfis = []
+        for rotulo, resultado, cor in (("real (Daniel retargetado)", prep.marcha_real, graficos.COR_REAL), ("jogo", prep.marcha_jogo, graficos.COR_JOGO)):
+            r = resultado.alcance
+            if r is not None:
+                perfis.append((rotulo, resultado.perfil[r["a"]:r["b"]], 120.0 if "real" in rotulo else 60.0, cor))
+        if perfis:
+            r = prep.marcha_jogo.alcance
+            arquivos["perfil"] = graficos.painel_alcance(perfis, os.path.join(saida, "perfil.png"),
+                                                         titulo=f"{self.titulo}: velocidade do punho no alcance",
+                                                         modelo=(r["reta"], r["t6"]) if r else None)
+        registro = dict(cenario=self.nome, real=prep.marcha_real.v, jogo=prep.marcha_jogo.v)
+        with open(os.path.join(saida, "metricas.json"), "w", encoding="utf-8") as arquivo:
+            json.dump(registro, arquivo, ensure_ascii=False, indent=1, default=float)
+        arquivos["metricas"] = os.path.join(saida, "metricas.json")
+        return arquivos
+
+
+def _desenhista():
+    from .. import comparar
+
+    class DesenhistaMao(comparar.Desenhista):
+        """O `Desenhista` do comparar sem os eventos de marcha: o painel de texto mostra as métricas do alcance."""
+
+        def __init__(self, prep, celula=comparar.CELULA, motor="workbench"):
+            from tools.movimento_ref.palco import Palco
+            self.prep, self.celula = prep, celula
+            self.palco = Palco(celula[0], celula[1], motor)
+            self.alvo, self.rec = prep.real.alvo, prep.gravacao
+            self.palco.origem("real", self.alvo.raiz[0, :2], self.alvo.raiz[0, 3])
+            self.palco.origem("jogo", self.rec.raiz[0, :2], self.rec.raiz[0, 3])
+
+        def painel_info(self, t_real, fase_texto=""):
+            from PIL import Image, ImageDraw
+            prep, cen = self.prep, self.prep.cenario
+            imagem = np.full((self.celula[1], self.celula[0], 3), (252, 252, 251), np.uint8)
+            (real1, real2), (jogo1, jogo2) = cen.legenda(prep)
+            linhas = [(cen.titulo, comparar.TINTA, True, 15), ("", comparar.TINTA, False, 8), (real1, comparar.AZUL, True, 13),
+                      (real2, comparar.TINTA_SUAVE, False, 12), (jogo1, comparar.LARANJA, True, 13), (jogo2, comparar.TINTA_SUAVE, False, 12),
+                      ("", comparar.TINTA, False, 8),
+                      (f"câmera lenta x{cen.lento:g}; o jogo toca na fase do real (x{prep.alinhamento.razao(t_real):.2f})", comparar.TINTA_SUAVE, False, 11),
+                      (fase_texto, comparar.TINTA_SUAVE, False, 11), ("", comparar.TINTA, False, 8)]
+            for chave, rotulo in (("alcance_t6", "duração (s)"), ("alcance_pico_fracao", "pico em % da duração"),
+                                  ("alcance_pico_razao", "pico / média"), ("alcance_r2", "R2 do jerk mínimo")):
+                real, jogo = prep.marcha_real.v.get(chave, float("nan")), prep.marcha_jogo.v.get(chave, float("nan"))
+                linhas.append((f"{rotulo}:  real {real:.2f}   jogo {jogo:.2f}", comparar.TINTA, False, 12))
+            tela = Image.fromarray(imagem)
+            d = ImageDraw.Draw(tela)
+            y = 8
+            for texto, cor, negrito, tamanho in linhas:
+                d.text((10, y), texto, font=comparar.fonte(tamanho, negrito), fill=cor)
+                y += tamanho + 6
+            return np.array(tela)
+    return DesenhistaMao
+
+
+class _Preguica:
+    def __getattr__(self, nome):
+        return getattr(_desenhista(), nome)
+
+    def __call__(self, *a, **k):
+        return _desenhista()(*a, **k)
+
+
+DesenhistaMao = _Preguica()           # só importa comparar (e o palco) quando alguém desenha
 
 
 @registrar
@@ -457,6 +616,7 @@ class PegarChao(CenarioMao):
     clip = "26_09"
     lado_real = "e"
     gesto = "pilha_chao"
+    relativo = False              # no mocap o corpo todo abaixa com a mão; no jogo só o braço estica (a cobrar do corpo)
 
 
 @registrar
@@ -476,7 +636,7 @@ class LanternaOlhar(CenarioMao):
     titulo = "Olhar em volta com a lanterna (CMU 77_05) contra a lanterna na mão"
     resumo = "lanterna na mão direita, olhar em volta"
     clip = "77_05"
-    gesto = "segurar"
+    gesto = "varrer"
     lado_real = "d"
 
 
@@ -646,8 +806,6 @@ def principal(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--lista", action="store_true")
     ap.add_argument("--gerar-referencia", action="store_true", help="remede o mocap e grava assets/referencia/maos_ref.json")
-    ap.add_argument("--tabela", metavar="PASTA", help="mede o jogo e escreve a tabela completa em PASTA (use SA_ROOT para o 'antes')")
-    ap.add_argument("--rotulo", default="depois")
     args = ap.parse_args(argv)
     if args.lista:
         for nome, titulo in [(c.nome, c.titulo) for c in (PegarChao, Alcancar, LanternaOlhar, PegarChave, Pilhas, Nota)]:
@@ -657,9 +815,6 @@ def principal(argv=None):
         dados = gerar_referencia()
         print(json.dumps(dados, ensure_ascii=False, indent=1))
         return
-    if args.tabela:
-        from tools.movimento_ref.cenarios import maos_tabela
-        maos_tabela.medir_e_escrever(args.tabela, args.rotulo)
 
 
 if __name__ == "__main__":
