@@ -387,9 +387,10 @@ def teste_gravador_taxa_e_conteudo():
     ruido = [e for e in rec.eventos if e[1] == "ruido"]
     assert len(ruido) >= 3 and all(e[3] in ("walk", "run", "crouch_walk") for e in ruido), ruido[:4]
     assert [p[2] for p in rec.passos] == ["andar", "parar"]
-    # o jogador anda para +Y (guinada 0) na velocidade de andar do jogo: 3 s vão a ~3 x SPEED_WALK
+    # o jogador anda para +Y (guinada 0) na velocidade de andar do jogo: 3 s vão a ~3 x SPEED_WALK, mais a freada de
+    # C.STOP_TIME (0,65 s, metade da velocidade nesse tempo: ~0,33 x SPEED_WALK)
     deslocamento = rec.jogador["y"][-1] - rec.jogador["y"][0]
-    assert 2.3 * C.SPEED_WALK < deslocamento < 3.1 * C.SPEED_WALK, deslocamento
+    assert 2.3 * C.SPEED_WALK < deslocamento < 3.4 * C.SPEED_WALK, deslocamento
     assert not rec.meta["avisos"], rec.meta["avisos"]
     # 30 Hz: metade dos quadros, mesmo relógio
     rec30 = grava.gravar(jogo, grava.roteiro_de_texto("parar 1"), ossos="nenhum", cada=2)
