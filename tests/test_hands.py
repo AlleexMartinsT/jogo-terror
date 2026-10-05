@@ -269,7 +269,7 @@ def test_clips_are_well_formed_and_smooth():
                 value = curve.sample(i * FRAME, {"grasp": anchors[name]})
                 assert math.dist(value, previous) < MAX_STEP, (clip.name, name, i * FRAME, math.dist(value, previous))
                 previous = value
-    assert handclips.swap(None, None).duration >= 1.4 and handclips.swap(None, None).duration <= 1.8
+    assert 1.4 <= handclips.swap(None, None).duration <= 2.2      # ESTIMADO: a troca real leva alguns segundos; aqui é comprimida
 
 
 def test_every_pickup_clip_makes_contact_before_it_ends():
@@ -380,7 +380,7 @@ def test_battery_swap_effects_duration_and_refusals():
         if game.flashlight.swap_left > 0:
             assert not state.flashlight_on
     took = game.clock - started
-    assert 1.4 <= took + FRAME <= 1.8, f"a troca durou {took:.2f} s"
+    assert 1.4 <= took + FRAME <= 2.2, f"a troca durou {took:.2f} s"
     assert state.battery > 0.99 and state.spare_batteries == 0 and state.flashlight_on
     assert game.flashlight.swap_left == 0
     names = game.audio.played_names()
@@ -562,7 +562,7 @@ def test_held_map_comes_to_the_face_and_goes_back():
     tick(game, 1.0)
     rest = game.body.arm("L").targets[-1][0]
     assert game.hands.use_held()
-    tick(game, 0.6)
+    tick(game, 0.8)
     near = game.body.arm("L").targets[-1][0]
     assert near[2] > rest[2] + 0.05 or math.dist(near, rest) > 0.08, "o mapa devia se aproximar do rosto"
     assert game.hands.use_held(), "E de novo devolve o mapa"

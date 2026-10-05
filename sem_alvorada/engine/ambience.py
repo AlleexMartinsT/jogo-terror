@@ -5,12 +5,13 @@ também entram no cálculo de ruído: o jogador pode usá-los como cobertura e a
 Aqui só tocamos o WAV correspondente, na posição do evento.
 """
 from .. import layout
+from .clockwork import ClockWork
 
 REFRESH_SECONDS = 0.5
 LEVEL_PENALTY_M = 6.0      # som de outro andar conta como mais longe
 EVENT_VOLUME = (0.35, 0.65)   # volume mínimo e ganho sobre a força do ruído
-# Chiado de TV troca de padrão poucas vezes por segundo; a 60 quadros parece água correndo.
-STATIC_STEPS_PER_SECOND = 12
+# Chiado de TV: o ruído do tubo muda a cada campo (59,94/s no NTSC) e o olho junta dois campos num quadro de 29,97/s.
+STATIC_STEPS_PER_SECOND = 30
 
 # chave do loop, som, âncora (ou posição fixa, ou None), volume, alcance em metros
 LOOPS = [
@@ -55,15 +56,20 @@ class Ambience:
         self._playing = set()
         self._static_nodes = None
         self._static_left = 0.0
+        self.clockwork = ClockWork(getattr(game, "scene", None))      # pêndulo e ponteiro dos segundos do relógio da sala
+        self._chime_wait = None
 
     def reset(self):
         for key in list(self._playing):
             self.game.audio.stop("amb_" + key)
         self._playing.clear()
         self._refresh_left = 0.0
+        self._chime_wait = None
 
     def update(self, dt, events_enabled):
         self._animate_static(dt)
+        self.clockwork.update(dt)
+        self._update_chime(dt)
         self._refresh_left -= dt
         if self._refresh_left <= 0:
             self._refresh_left = REFRESH_SECONDS
@@ -88,7 +94,21 @@ class Ambience:
         sound = _event_sound(event, self.game.rng)
         if sound is not None:
             low, gain = EVENT_VOLUME
+            if sound == "clock_chime" and self.clockwork.pendulum is not None:
+                self._chime_wait = (self.clockwork.next_tick_in(), event, low + gain * event.loudness)   # começa numa batida
+                return
             self.game.audio.play(sound, event.pos, low + gain * event.loudness)
+
+    def _update_chime(self, dt):
+        if self._chime_wait is None:
+            return
+        wait, event, volume = self._chime_wait
+        wait -= dt
+        if wait > 0.0:
+            self._chime_wait = (wait, event, volume)
+            return
+        self._chime_wait = None
+        self.game.audio.play("clock_chime", event.pos, volume)
 
     def _distance(self, pos):
         player = self.game.player
@@ -105,8 +125,11 @@ class Ambience:
                 continue
             pos = _anchor_pos(anchor)
             if self._distance(pos) <= reach:
+                fresh = key not in self._playing
                 audio.loop(name, sound, pos, volume)
                 self._playing.add(key)
+                if fresh and key == "clock":
+                    self.clockwork.sync()                 # o laço recomeçou: o pêndulo cruza o centro 25 ms antes de cada tique
             elif key in self._playing:
                 audio.stop(name)
                 self._playing.discard(key)

@@ -49,7 +49,7 @@ from mathutils import Matrix, Quaternion, Vector
 
 from sem_alvorada.body import fingers as F
 from sem_alvorada.body import skeleton as S
-from sem_alvorada.body.solver import PoseSpec, solve
+from sem_alvorada.body.solver import ArmGoal, PoseSpec, solve
 
 from .metricas import comprimento_perna, estimar_piso, gaussiano
 from .movimento import ALTURA_TORNOZELO, INDICE, JUNTAS, MAPA_DANIEL, Movimento, movimento_de_mocap
@@ -267,6 +267,9 @@ def retargetar(clip, inicio=None, fim=None, bracos="direcao", nome=None, suaviza
     olhar_pos = np.zeros((total, 3))
     olhar_rot = mov.cabeca_rot.copy()
     memoria_dobradica = {nome: None for nome in ("Thigh.L", "Thigh.R", "UpperArm.L", "UpperArm.R")}
+    braco_mocap = float(np.mean([np.linalg.norm(j[f"cotovelo_{lado}"] - j[f"ombro_{lado}"], axis=1).mean()
+                                 + np.linalg.norm(j[f"punho_{lado}"] - j[f"cotovelo_{lado}"], axis=1).mean() for lado in "LR"]))
+    escala_braco = BRACO_DANIEL / braco_mocap
     rest_hinge = {nome: np.array(S.HINGE_REST[nome]) for nome in S.HINGE_REST}
     rest_mao = {lado: np.array(S.rest_basis(lado)) for lado in "LR"}
 
@@ -278,6 +281,7 @@ def retargetar(clip, inicio=None, fim=None, bracos="direcao", nome=None, suaviza
 
         world = {}                                            # osso -> W (3x3) no corpo
         local = {}
+        maos_alvo = {}
 
         def atribuir(nome, w):
             pai = PAI[INDICE_OSSO[nome]]
@@ -320,6 +324,7 @@ def retargetar(clip, inicio=None, fim=None, bracos="direcao", nome=None, suaviza
             f_mundo, p_mundo = giro @ rotacoes[k, clip.index(("Left" if lado == "L" else "Right") + "Hand")] @ f_rest, \
                 giro @ rotacoes[k, clip.index(("Left" if lado == "L" else "Right") + "Hand")] @ p_rest
             alvo_mao = quadro(f_mundo, p_mundo) @ rest_mao[lado].T
+            maos_alvo[lado] = (alvo_mao, direcao(f"ombro_{lado}", f"punho_{lado}"), cima_dir)
             eixo_ant = REPOUSO[antebraco]
             relativa = world[antebraco].T @ alvo_mao
             torcao = torcao_em_torno(relativa, eixo_ant)
@@ -361,15 +366,25 @@ def retargetar(clip, inicio=None, fim=None, bracos="direcao", nome=None, suaviza
             centro = (solucao.head[INDICE_OSSO["Thigh.L"]] + solucao.head[INDICE_OSSO["Thigh.R"]]) / 2.0
             desejado = Vector((0.0, 0.0, quadril_dan[k, 2]))
             especificacao.hips_shift = especificacao.hips_shift + (desejado - centro)
+        if bracos == "ik":
+            for lado in "LR":
+                alvo_mao, corda, cima_dir = maos_alvo[lado]
+                ombro = solucao.head[INDICE_OSSO[f"UpperArm.{lado}"]]
+                curva = cima_dir - corda * (cima_dir @ corda) / max(corda @ corda, 1e-9)
+                sinal = 1.0 if lado == "R" else -1.0
+                polo = Vector(curva / np.linalg.norm(curva)) if np.linalg.norm(curva) > 0.02 else Vector((sinal * 0.35, -0.30, -1.0))
+                especificacao.arms[lado] = ArmGoal(ombro + Vector(corda * escala_braco), para_quaternion(alvo_mao), polo, 1.0)
+            solucao = solve(especificacao)
+            for lado in "LR":
+                for osso in (f"UpperArm.{lado}", f"Forearm.{lado}", f"ForearmRoll.{lado}", f"Hand.{lado}"):
+                    q = solucao.local[INDICE_OSSO[osso]]
+                    locais[k, INDICE_OSSO[osso]] = (q.w, q.x, q.y, q.z)
         deslocamento[k] = tuple(especificacao.hips_shift)
         raiz[k, 2] = 0.0
         olho = solucao.head[INDICE_OSSO["Neck"]] + solucao.world[INDICE_OSSO["Neck"]] @ S.EYE_FROM_C7
         olhar_pos[k] = np.array([raiz[k, 0], raiz[k, 1], 0.0]) + np.array(Matrix.Rotation(guinada[k], 3, "Z") @ olho)
 
-    resultado = Retarget(nome or clip.name, clip.fps, escala, raiz, locais, deslocamento, olhar_pos, olhar_rot, origem=mov)
-    if bracos == "ik":
-        _bracos_por_ik(resultado, j, quadril_mocap)
-    return resultado
+    return Retarget(nome or clip.name, clip.fps, escala, raiz, locais, deslocamento, olhar_pos, olhar_rot, origem=mov)
 
 
 def _swing(world, nome, direcao_corpo):
@@ -393,7 +408,3 @@ def _dobradica(cima, baixo, memoria, nome, repouso_dobradica, w_pai):
         return memoria[nome]
     memoria[nome] = w_pai @ repouso_dobradica
     return memoria[nome]
-
-
-def _bracos_por_ik(resultado, j, quadril_mocap):
-    raise NotImplementedError("bracos='ik' ainda não implementado")

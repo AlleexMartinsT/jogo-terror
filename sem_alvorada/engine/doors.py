@@ -6,15 +6,22 @@ as propriedades dele têm a palavra final e a rotação é escrita nele a cada q
 
 Movimento
 ---------
-A folha percorre uma curva de grau 5 (jerk mínimo) entre o estado atual (posição, velocidade, aceleração)
-e o destino em repouso. Foi escolhida no lugar de uma mola amortecida porque:
-  - sai do repouso sem salto de aceleração e chega ao batente em tempo exato, sem a cauda infinita da mola
-    (o trinco e o resto da lógica precisam de um instante de chegada);
-  - a duração é um número que se controla (0,9 a 1,4 s conforme a porta e o jeito de abrir);
-  - mudar de ideia no meio parte do estado atual, então posição e velocidade continuam contínuas: a porta
-    ainda segue um pouco para onde ia (inércia) e só então volta, sem trancos.
-Fechar termina com uma acomodação curta (a lingueta estala e a folha volta um fio); a batida chega ao batente
-com velocidade e rebate duas vezes, cada vez menos.
+A folha é um corpo rígido numa dobradiça (I = m L^2 / 3, atrito seco e viscoso, arrasto do ar) empurrado por uma mão. Quem
+abre, fecha ou inverte a porta com a mão em contato leva a folha por uma curva de grau 5 (jerk mínimo) entre o estado atual
+(posição, velocidade, aceleração) e o destino em repouso: é a trajetória que o corpo humano escolhe (Flash e Hogan, 1985) e,
+com a dinâmica da folha, também a de mínima variação de torque, diferente dela em menos de 0,03% do curso. Por isso:
+  - sai do repouso sem salto de aceleração e chega ao batente em tempo exato (o trinco precisa de um instante de chegada);
+  - mudar de ideia no meio parte do estado atual, então posição e velocidade continuam contínuas e a folha ainda segue um
+    pouco para onde ia (inércia) antes de voltar;
+  - a duração não é arbitrária: nenhuma abertura é mais rápida do que a mão aguenta. A força de pico na maçaneta que a
+    curva exige da massa da porta (FORCE_COMFORT, FORCE_REVERSE) limita o tempo (`_hand_limited_seconds`), e os 0,9 a 1,4 s
+    ficam, assim, entre 40 e 100 N.
+Fechar chega ao batente com a velocidade que empurra a lingueta chanfrada por cima da contra-fechadura (LATCH_TIP_SPEED); a
+lingueta recolhe durante os últimos 11 mm e estala para fora na chegada. A batida não é guiada pela mão: é um golpe curto e forte
+(FORCE_SLAM por SLAM_PULSE s) e a folha solta corre sozinha até o batente (`Slam`, integração do corpo rígido), onde bate
+com a velocidade que a física dá (~4 m/s na ponta). O rebote no batente é balístico (restituição, e a folga da lingueta
+limita o retorno): arcos parabólicos cada vez menores (`Settle`). Números e conferência com um modelo independente:
+tools/movimento_ref/fisica/porta.py e comparar_porta.py.
 
 Ranger
 ------
@@ -60,17 +67,32 @@ SIGHT_HEIGHT = layout.DOOR_H
 MAX_STEP_SECONDS = 0.1    # nunca integra mais que isto de uma vez (o jogo já limita o quadro)
 HANDLE_LEAD = 0.14        # a maçaneta gira este tempo antes de a folha se mexer
 HANDLE_HOLD = 0.12        # e fica girada este tempo depois de a folha sair
-HANDLE_FOLLOW = 16.0      # 1/s: suavização da maçaneta e da lingueta
-BOLT_STROKE = 0.011       # curso da lingueta (m)
+HANDLE_FOLLOW = 16.0      # 1/s: a maçaneta gira seguindo a mão
+HANDLE_RELEASE = 45.0     # 1/s: e volta empurrada pela mola de retorno (~25 ms)
+BOLT_STROKE = 0.011       # curso da lingueta (m): fechadura residencial
 PARTIAL_BASE = 0.3        # duração de um trajeto parcial: seconds x (PARTIAL_BASE + (1 - PARTIAL_BASE) x distância)
 MIN_SECONDS = 0.45
-REVERSAL_SCALE = 0.75     # mudar de ideia no meio é mais rápido que uma abertura
-SLAM_SECONDS = 0.20
-SLAM_HIT_SPEED = 1.2      # velocidade ao bater, em múltiplos da média do trajeto
-SLAM_BOUNCES = (0.07, 0.030, 2)       # (duração de cada rebote s, amplitude, quantidade)
-LATCH_BOUNCE = (0.09, 0.012, 1)
-RATTLE_BOUNCE = (0.05, 0.006, 3)      # porta trancada sacudida
 PACE_SECONDS = {"apressado": 0.84, "normal": 1.0, "devagar": 1.06, "agachado": 1.14, "entidade": 0.95}
+
+# ---- física da folha (DERIVADO = lei; ESTIMADO = engenharia lembrada, com a faixa) ----
+LEAF_ARC = math.pi / 2           # a folha abre 90 graus
+KNOB_INSET = 0.07                # m: a maçaneta fica a 7 cm da borda livre (world/doorspec.py)
+LEAF_HEIGHT = 2.03               # m
+GRAVITY = 9.81
+HINGE_MU, HINGE_RADIUS = 0.20, 0.007     # ESTIMADO (0,15 a 0,35; 5 a 9 mm): atrito seco = mu m g r nas arruelas de empuxo
+HINGE_VISCOUS = 0.4              # N m s/rad, ESTIMADO (0,1 a 1,0): graxa velha
+AIR_DRAG = 0.125 * 1.2 * 1.2 * LEAF_HEIGHT       # 1/8 rho Cd h; vezes L^4 dá o torque k w|w| (DERIVADO, Cd 1,2 ESTIMADO)
+FORCE_COMFORT = 100.0            # N na maçaneta, esforço sustentado com uma mão (ESTIMADO 60 a 150)
+FORCE_REVERSE = 150.0            # N, frear a folha e voltar: esforço curto (ESTIMADO 100 a 250)
+FORCE_SLAM = 400.0               # N, golpe explosivo (ESTIMADO 300 a 500)
+SLAM_PULSE = 0.15                # s, duração do golpe (ESTIMADO 0,15 a 0,5)
+LATCH_TIP_SPEED = 0.30           # m/s na ponta ao chegar: empurra a lingueta chanfrada (mola de 3 a 8,5 N em 11 mm, ESTIMADO)
+RESTITUTION = 0.25               # batente de madeira com vedação (ESTIMADO 0,1 a 0,35)
+LATCH_PLAY = 0.003               # m, folga da lingueta na contra-fechadura (ESTIMADO 1 a 5 mm)
+SLAM_PLAY = 0.005                # m, o retorno de uma batida forte (folga + vedação comprimida)
+RETURN_PULL = 2.0                # rad/s2: mola da lingueta e vedação devolvendo a folha ao batente (ESTIMADO 1 a 4)
+SLAM_SOUND_LEAD = 0.19           # s do início de audio/recipes_doors.py:door_slam até o estrondo
+RATTLE_BOUNCE = (0.05, 0.004, 3)         # porta trancada sacudida: (duração de cada vaivém s, amplitude, quantidade)
 
 # ---- ranger ----
 SLOW_SPEED = 1.3
@@ -86,6 +108,7 @@ class DoorKind:
     creak_chance: float
     seconds: float             # duração de uma abertura completa em ritmo normal
     creak_weights: tuple       # preferência por door_creak_1..4 (madeira grave, metal, madeira e pino, carraca seca)
+    mass: float = 25.0         # kg da folha (ESTIMADO: madeira maciça com almofadas 20 a 30; porta de entrada isolada 35 a 50)
 
 
 KINDS = {
@@ -93,9 +116,9 @@ KINDS = {
     "banheiro": DoorKind(0.24, 1.10, (1, 3, 2, 2)),
     "escritorio": DoorKind(0.20, 1.12, (2, 1, 3, 3)),
     "sala": DoorKind(0.18, 1.12, (2, 1, 3, 2)),
-    "cozinha_garagem": DoorKind(0.24, 1.22, (1, 2, 2, 3)),
-    "exterior": DoorKind(0.36, 1.22, (4, 2, 1, 1)),
-    "portao": DoorKind(0.42, 1.22, (1, 4, 1, 2)),
+    "cozinha_garagem": DoorKind(0.24, 1.22, (1, 2, 2, 3), 32.0),
+    "exterior": DoorKind(0.36, 1.22, (4, 2, 1, 1), 40.0),
+    "portao": DoorKind(0.42, 1.22, (1, 4, 1, 2), 32.0),
 }
 CREAK_VARIANTS = 4
 
@@ -159,9 +182,48 @@ class Glide:
         return self.elapsed >= self.seconds
 
 
-@dataclass
 class Settle:
-    """A folha batendo no batente: `bounces` rebotes de `period` s, amplitude `amplitude` e decaimento por rebote."""
+    """A folha batendo no batente e voltando: arcos parabólicos cada vez menores.
+
+    Sai com `restitution` x a velocidade de impacto e uma mola (lingueta, vedação) a puxa de volta com aceleração `pull`,
+    então cada rebote é uma parábola. O primeiro não passa da folga da lingueta (`play`); a folga encolhe com e^2 a cada
+    rebote. Tudo em unidades de abertura (0..1) e segundos.
+    """
+
+    def __init__(self, hit, restitution=RESTITUTION, play=0.0024, pull=RETURN_PULL * 2.0 / math.pi):
+        self.arcs = []                    # (duração, altura) de cada rebote
+        speed, cap = restitution * abs(hit), play
+        while True:
+            height = min(speed * speed / (2.0 * pull), cap)
+            if height < 2e-5:
+                break
+            self.arcs.append((2.0 * math.sqrt(2.0 * height / pull), height))
+            speed *= restitution
+            cap *= restitution ** 2
+        self.elapsed = 0.0
+
+    @property
+    def seconds(self):
+        return sum(duration for duration, _ in self.arcs)
+
+    def advance(self, dt):
+        self.elapsed = min(self.elapsed + dt, self.seconds)
+        t = self.elapsed
+        for duration, height in self.arcs:
+            if t < duration:
+                u = t / duration
+                return 4.0 * height * u * (1.0 - u)
+            t -= duration
+        return 0.0
+
+    @property
+    def done(self):
+        return self.elapsed >= self.seconds
+
+
+@dataclass
+class Rattle:
+    """Porta trancada sacudida: a folha vibra na folga do ferrolho, `bounces` vaivéns de `period` s que se apagam."""
     period: float
     amplitude: float
     bounces: int
@@ -177,6 +239,54 @@ class Settle:
             return 0.0
         decay = math.exp(-self.elapsed / (1.2 * self.period))
         return self.amplitude * decay * abs(math.sin(math.pi * self.elapsed / self.period))
+
+    @property
+    def done(self):
+        return self.elapsed >= self.seconds
+
+
+class Slam:
+    """Batida: um golpe forte e curto da mão e a folha solta correndo até o batente. Integra o corpo rígido (mesmas
+    equações do modelo em tools/movimento_ref/fisica/porta.py) numa tabela e a percorre; fala a língua de `Glide`.
+
+        I w' = -F r sin(pi t / T) - atrito seco - viscoso - arrasto do ar          (0 <= t <= T, depois só a resistência)
+    """
+    STEP = 1.0 / 960.0
+
+    def __init__(self, x0, v0, mass, length):
+        arc = LEAF_ARC
+        radius = max(length - KNOB_INSET, 0.5 * length)
+        inertia = mass * length ** 2 / 3.0
+        dry = HINGE_MU * mass * GRAVITY * HINGE_RADIUS
+        air = AIR_DRAG * length ** 4
+        theta, omega, t = x0 * arc, v0 * arc, 0.0
+        xs, vs, accels = [x0], [v0], [0.0]
+        while theta > 0.0 and t < 3.0:
+            push = -FORCE_SLAM * radius * math.sin(math.pi * t / SLAM_PULSE) if t < SLAM_PULSE else 0.0
+            resist = (math.copysign(dry, omega) if omega else 0.0) + HINGE_VISCOUS * omega + air * omega * abs(omega)
+            alpha = (push - resist) / inertia
+            omega += alpha * self.STEP
+            theta += omega * self.STEP
+            t += self.STEP
+            xs.append(max(theta, 0.0) / arc)
+            vs.append(omega / arc)
+            accels.append(alpha / arc)
+        self._x, self._v, self._a = xs, vs, accels
+        self.seconds = (len(xs) - 1) * self.STEP
+        self.goal = 0.0
+        self.end_velocity = vs[-1]                    # velocidade de impacto, negativa (abertura/s)
+        self.coefficients = None
+        self.elapsed = 0.0
+
+    def advance(self, dt):
+        self.elapsed = min(self.elapsed + dt, self.seconds)
+        if self.elapsed >= self.seconds:
+            return self.goal, self.end_velocity, 0.0
+        position = self.elapsed / self.STEP
+        k = int(position)
+        f = position - k
+        lerp = lambda arr: arr[k] + (arr[k + 1] - arr[k]) * f      # noqa: E731
+        return lerp(self._x), lerp(self._v), lerp(self._a)
 
     @property
     def done(self):
@@ -212,6 +322,8 @@ class Door:
     turn_hold: float = 0.0        # segundos que a maçaneta ainda fica girada
     rested_since: Optional[float] = None      # None: nunca mexida (ou zerada), a ferrugem é máxima
     slam: bool = False
+    mass: float = 25.0            # kg
+    hit: float = 0.0              # velocidade (abertura/s) com que a folha chegou ao batente fechando
 
     @property
     def yaw(self):
@@ -251,7 +363,8 @@ def _read_door(op, scene):
     kind = classify(op)
     spec = KINDS[kind]
     door = Door(op.id, op.level, hinge, closed_yaw, open_yaw, op.width - 0.02, lock or "", pivot,
-                kind=kind, creak_chance=spec.creak_chance, seconds=spec.seconds, creak_weights=spec.creak_weights)
+                kind=kind, creak_chance=spec.creak_chance, seconds=spec.seconds, creak_weights=spec.creak_weights,
+                mass=spec.mass)
     if bolt is not None:
         door.bolt, door.bolt_rest = bolt, bolt.location.x
     door.refresh_segment()
@@ -392,7 +505,7 @@ class DoorManager:
     def _begin_closing(self, door, mid, hurried):
         creak = self._roll_creak(door, "player")
         if hurried:
-            self.game.make_noise("door_slam", mid, C.NOISE_PLAYER["door_slam"], sound="door_slam", opening=door.id)
+            self.game.make_noise("door_slam", mid, C.NOISE_PLAYER["door_slam"], opening=door.id)
             result = "slammed"
         else:
             self.game.make_noise("door_close", mid, C.NOISE_PLAYER["door_close"], sound="door_close", opening=door.id)
@@ -401,6 +514,9 @@ class DoorManager:
             self.game.make_noise("door_creak", mid, C.NOISE_PLAYER["door_creak"], sound=creak, opening=door.id)
         door.slam = hurried
         self._retarget(door, 0.0, lead=0.0)
+        if hurried:         # o estrondo da receita vem SLAM_SOUND_LEAD s depois do início: tem de cair no impacto
+            arrival = door.glide.seconds if door.glide is not None else 0.0
+            self._play(door, max(0.0, arrival - SLAM_SOUND_LEAD), "door_slam", mid, 1.0)
         return result
 
     def _rattle(self, door):
@@ -408,7 +524,7 @@ class DoorManager:
         if door.moving or door.openness > 0.0:
             return
         period, amplitude, bounces = RATTLE_BOUNCE
-        door.settle = Settle(period, amplitude, bounces)
+        door.settle = Rattle(period, amplitude, bounces)
 
     def _retarget(self, door, goal, lead, seconds=None):
         """Novo destino: parte do estado atual (posição, velocidade, aceleração) para o repouso em `goal`."""
@@ -421,21 +537,59 @@ class DoorManager:
             door.glide = None
             self._move_to(door, goal)
             return
+        if door.slam and goal == 0.0 and seconds is None:
+            door.glide = Slam(x, v, door.mass, door.length)
+            return
         reversing = v * (goal - x) < 0.0 and abs(v) > 0.05
-        slam = door.slam and goal == 0.0
+        forced = seconds is not None
         if seconds is None:
-            seconds = self._duration(door, distance, reversing, slam)
-        end_velocity = -SLAM_HIT_SPEED * distance / seconds if slam else 0.0
+            seconds = self._duration(door, distance, reversing)
+        end_velocity = 0.0
+        if goal == 0.0 and not forced:       # fecha com a velocidade que vence a lingueta, não parando na frente dela
+            end_velocity = -min(LATCH_TIP_SPEED / (door.length * LEAF_ARC), 1.2 * distance / seconds)
+        if not forced:
+            seconds = self._hand_limited_seconds(door, x, v, a, goal, seconds, end_velocity,
+                                                 FORCE_REVERSE if reversing else FORCE_COMFORT)
         coefficients = quintic_coefficients(x, v, a, goal, seconds, end_velocity)
         door.glide = Glide(coefficients, seconds, goal, end_velocity)
 
-    def _duration(self, door, distance, reversing, slam):
-        if slam:
-            return max(0.12, SLAM_SECONDS * (0.4 + 0.6 * distance))
-        seconds = door.seconds * PACE_SECONDS[door.pace] * (PARTIAL_BASE + (1.0 - PARTIAL_BASE) * min(distance, 1.0))
+    def _duration(self, door, distance, reversing):
+        """Duração desejada pelo ritmo; ao inverter no meio a mão freia e volta o mais rápido que o esforço curto deixa."""
         if reversing:
-            seconds *= REVERSAL_SCALE
+            return MIN_SECONDS
+        seconds = door.seconds * PACE_SECONDS[door.pace] * (PARTIAL_BASE + (1.0 - PARTIAL_BASE) * min(distance, 1.0))
         return max(MIN_SECONDS, seconds)
+
+    def hand_force(self, door, coefficients, seconds, samples=24):
+        """Força de pico (N) na maçaneta que a curva `coefficients` exige da mão: I alpha + atrito + arrasto, sobre o raio."""
+        radius = max(door.length - KNOB_INSET, 0.5 * door.length)
+        inertia = door.mass * door.length ** 2 / 3.0
+        dry = HINGE_MU * door.mass * GRAVITY * HINGE_RADIUS
+        air = AIR_DRAG * door.length ** 4
+        peak = 0.0
+        for i in range(samples + 1):
+            _, v, a = polynomial_state(coefficients, seconds * i / samples)
+            w = v * LEAF_ARC
+            torque = inertia * a * LEAF_ARC + (math.copysign(dry, w) if w else 0.0) + HINGE_VISCOUS * w + air * w * abs(w)
+            peak = max(peak, abs(torque) / radius)
+        return peak
+
+    def _hand_limited_seconds(self, door, x, v, a, goal, seconds, end_velocity, limit):
+        """Menor duração >= `seconds` cuja curva a mão faz com no máximo `limit` N na maçaneta (bisseção)."""
+        limit *= 0.995              # margem: a curva é amostrada, o pico verdadeiro cai entre duas amostras
+
+        def peak(duration):
+            return self.hand_force(door, quintic_coefficients(x, v, a, goal, duration, end_velocity), duration)
+        if peak(seconds) <= limit:
+            return seconds
+        low, high = seconds, seconds * 4.0
+        for _ in range(14):
+            mid = 0.5 * (low + high)
+            if peak(mid) > limit:
+                low = mid
+            else:
+                high = mid
+        return high
 
     def _halt(self, door):
         door.glide = door.settle = None
@@ -536,10 +690,19 @@ class DoorManager:
             return
         self._move_to(door, x)
         door.velocity, door.accel = v, a
+        if door.target == 0.0 and x < self._ramp(door):
+            # a lingueta chanfrada é empurrada para dentro pela contra-fechadura nos últimos 11 mm: a maçaneta gira junto
+            door.turn = max(door.turn, 1.0 - x / self._ramp(door))
+            self._write(door)
         if glide.done:
             door.glide = None
+            door.hit = abs(glide.end_velocity)
             door.velocity = door.accel = 0.0
             self._arrive(door)
+
+    def _ramp(self, door):
+        """Quanto da abertura (0..1) a lingueta leva para sair da contra-fechadura: curso / (raio da maçaneta x 90 graus)."""
+        return BOLT_STROKE / (max(door.length - KNOB_INSET, 0.5 * door.length) * LEAF_ARC)
 
     def _step_settle(self, door, dt):
         settle = door.settle
@@ -553,7 +716,7 @@ class DoorManager:
             door.rested_since = self.game.clock
 
     def _arrive(self, door):
-        """A folha parou. Chegando ao batente: trinco (ou a batida, que já tocou) e a acomodação."""
+        """A folha parou. Chegando ao batente: a lingueta estala para fora (trinco) ou a batida já tocou, e a folha rebate."""
         door.openness = door.target
         door.rested_since = self.game.clock
         if door.target != 0.0:
@@ -561,10 +724,9 @@ class DoorManager:
             self._move_to(door, door.target)
             return
         slam, door.slam = door.slam, False
-        period, amplitude, bounces = SLAM_BOUNCES if slam else LATCH_BOUNCE
+        play = (SLAM_PLAY if slam else LATCH_PLAY) / (max(door.length - KNOB_INSET, 0.5 * door.length) * LEAF_ARC)
         self._move_to(door, 0.0)
-        door.settle = Settle(period, amplitude, bounces)
-        self._pull_handle(door, period)
+        door.settle = Settle(door.hit, RESTITUTION, play)
         if not slam:
             self.game.sound("door_latch", self.center(door.id), 0.75)
 
@@ -578,7 +740,8 @@ class DoorManager:
         goal = 1.0 if door.turn_hold > 0.0 else 0.0
         door.turn_hold = max(0.0, door.turn_hold - dt)
         if door.turn != goal:
-            door.turn += (goal - door.turn) * (1.0 - math.exp(-HANDLE_FOLLOW * dt))
+            rate = HANDLE_FOLLOW if goal > door.turn else HANDLE_RELEASE
+            door.turn += (goal - door.turn) * (1.0 - math.exp(-rate * dt))
             if abs(door.turn - goal) < 1e-3:
                 door.turn = goal
             self._write(door)

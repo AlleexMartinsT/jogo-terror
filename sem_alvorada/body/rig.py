@@ -51,6 +51,7 @@ class ArmControl:
         self._spread = F.RELAXED_SPREAD
         self._goal_curls = list(F.RELAXED_CURLS)
         self._goal_spread = F.RELAXED_SPREAD
+        self._cascade = F.FingerCascade(F.RELAXED_CURLS)
         self._finger_q = {}
         self._finger_dirty = True
         self._held = []                  # [(obj, offset 4x4, estado salvo)]
@@ -134,20 +135,17 @@ class ArmControl:
         return self._target is not None and self._weight > 0.0
 
     def _advance_fingers(self, dt):
-        """Aproxima os dedos mostrados do alvo; devolve os quaternions locais quando algo mudou."""
-        step = 1.0 - math.exp(-HAND_BLEND_RATE * dt)
-        changed = False
+        """Aproxima os dedos mostrados do alvo (em cascata, base -> ponta); devolve os quaternions locais quando algo mudou."""
+        changed = self._cascade.step(dt, self._goal_curls)
         for i in range(5):
-            delta = self._goal_curls[i] - self._curls[i]
-            if abs(delta) > 1e-4:
-                self._curls[i] += delta * step if abs(delta) * (1.0 - step) > 1e-4 else delta
-                changed = True
+            self._curls[i] = self._cascade.joint[i][0]
+        step = 1.0 - math.exp(-HAND_BLEND_RATE * dt)
         delta = self._goal_spread - self._spread
         if abs(delta) > 1e-4:
             self._spread += delta * step
             changed = True
         if changed or not self._finger_q:
-            self._finger_q = F.finger_rotations(self.side, self._curls, self._spread)
+            self._finger_q = F.finger_rotations(self.side, self._curls, self._spread, self._cascade.joint)
             self._finger_dirty = True
         else:
             self._finger_dirty = False
@@ -257,6 +255,7 @@ class BodyRig:
             arm._swivel = 0.0
             arm._curls[:] = F.RELAXED_CURLS
             arm._goal_curls[:] = F.RELAXED_CURLS
+            arm._cascade.reset(F.RELAXED_CURLS)
             arm._spread = arm._goal_spread = F.RELAXED_SPREAD
             arm._finger_q = {}
         self._mode = "follow"

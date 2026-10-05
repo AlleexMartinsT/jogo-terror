@@ -17,7 +17,7 @@ from mathutils import Euler, Matrix, Quaternion, Vector
 from .. import conventions as C
 from . import collision
 from . import handclips as K
-from .handheld import Handhelds, Pendulum, PivotAcceleration, Sway
+from .handheld import GRAVITY, Handhelds, Pendulum, PivotAcceleration, Sway, SupportAcceleration
 from .handtrack import ClipPlayer, number
 
 FOV_ZOOM = 0.17                  # quanto o campo de visão fecha quando o rosto "se aproxima" de uma nota na parede
@@ -47,8 +47,9 @@ class Hands:
         self.game = game
         self.runner = ClipPlayer()
         self.models = Handhelds(game.scene, game.player_cam)
-        self.pendulum = Pendulum()
+        self.pendulum = Pendulum(self.models.key_pendulum_lengths())
         self.pivot = PivotAcceleration()
+        self.paper_support = SupportAcceleration()
         self.sway = {"R": Sway(0.0, 1.0), "L": Sway(1.7, 0.8)}
         self.last = {}                          # última pose entregue por lado: (pos, rot, curl, peso)
         self._base_fov = None
@@ -114,6 +115,8 @@ class Hands:
             sway.reset()
         self.pendulum.reset()
         self.pivot.reset()
+        self.paper_support.reset()
+        self.models.sheet.reset()
         self._hide_everything()
 
     def suspend(self):
@@ -430,7 +433,7 @@ class Hands:
         hard = game.player.breathing_hard
         self._pose_hand("R", channels, dt, bob, yaw_rate, pitch_rate, hard)
         self._pose_hand("L", channels, dt, bob, yaw_rate, pitch_rate, hard)
-        self._apply_extras(channels)
+        self._apply_extras(channels, dt)
         self._apply_visibility()
 
     def _track_rest(self):
@@ -490,6 +493,10 @@ class Hands:
         reach = Vector(self._world_point(target))
         if reach.length > K.REACH_LIMIT:
             reach *= K.REACH_LIMIT / reach.length
+        if reach.y > K.REACH_DROP:                       # abaixo da linha do olhar, à mesma distância do rosto
+            reach.y = K.REACH_DROP
+            flat = max(K.REACH_LIMIT ** 2 - reach.x ** 2 - reach.y ** 2, 0.0) ** 0.5
+            reach.z = -min(flat, -reach.z) if reach.z < 0.0 else -flat
         reach.z = min(reach.z, -0.20)
         return reach
 
@@ -576,6 +583,7 @@ class Hands:
             self._tick_key(dt, matrix)
             matrix = matrix @ self.pendulum.matrix()
         elif kind == C.ITEM_NOTE:
+            self._tick_paper(dt, matrix)
             scale = (scale[0] * self._paper_size[0], scale[1] * self._paper_size[1], scale[2])
         if kind == C.ITEM_FLASHLIGHT:
             self.game.flashlight.lantern_matrix = matrix
@@ -606,9 +614,17 @@ class Hands:
             self.game.make_noise("key_jingle", player.feet, C.NOISE_PLAYER["key_jingle"], sound="key_jingle")
         self._previous_step = step
 
-    def _apply_extras(self, channels):
+    def _tick_paper(self, dt, matrix):
+        """A folha pende pela borda de baixo: a gravidade efetiva (g menos a aceleração da mão) na normal dela a dobra."""
+        origin = self._cam[0] @ matrix.translation
+        support = Vector(self.paper_support.update(dt, tuple(origin)))
+        effective = Vector((0.0, 0.0, -GRAVITY)) - support
+        normal = (self._cam[0].to_3x3() @ matrix.to_3x3().col[2]).normalized()
+        self.models.set_sheet_droop(self.models.sheet.step(dt, effective.dot(normal)))
+
+    def _apply_extras(self, channels, dt):
         self.models.set_cap(channels["x.cap"][0])
-        self.models.set_map_folds(channels["x.fold1"][0], channels["x.fold2"][0])
+        self.models.set_map_folds(channels["x.fold1"][0], channels["x.fold2"][0], dt)
         self._apply_zoom(channels["x.zoom"][0])
 
     def _apply_zoom(self, amount):
@@ -628,3 +644,7 @@ class Hands:
         if C.ITEM_KEY not in shown:
             self.pivot.reset()
             self.pendulum.reset()
+        if C.ITEM_NOTE not in shown:
+            self.paper_support.reset()
+            self.models.sheet.reset()
+            self.models.set_sheet_droop(0.0)

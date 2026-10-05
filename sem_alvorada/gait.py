@@ -19,7 +19,12 @@ from . import gait_data as D
 N = D.PONTOS
 LEG = D.LEG_DANIEL                  # coxa + canela do Daniel (m); as tabelas de pé vêm em unidades de perna
 G = 9.81
-STAND_LEAN = 1.0                    # graus: inclinação do tronco parado (77_02, 111_28, 113_21, 16_33)
+HIP_STRAIGHT = 0.93                 # altura da junta do quadril do Daniel com a perna esticada (m)
+# O chão do BVH não tem altura conhecida (+-2,5 cm), então a queda do quadril medida pela altura absoluta é incerta.
+# O que o mocap garante é a distância quadril-tornozelo sobre o comprimento da perna: 0,955 no apoio médio (5 clipes de
+# andar rápido); o Daniel só chega a ela com mais esta queda, ajustada nos testes de `tests/test_locomocao.py`.
+HIP_DROP_EXTRA = {"walk": 0.020, "run": 0.020, "crouch": 0.0}
+STAND_LEAN = 3.0                    # graus: a inclinação (pelve->pescoço) de quem anda em linha reta, do repouso do jogo ao medido
 RUN_FROM, RUN_TO = 2.1, 3.1         # m/s: a corrida entra aos 2,1 e é plena aos 3,1 (transição humana perto de 2 m/s)
 MIN_SPEED = 0.30                    # m/s: abaixo disto o corpo não dá passos
 FULL_SPEED = 0.45                   # m/s: a partir daqui as amplitudes do passo são plenas
@@ -39,7 +44,7 @@ def smoothstep(x):
 
 class Node:
     """Uma faixa de velocidade: curvas do ciclo e os escalares que o jogo usa (passo, apoio, alcance)."""
-    __slots__ = ("name", "v", "cadence", "step", "duty", "double", "lean", "curves", "reach")
+    __slots__ = ("name", "v", "cadence", "step", "duty", "double", "lean", "curves", "reach", "drop", "flat", "flat_front")
 
     def __init__(self, raw):
         self.name = raw["nome"]
@@ -49,11 +54,17 @@ class Node:
         self.duty = raw["apoio"]
         self.double = raw["duplo"]
         self.lean = raw["tronco_incl"] - STAND_LEAN
+        self.drop = (1.0 - raw.get("razao_quadril", 1.0)) * HIP_STRAIGHT
         self.curves = {k: tuple(v) for k, v in raw["curvas"].items()}
         for k in CENTERED:            # só a oscilação conta: a média é a postura de repouso do Daniel, não a do sujeito
             mean = sum(self.curves[k]) / N
             self.curves[k] = tuple(x - mean for x in self.curves[k])
         front = self.curves["pe_frente"]
+        lo = int(round(0.3 * self.duty * N))
+        hi = max(int(round(0.7 * self.duty * N)), lo + 2)
+        pitch = self.curves["pe"]
+        self.flat = min(range(lo, hi), key=lambda i: abs(pitch[i]))          # índice do pé plano no apoio médio
+        self.flat_front = front[self.flat]
         self.reach = (front[0] - front[int(round(self.duty * N)) % N]) * LEG          # quanto o pé anda no apoio (m)
 
 
@@ -127,7 +138,7 @@ def sample(table, c):
 
 class Sampled:
     """Curvas amostradas num instante: valores do pé de referência (esquerdo, em `c`) e do outro pé (em `c + 0,5`)."""
-    __slots__ = ("c", "speed", "weights", "step", "duty", "reach", "lean", "lean_crouch", "values", "other")
+    __slots__ = ("c", "speed", "weights", "step", "duty", "reach", "lean", "lean_crouch", "drop", "flat_phase", "flat_front", "values", "other")
 
 
 def evaluate(c, speed, crouch=0.0, keys=None):
@@ -142,7 +153,7 @@ def evaluate(c, speed, crouch=0.0, keys=None):
     here, there = _cubic_weights(c), _cubic_weights(c + 0.5)
     values = dict.fromkeys(keys, 0.0)
     other = dict.fromkeys(keys, 0.0)
-    duty = reach = lean = lean_crouch = 0.0
+    duty = reach = lean = lean_crouch = drop = flat_phase = flat_front = 0.0
     for mode, wm in zip(MODES, weights):
         if wm <= 1e-6:
             continue
@@ -159,12 +170,16 @@ def evaluate(c, speed, crouch=0.0, keys=None):
                 other[k] += w * (table[i0] * w0 + table[i1] * w1 + table[i2] * w2 + table[i3] * w3)
             duty += w * node.duty
             reach += w * node.reach
+            drop += w * (node.drop + HIP_DROP_EXTRA[mode])
+            flat_phase += w * node.flat / N
+            flat_front += w * node.flat_front
             if mode == "crouch":
                 lean_crouch += w * node.lean
             else:
                 lean += w * node.lean
     out.values, out.other = values, other
-    out.duty, out.reach, out.lean, out.lean_crouch = duty, reach, lean, lean_crouch
+    out.duty, out.reach, out.lean, out.lean_crouch, out.drop = duty, reach, lean, lean_crouch, drop
+    out.flat_phase, out.flat_front = flat_phase, flat_front
     out.step = step_length(speed, weights)
     return out
 

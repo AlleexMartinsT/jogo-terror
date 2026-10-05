@@ -24,7 +24,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, ROOT)
 
 from tools.marcha import medir as M  # noqa: E402
-from tools.movimento_ref import cmu  # noqa: E402
+from tools.movimento_ref import cmu, metricas, movimento  # noqa: E402
 
 PONTOS = 50                       # amostras por ciclo nas tabelas do jogo
 G = 9.81
@@ -114,6 +114,15 @@ def pool_curvas(lista):
     return out
 
 
+def razao_quadril(cid):
+    """Altura média da junta do quadril sobre (coxa + canela + 0,085 m de tornozelo): 1,0 = perna esticada.
+    Usa o piso e o comprimento da perna de `tools.movimento_ref.metricas` (o mesmo método da tabela real x jogo)."""
+    mov = movimento.movimento_de_mocap(cmu.carregar(cid))
+    piso = metricas.altura_do_piso(mov)
+    quadril = 0.5 * (mov.j("coxa_e")[:, 2] + mov.j("coxa_d")[:, 2]) - piso
+    return float(quadril.mean() / (metricas.comprimento_perna(mov) + movimento.ALTURA_TORNOZELO))
+
+
 def processa(clipes):
     """Pool de passadas e escalares de uma lista [(id, Captura)]."""
     pools, escalares = [], []
@@ -122,8 +131,9 @@ def processa(clipes):
         m = M.medir(cap, ev)
         m["id"] = cid
         m["perna"] = perna(cap)
+        m["razao_quadril"] = razao_quadril(cid) if cid in CLIPES_ANDAR + CLIPES_CORRER else float("nan")
         escalares.append(m)
-        curvas, _t = M.curvas_por_passada(cap, ev)
+        curvas, _t = M.curvas_por_passada(cap, ev, apoio=m.get("apoio_pct", 60.0) / 100.0)
         if not curvas:
             continue
         curvas = dict(curvas)
@@ -214,6 +224,8 @@ def escreve_modulo(faixas, fit_walk, fit_run, caminho):
                           f' "duplo": {r["duplo_apoio_pct"]["media"] / 100.0:.4f},')
             lean = faixas[nome]["curvas"]["tronco_incl"][0].mean() if "tronco_incl" in faixas[nome]["curvas"] else 0.0
             linhas.append(f'            "tronco_incl": {lean:.2f},')
+            razao = r.get("razao_quadril", {}).get("media", 1.0)       # agachado: a altura vem dos olhos, sem queda extra
+            linhas.append(f'            "razao_quadril": {razao:.4f},')
             linhas.append('            "curvas": {')
             for k in CURVAS_JOGO:
                 mean = periodico(f["curvas"][k][0])

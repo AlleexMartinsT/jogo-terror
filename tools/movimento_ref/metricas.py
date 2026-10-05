@@ -18,7 +18,8 @@ Definições (todas sobre posições, para não depender de como cada esqueleto 
     passo                distância, na direção do avanço, entre os tornozelos no toque de um pé (à frente) e o outro (atrás)
     cadência             passos por minuto = 60 / intervalo médio entre toques sucessivos de pés opostos
     apoio                tempo de contato do pé / tempo da passada
-    duplo apoio          tempo com os dois pés em contato; "por passo" divide pelo tempo médio de um passo (~10%)
+    duplo apoio          tempo com os dois pés em contato. "passo_pct" é cada um dos dois duplos apoios da passada, em % da
+                         passada (o "~10%" dos livros); "ciclo_pct" é o total (~20%)
     deslize do pé        deslocamento horizontal de um ponto do pé (tornozelo, bola, ponta) enquanto ele está encostado no
                          chão, por apoio (0 = pé fixo)
     ângulos              no plano sagital do corpo (frente suavizada x vertical); hip e joelho positivos = flexão,
@@ -421,8 +422,10 @@ def medir_marcha(mov, metodo="auto"):
         primeiro, ultimo = toques[0][0], toques[-1][0]
         tempo = (ultimo - primeiro) / fps
         if tempo > 0:
-            deslocamento = np.linalg.norm((quadril[ultimo] - quadril[primeiro])[:2])
-            v["velocidade"] = float(deslocamento / tempo)
+            # comprimento do trajeto do quadril no chão (levemente suavizado, o clipe todo, para a borda não encolher o
+            # trecho) por tempo: vale em linha reta, em curva e em passos laterais
+            trajeto = gaussiano(quadril[:, :2], 0.08, fps)[primeiro:ultimo + 1]
+            v["velocidade"] = float(np.linalg.norm(np.diff(trajeto, axis=0), axis=1).sum() / tempo)
         intervalos = np.array([(b - a) / fps for (a, la), (b, lb) in zip(toques[:-1], toques[1:]) if la != lb])
         if len(intervalos):
             v["cadencia"] = float(60.0 / intervalos.mean())
@@ -640,6 +643,47 @@ def fases_do_duplo_apoio(eventos, lado="e"):
     return [(a / (CICLO_PONTOS - 1), (b - 1) / (CICLO_PONTOS - 1)) for a, b in _corridas(media)]
 
 
+def fases_do_ponto_baixo_por_passo(altura, eventos):
+    """Em cada passo (de um toque do calcanhar ao toque do pé oposto), a fração do passo (0..1) em que `altura` é mínima,
+    sem a tendência linear do passo. Devolve (fases [n], duplo apoio [n, 2]): o intervalo do passo (fração) em que os dois
+    pés tocam o chão (NaN, NaN se não há)."""
+    toques = eventos.todos_toques()
+    ambos = eventos.contato["e"] & eventos.contato["d"]
+    fases, duplos = [], []
+    for (a, la), (b, lb) in zip(toques[:-1], toques[1:]):
+        if la == lb or b - a < 4:
+            continue
+        trecho = _sem_linha(np.asarray(altura[a:b + 1], float))
+        fases.append(float(np.argmin(trecho) / (len(trecho) - 1)))
+        # o duplo apoio do passo é o que começa no toque (o pé anterior ainda no chão); o do fim já é do passo seguinte
+        parcial = ambos[a:b + 1]
+        fim = int(np.argmin(parcial)) if (not parcial.all() and parcial[0]) else 0
+        duplos.append((0.0, (fim - 1) / (len(trecho) - 1)) if fim > 0 else (NAN, NAN))
+    return np.array(fases), np.array(duplos).reshape(-1, 2)
+
+
+def cabeca_baixa_no_duplo_apoio(altura, eventos, folga=0.08):
+    """Fração dos passos em que o ponto mais baixo da cabeça cai no duplo apoio (com `folga` de fração do passo para
+    cada lado). Sem duplo apoio no movimento, devolve 0 (a condição não se cumpre)."""
+    fases, duplos = fases_do_ponto_baixo_por_passo(altura, eventos)
+    if not len(fases):
+        return NAN
+    dentro = [np.isfinite(d0) and d0 - folga <= f <= d1 + folga for f, (d0, d1) in zip(fases, duplos)]
+    return float(np.mean(dentro))
+
+
+def frequencia_dominante(sinal, fps, minimo=0.5, maximo=6.0):
+    """Frequência (Hz) do maior pico do espectro de `sinal` entre `minimo` e `maximo` (tendência removida, janela de Hann)."""
+    sinal = np.asarray(sinal, float)
+    sinal = sinal - np.polyval(np.polyfit(np.arange(len(sinal)), sinal, 1), np.arange(len(sinal)))
+    janela = np.hanning(len(sinal))
+    n = 8 * len(sinal)
+    espectro = np.abs(np.fft.rfft(sinal * janela, n))
+    frequencias = np.fft.rfftfreq(n, 1.0 / fps)
+    faixa = (frequencias >= minimo) & (frequencias <= maximo)
+    return float(frequencias[faixa][np.argmax(espectro[faixa])])
+
+
 # --------------------------------------------------------------------------
 # Mãos: perfil de velocidade e jerk mínimo
 # --------------------------------------------------------------------------
@@ -649,27 +693,39 @@ def perfil_mao(mov, lado="d", junta="punho", suavizar_s=0.04):
     return np.linalg.norm(derivada(pos, mov.fps), axis=1)
 
 
-def detectar_alcances(velocidade, fps, vel_minima=0.25, fracao=0.08, duracao_minima=0.20):
-    """Trechos (início, fim exclusivo) de movimento da mão: em torno de cada pico acima de `vel_minima`, o trecho
-    vai até a velocidade cair a `fracao` do pico (ou a um mínimo local)."""
-    n = len(velocidade)
-    picos = [i for i in range(1, n - 1)
-             if velocidade[i] >= vel_minima and velocidade[i] >= velocidade[i - 1] and velocidade[i] > velocidade[i + 1]]
+def detectar_alcances(velocidade, fps, vel_minima=0.25, fracao=0.08, duracao_minima=0.20, vale=0.30):
+    """Trechos (início, fim exclusivo) de cada movimento da mão: picos acima de `vel_minima` separados por vales que caem
+    abaixo de `vale` x o menor dos dois picos; cada trecho se estende até a velocidade cair a `fracao` do seu pico."""
+    v = np.asarray(velocidade, float)
+    n = len(v)
+    picos = [i for i in range(1, n - 1) if v[i] >= vel_minima and v[i] >= v[i - 1] and v[i] > v[i + 1]]
+    if not picos:
+        return []
+    grupos = [[picos[0]]]
+    for anterior, atual in zip(picos[:-1], picos[1:]):
+        fundo = v[anterior:atual + 1].min()
+        if fundo < vale * min(v[anterior], v[atual]):
+            grupos.append([atual])
+        else:
+            grupos[-1].append(atual)
+    cortes = [0]
+    for g_ant, g_atual in zip(grupos[:-1], grupos[1:]):
+        trecho = v[g_ant[-1]:g_atual[0] + 1]
+        cortes.append(g_ant[-1] + int(np.argmin(trecho)))
+    cortes.append(n)
     alcances = []
-    for i in picos:
-        if alcances and i < alcances[-1][1]:
-            if velocidade[i] > velocidade[alcances[-1][2]]:
-                alcances[-1] = (alcances[-1][0], alcances[-1][1], i)
-            continue
-        limite = fracao * velocidade[i]
-        a = i
-        while a > 0 and velocidade[a - 1] > limite and velocidade[a - 1] <= velocidade[a] * 1.001 + 1e-9:
+    for grupo, limite_esq, limite_dir in zip(grupos, cortes[:-1], cortes[1:]):
+        pico = max(grupo, key=lambda i: v[i])
+        limite = fracao * v[pico]
+        a = pico
+        while a > limite_esq and v[a - 1] > limite:
             a -= 1
-        b = i
-        while b < n - 1 and velocidade[b + 1] > limite and velocidade[b + 1] <= velocidade[b] * 1.001 + 1e-9:
+        b = pico
+        while b < limite_dir - 1 and v[b + 1] > limite:
             b += 1
-        alcances.append((a, b + 1, i))
-    return [(a, b) for a, b, _p in alcances if (b - a) / fps >= duracao_minima]
+        if (b + 1 - a) / fps >= duracao_minima:
+            alcances.append((a, b + 1))
+    return alcances
 
 
 def ajuste_jerk_minimo(velocidade, inicio, fim, fps):
@@ -749,39 +805,43 @@ def resumo_cabeca(mov):
 # Tabela real x jogo
 # --------------------------------------------------------------------------
 # chave: (rótulo, unidade, casas, tipo de tolerância, valor). "rel": fração do valor real; "abs": na unidade.
-# As tolerâncias partem da variação entre PESSOAS REAIS: duas pessoas andando "normal" diferem em cadência e
-# comprimento de passo por 5 a 10 %, e nos picos articulares por 4 a 8 graus (medido nos clipes de referência;
-# veja `dispersao_populacao`). Quem tuna o jogo pode apertar ou afrouxar passando outra tabela a `comparar_metricas`.
+# TOLERÂNCIA = um desvio-padrão ENTRE PESSOAS REAIS (medido nos 12 clipes de cmu.GRUPOS["andar"], 7 pessoas, 1,2 a 1,6 m/s),
+# arredondado para cima, ou um piso de engenharia quando as pessoas variam menos que o erro de medida (oscilações da cabeça e do
+# quadril, deslize). Ou seja: o jogo está "dentro" quando uma pessoa real qualquer poderia ter feito aquilo. Desvios medidos
+# (velocidade 0,14 m/s; cadência 4,5; passo 0,059 m; apoio 3,3%; duplo apoio 3,3%; joelho 4,3 e 2,7 graus; quadril 8,0 e 2,1;
+# tornozelo 6,0 e 6,3; pelve 4,0; tórax 2,7; braço 17; cotovelo 2,9; tronco 2,3; cabeça vertical 0,6 cm e lateral 0,6 cm;
+# velocidade angular da cabeça 7,7 graus/s). Quem tuna um gesto pode apertar ou afrouxar passando outra tabela a
+# `comparar_metricas` (ou `Cenario.campos`).
 CAMPOS_MARCHA = {
-    "velocidade": ("velocidade do quadril", "m/s", 2, "rel", 0.10),
+    "velocidade": ("velocidade do quadril", "m/s", 2, "rel", 0.12),
     "cadencia": ("cadência", "passos/min", 0, "rel", 0.10),
     "passada": ("comprimento da passada", "m", 2, "rel", 0.10),
     "passo": ("comprimento do passo", "m", 2, "rel", 0.10),
     "largura_passo": ("largura do passo", "m", 3, "abs", 0.04),
     "apoio_pct": ("apoio (% da passada)", "%", 1, "abs", 4.0),
-    "duplo_apoio_passo_pct": ("duplo apoio (% do passo)", "%", 1, "abs", 4.0),
-    "duplo_apoio_ciclo_pct": ("duplo apoio (% da passada)", "%", 1, "abs", 8.0),
+    "duplo_apoio_passo_pct": ("duplo apoio, cada um (% da passada)", "%", 1, "abs", 4.0),
+    "duplo_apoio_ciclo_pct": ("duplo apoio, total (% da passada)", "%", 1, "abs", 8.0),
     "voo_pct": ("fase de voo (% da passada)", "%", 1, "abs", 4.0),
     "deslize_apoio": ("deslize do pé no apoio", "m", 3, "abs", 0.03),
-    "deslize_vel_p95": ("velocidade do pé em contato (p95)", "m/s", 2, "abs", 0.25),
+    "deslize_vel_p95": ("velocidade do pé em contato (p95)", "m/s", 2, "abs", 0.30),
     "quadril_altura": ("altura do quadril", "m", 3, "rel", 0.05),
     "quadril_osc_vert": ("oscilação vertical do quadril (pico a pico)", "m", 3, "abs", 0.015),
     "cabeca_osc_vert": ("oscilação vertical da cabeça", "m", 3, "abs", 0.015),
     "cabeca_osc_lat": ("oscilação lateral da cabeça", "m", 3, "abs", 0.015),
     "joelho_apoio_max": ("joelho: flexão no apoio", "graus", 1, "abs", 8.0),
-    "joelho_balanco_max": ("joelho: flexão no balanço", "graus", 1, "abs", 10.0),
-    "quadril_min": ("quadril: extensão máxima", "graus", 1, "abs", 8.0),
-    "quadril_max": ("quadril: flexão máxima", "graus", 1, "abs", 8.0),
-    "tornozelo_min": ("tornozelo: mínimo (plantiflexão)", "graus", 1, "abs", 8.0),
-    "tornozelo_max": ("tornozelo: máximo (dorsiflexão)", "graus", 1, "abs", 8.0),
-    "pelve_rot_pp": ("rotação da pelve (pico a pico)", "graus", 1, "abs", 4.0),
+    "joelho_balanco_max": ("joelho: flexão no balanço", "graus", 1, "abs", 8.0),
+    "quadril_min": ("quadril: extensão máxima", "graus", 1, "abs", 10.0),
+    "quadril_max": ("quadril: flexão máxima", "graus", 1, "abs", 6.0),
+    "tornozelo_min": ("tornozelo: mínimo (plantiflexão)", "graus", 1, "abs", 9.0),
+    "tornozelo_max": ("tornozelo: máximo (dorsiflexão)", "graus", 1, "abs", 9.0),
+    "pelve_rot_pp": ("rotação da pelve (pico a pico)", "graus", 1, "abs", 5.0),
     "torax_rot_pp": ("rotação do tórax (pico a pico)", "graus", 1, "abs", 5.0),
-    "ombro_pp": ("balanço do braço (pico a pico)", "graus", 1, "abs", 12.0),
-    "cotovelo_medio": ("flexão média do cotovelo", "graus", 1, "abs", 10.0),
+    "ombro_pp": ("balanço do braço (pico a pico)", "graus", 1, "abs", 18.0),
+    "cotovelo_medio": ("flexão média do cotovelo", "graus", 1, "abs", 8.0),
     "tronco_inclinacao": ("inclinação média do tronco", "graus", 1, "abs", 4.0),
-    "cabeca_w_rms": ("velocidade angular da cabeça (RMS)", "graus/s", 1, "rel", 0.30),
-    "cabeca_w_p95": ("velocidade angular da cabeça (p95)", "graus/s", 1, "rel", 0.30),
-    "cabeca_w_guinada_rms": ("cabeça: guinada (RMS)", "graus/s", 1, "rel", 0.30),
+    "cabeca_w_rms": ("velocidade angular da cabeça (RMS)", "graus/s", 1, "rel", 0.35),
+    "cabeca_w_p95": ("velocidade angular da cabeça (p95)", "graus/s", 1, "rel", 0.50),
+    "cabeca_w_guinada_rms": ("cabeça: guinada (RMS)", "graus/s", 1, "rel", 0.55),
     "cabeca_w_inclinacao_rms": ("cabeça: arfagem+rolagem (RMS)", "graus/s", 1, "rel", 0.30),
 }
 
@@ -806,11 +866,13 @@ class Linha:
     tolerancia: float
     ok: object                     # True, False ou None (sem dado)
     casas: int
+    desvio_real: float = NAN       # desvio entre as pessoas/clipes reais, quando se tem vários
 
 
-def comparar_metricas(real, jogo, campos=None, so_com_dado=True):
+def comparar_metricas(real, jogo, campos=None, so_com_dado=True, dispersao=None):
     """Tabela métrica por métrica: valor real, valor do jogo, diferença (jogo - real), tolerância e se passa.
-    `real` e `jogo` são dicts de escalares (`Marcha.v`). `campos` troca a tabela de tolerâncias."""
+    `real` e `jogo` são dicts de escalares (`Marcha.v`). `campos` troca a tabela de tolerâncias; `dispersao`
+    (`dispersao_populacao`) acrescenta o desvio entre os clipes reais a cada linha."""
     campos = CAMPOS_MARCHA if campos is None else campos
     linhas = []
     for chave, (rotulo, unidade, casas, tipo, valor) in campos.items():
@@ -820,14 +882,27 @@ def comparar_metricas(real, jogo, campos=None, so_com_dado=True):
         tolerancia = abs(r) * valor if tipo == "rel" and np.isfinite(r) else valor
         dif = j - r
         ok = bool(abs(dif) <= tolerancia) if np.isfinite(dif) else None
-        linhas.append(Linha(chave, rotulo, unidade, r, j, dif, tolerancia, ok, casas))
+        desvio = dispersao[chave][1] if dispersao and chave in dispersao and dispersao[chave][2] > 1 else NAN
+        linhas.append(Linha(chave, rotulo, unidade, r, j, dif, tolerancia, ok, casas, desvio))
     return linhas
 
 
-def dispersao_populacao(lista_v):
-    """Média e desvio de cada escalar entre várias pessoas/clipes reais: {chave: (média, desvio, n)}."""
+def v_medio(lista_v):
+    """Média, campo a campo, dos escalares de vários clipes reais (ignora os NaN). Aceita objetos com `.v` ou dicts."""
+    lista_v = [getattr(m, "v", m) for m in lista_v]
     saida = {}
-    for chave in CAMPOS_MARCHA:
+    for chave in set().union(*[set(v) for v in lista_v]) if lista_v else []:
+        valores = np.array([v.get(chave, NAN) for v in lista_v], float)
+        valores = valores[np.isfinite(valores)]
+        saida[chave] = float(valores.mean()) if len(valores) else NAN
+    return saida
+
+
+def dispersao_populacao(lista_v, chaves=None):
+    """Média e desvio de cada escalar entre várias pessoas/clipes reais: {chave: (média, desvio, n)}. `chaves`: quais
+    (padrão: os de `CAMPOS_MARCHA`)."""
+    saida = {}
+    for chave in (CAMPOS_MARCHA if chaves is None else chaves):
         valores = np.array([v.get(chave, NAN) for v in lista_v], float)
         valores = valores[np.isfinite(valores)]
         if len(valores):

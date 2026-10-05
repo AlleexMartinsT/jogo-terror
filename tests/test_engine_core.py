@@ -384,8 +384,8 @@ def test_door_close_slam_and_locks():
     game.doors.snap("den_hall", 1.0)
     assert game.doors.toggle("den_hall", hurried=True) == "slammed"
     assert kinds_logged(game, "door_slam")[-1][2] == C.NOISE_PLAYER["door_slam"]
-    run_for(game, 0.4)
-    assert game.doors.openness("den_hall") == 0.0, "a batida devia fechar a porta em menos de 0,4 s"
+    run_for(game, 0.8)      # golpe forte de mão: ~0,4 s até o batente (física em tools/movimento_ref/fisica/porta.py) e ~0,2 s de rebote
+    assert game.doors.openness("den_hall") == 0.0, "a batida devia fechar a porta e assentar em menos de 0,8 s"
     assert game.doors.toggle("front") == "locked" and game.doors.openness("front") == 0.0
     assert game.doors.is_locked("garage_door") and game.doors.is_locked("back")
     assert not game.doors.is_locked("living_hall")

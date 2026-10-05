@@ -133,11 +133,17 @@ def metricas(g):
                            fonte="ESTIMADO", nota="a mão mais rápida sustentável (150 N, 25 kg) leva 0,7 s"))
 
     # ---- abrir: a mão do jogo contra mãos reais
-    real = mao_real.resumo(mao_real.gestos_de_erguer("RightHand") + mao_real.gestos_de_erguer("LeftHand")
-                           + mao_real.gestos_de_empurrar("RightHand") + mao_real.gestos_de_empurrar("LeftHand"))
+    try:
+        real = mao_real.resumo(mao_real.gestos_de_erguer("RightHand") + mao_real.gestos_de_erguer("LeftHand")
+                               + mao_real.gestos_de_empurrar("RightHand") + mao_real.gestos_de_empurrar("LeftHand"))
+    except Exception as erro:                   # noqa: BLE001 - sem rede e sem cache o mocap não está disponível
+        print(f"  (mocap indisponível: {erro!r}; as métricas MEDIDAS ficam de fora)")
+        real = None
     gesto = gesto_do_jogo(abre)
     for campo, nome, un in (("duracao", "duração do gesto", "s"), ("fracao_pico", "instante do pico (fração)", "-"),
                             ("razao_pico_media", "razão pico/média da velocidade", "-")):
+        if real is None:
+            break
         media, desvio = real[campo]
         valor = gesto["razao"] if campo == "razao_pico_media" else gesto[campo]
         add(Metrica("mão real", f"abrir: {nome}", un, media, valor, media - desvio, media + desvio, fonte="MEDIDO",

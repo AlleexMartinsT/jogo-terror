@@ -136,18 +136,19 @@ def painel_tabela(linhas, caminho, titulo="", rotulo_real="real", rotulo_jogo="j
     n = len(linhas)
     figura, ax = plt.subplots(figsize=(10.5, 0.34 * n + 1.3))
     ax.axis("off")
-    cabecalho = ["métrica", "unidade", rotulo_real, rotulo_jogo, "dif.", "tolerância", "estado"]
+    com_desvio = any(np.isfinite(linha.desvio_real) for linha in linhas)
+    cabecalho = ["métrica", "unidade", rotulo_real] + (["+-1 desvio"] if com_desvio else []) + [rotulo_jogo, "dif.", "tolerância", "estado"]
     celulas, cores = [], []
     for linha in linhas:
         def fmt(x):
             return "--" if not np.isfinite(x) else f"{x:.{linha.casas}f}"
         estado = "sem dado" if linha.ok is None else ("dentro" if linha.ok else "fora")
-        celulas.append([linha.rotulo, linha.unidade, fmt(linha.real), fmt(linha.jogo),
-                        ("" if not np.isfinite(linha.diferenca) or linha.diferenca < 0 else "+") + fmt(linha.diferenca),
-                        "+-" + fmt(linha.tolerancia), estado])
+        celulas.append([linha.rotulo, linha.unidade, fmt(linha.real)] + ([fmt(linha.desvio_real)] if com_desvio else [])
+                       + [fmt(linha.jogo), ("" if not np.isfinite(linha.diferenca) or linha.diferenca < 0 else "+") + fmt(linha.diferenca),
+                          "+-" + fmt(linha.tolerancia), estado])
         cores.append("#f6d9d3" if linha.ok is False else FUNDO)
     tabela = ax.table(cellText=celulas, colLabels=cabecalho, loc="upper left", cellLoc="right",
-                      colWidths=[0.40, 0.09, 0.09, 0.09, 0.09, 0.11, 0.10])
+                      colWidths=[0.36, 0.09, 0.09] + ([0.09] if com_desvio else []) + [0.09, 0.09, 0.11, 0.09])
     tabela.auto_set_font_size(False)
     tabela.set_fontsize(8.6)
     tabela.scale(1.0, 1.35)
@@ -162,7 +163,7 @@ def painel_tabela(linhas, caminho, titulo="", rotulo_real="real", rotulo_jogo="j
             celula.get_text().set_fontweight("bold")
         else:
             celula.set_facecolor(cores[linha - 1])
-            if coluna == 6 and celulas[linha - 1][6] == "fora":
+            if coluna == len(cabecalho) - 1 and celulas[linha - 1][-1] == "fora":
                 celula.get_text().set_fontweight("bold")
     ax.set_title(titulo, loc="left", fontsize=11.5, fontweight="bold")
     figura.tight_layout()

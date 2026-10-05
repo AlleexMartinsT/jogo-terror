@@ -42,10 +42,10 @@ BLOCO = 1.0                                  # lado, em metros, de um bloco do x
 
 # vista -> (azimute da câmera em graus a partir de +Y no sentido horário visto de cima, elevação, distância, altura do alvo)
 CAMERAS = {
-    "frente": (180.0, 4.0, 5.0, 0.95),          # câmera à frente do corpo, olhando para ele
-    "costas": (0.0, 4.0, 5.0, 0.95),
+    "frente": (0.0, 4.0, 5.0, 0.95),            # câmera em +Y, à frente do corpo, olhando para ele
+    "costas": (180.0, 4.0, 5.0, 0.95),
     "lado": (90.0, 4.0, 5.0, 0.95),             # câmera à direita do corpo (+X): anda para a direita da imagem
-    "tres_quartos": (135.0, 16.0, 5.2, 0.95),
+    "tres_quartos": (45.0, 16.0, 5.2, 0.95),
     "topo": (0.0, 89.0, 6.2, 0.0),
 }
 FOV_TERCEIRA = 40.0
@@ -74,6 +74,8 @@ class Fantoche:
             cena.collection.objects.link(obj)
         self.malha.parent = self.rig
         self.malha.matrix_parent_inverse = Matrix.Identity(4)
+        self.malha.data = self.malha.data.copy()
+        self._materiais_de_exibicao()
         for modificador in self.malha.modifiers:
             if modificador.type == "ARMATURE":
                 modificador.object = self.rig
@@ -89,74 +91,70 @@ class Fantoche:
         self.marcas = self._criar_marcas(nome)
         self.tronco = None
 
+    def _materiais_de_exibicao(self):
+        """Cores de exibição para o Workbench: o corpo do jogo usa texturas procedurais que o Workbench não lê."""
+        from sem_alvorada.body import materials as M
+        cores = {"skin": (0.80, 0.58, 0.46), "nail": (0.90, 0.78, 0.72), "flannel": (0.55, 0.13, 0.10),
+                 "denim": (0.17, 0.24, 0.40), "denim_hip": (0.17, 0.24, 0.40), "leather": (0.30, 0.18, 0.10),
+                 "sole": (0.10, 0.09, 0.08), "button": (0.85, 0.82, 0.75), "metal": (0.65, 0.65, 0.68),
+                 "lace": (0.88, 0.86, 0.80), "gold": (0.85, 0.68, 0.20)}
+        dados = self.malha.data
+        for indice, nome in enumerate(M.SLOT_ORDER):
+            material = bpy.data.materials.new(f"{self.malha.name}_{nome}")
+            material.use_nodes = False
+            material.diffuse_color = (*cores[nome], 1.0)
+            if indice < len(dados.materials):
+                dados.materials[indice] = material
+
     # ---- marcações de identidade ----
     def _criar_marcas(self, nome):
+        import bmesh
         material = bpy.data.materials.new(f"{nome}_cor")
         material.diffuse_color = self.cor
         material.use_nodes = False
-        malha = bpy.data.meshes.new(f"{nome}_cabeca")
-        import bmesh
-        construtor = bmesh.new()
-        bmesh.ops.create_uvsphere(construtor, u_segments=20, v_segments=12, radius=0.092)
-        construtor.to_mesh(malha)
-        construtor.free()
-        cabeca = bpy.data.objects.new(f"{nome}_cabeca", malha)
-        cabeca.data.materials.append(material)
-        self.cena.collection.objects.link(cabeca)
-        cabeca.parent = self.rig
-        cabeca.parent_type = "BONE"
-        cabeca.parent_bone = "Neck"
-        # centro: 9 cm além da ponta do pescoço (o osso termina no crânio); o origem do filho de osso é a ponta
-        cabeca.location = (0.0, 0.09, 0.0)
-        cabeca.color = self.cor
-        nariz_malha = bpy.data.meshes.new(f"{nome}_nariz")
-        construtor = bmesh.new()
-        bmesh.ops.create_uvsphere(construtor, u_segments=10, v_segments=6, radius=0.028)
-        construtor.to_mesh(nariz_malha)
-        construtor.free()
-        nariz = bpy.data.objects.new(f"{nome}_nariz", nariz_malha)
-        nariz.data.materials.append(material)
-        self.cena.collection.objects.link(nariz)
-        nariz.parent = self.rig
-        nariz.parent_type = "BONE"
-        nariz.parent_bone = "Neck"
-        # a frente do corpo (+Y) escrita no referencial do osso: o eixo Y do corpo em repouso vira local = R^-1 @ v
-        osso = self.rig.pose.bones["Neck"].bone
-        repouso = osso.matrix_local.to_3x3()
-        nariz.location = repouso.inverted() @ Vector((0.0, 0.092, -0.03)) + Vector((0.0, 0.09, 0.0))
-        anel_malha = bpy.data.meshes.new(f"{nome}_anel")
-        construtor = bmesh.new()
-        bmesh.ops.create_circle(construtor, cap_ends=False, segments=48, radius=0.62)
-        bmesh.ops.contextual_create(construtor, geom=construtor.verts[:] if False else [])
-        construtor.to_mesh(anel_malha)
-        construtor.free()
-        anel = self._anel(nome)
-        return {"cabeca": cabeca, "nariz": nariz, "anel": anel, "material": material}
 
-    def _anel(self, nome):
-        """Disco fino colorido no chão ao redor do pedestal (a identidade vista de cima e de longe)."""
+        def esfera(sufixo, raio, segmentos, aneis):
+            malha = bpy.data.meshes.new(f"{nome}_{sufixo}")
+            construtor = bmesh.new()
+            bmesh.ops.create_uvsphere(construtor, u_segments=segmentos, v_segments=aneis, radius=raio)
+            construtor.to_mesh(malha)
+            construtor.free()
+            obj = bpy.data.objects.new(f"{nome}_{sufixo}", malha)
+            obj.data.materials.append(material)
+            obj.color = self.cor
+            self.cena.collection.objects.link(obj)
+            obj.parent = self.rig
+            obj.parent_type = "BONE"
+            obj.parent_bone = "Neck"
+            return obj
+
+        # o filho de um osso tem a origem na ponta dele; o centro da cabeça fica 4,5 cm além, ao longo do osso
+        cabeca = esfera("cabeca", 0.098, 20, 12)
+        cabeca.location = (0.0, 0.045, 0.0)
+        nariz = esfera("nariz", 0.028, 10, 6)
+        repouso = self.rig.pose.bones["Neck"].bone.matrix_local.to_3x3()
+        # a frente do corpo (+Y do corpo) escrita no referencial do osso: local = R^-1 @ v
+        nariz.location = repouso.inverted() @ Vector((0.0, 0.095, -0.03)) + Vector((0.0, 0.045, 0.0))
+        return {"cabeca": cabeca, "nariz": nariz, "anel": self._anel(nome, material), "material": material}
+
+    def _anel(self, nome, material):
+        """Anel fino colorido no chão ao redor do pedestal (a identidade vista de cima e de longe)."""
         import bmesh
         malha = bpy.data.meshes.new(f"{nome}_anel")
         construtor = bmesh.new()
-        externo = [construtor.verts.new((0.64 * math.cos(a), 0.64 * math.sin(a), 0.003))
-                   for a in np.linspace(0, 2 * math.pi, 64, endpoint=False)]
-        interno = [construtor.verts.new((0.56 * math.cos(a), 0.56 * math.sin(a), 0.003))
-                   for a in np.linspace(0, 2 * math.pi, 64, endpoint=False)]
+        angulos = np.linspace(0, 2 * math.pi, 64, endpoint=False)
+        externo = [construtor.verts.new((0.64 * math.cos(a), 0.64 * math.sin(a), 0.004)) for a in angulos]
+        interno = [construtor.verts.new((0.56 * math.cos(a), 0.56 * math.sin(a), 0.004)) for a in angulos]
         for i in range(64):
             j = (i + 1) % 64
             construtor.faces.new((externo[i], externo[j], interno[j], interno[i]))
         construtor.to_mesh(malha)
         construtor.free()
         anel = bpy.data.objects.new(f"{nome}_anel", malha)
-        anel.data.materials.append(self.marcas_material() if hasattr(self, "marcas_material") else self._material_cor(nome))
-        self.cena.collection.objects.link(anel)
+        anel.data.materials.append(material)
         anel.color = self.cor
+        self.cena.collection.objects.link(anel)
         return anel
-
-    def _material_cor(self, nome):
-        material = bpy.data.materials.get(f"{nome}_cor") or bpy.data.materials.new(f"{nome}_cor")
-        material.diffuse_color = self.cor
-        return material
 
     # ---- visibilidade ----
     def visivel(self, sim):
@@ -189,6 +187,12 @@ class Fantoche:
         self.ossos[0][0].location = tuple(quadril_loc)
         self.rig.pose.bones["Chest"].scale = tuple(escala_peito)
 
+    def posicoes(self):
+        """Cabeça de cada osso no mundo (palco), [B, 3], da armadura avaliada agora."""
+        avaliada = self.rig.evaluated_get(bpy.context.evaluated_depsgraph_get())
+        mundo = avaliada.matrix_world
+        return np.array([tuple(mundo @ avaliada.pose.bones[nome].head) for nome in S.BONE_ORDER])
+
     def olho(self):
         """Posição do olho no mundo (palco), do esqueleto avaliado agora."""
         avaliada = self.rig.evaluated_get(bpy.context.evaluated_depsgraph_get())
@@ -202,28 +206,27 @@ class Fantoche:
 # Piso de esteira
 # --------------------------------------------------------------------------
 def imagem_xadrez(nome="xadrez_palco", tamanho=1024):
-    """Xadrez de 2x2 quadrados por bloco, com um fio vermelho a cada bloco para o olho enxergar deslocamentos finos."""
+    """Xadrez de 2x2 quadrados por bloco, com um fio vermelho em volta de cada bloco para o olho enxergar deslocamentos
+    finos. É gravado em PNG e carregado do disco: o Workbench não mostra imagens geradas na memória."""
     existente = bpy.data.images.get(nome)
     if existente is not None:
         return existente
+    from PIL import Image
     n = tamanho
     quadrado = n // 2
     y, x = np.mgrid[0:n, 0:n]
-    claro = np.array([0.78, 0.78, 0.76])
-    escuro = np.array([0.46, 0.47, 0.48])
-    imagem = np.where(((x // quadrado) + (y // quadrado))[..., None] % 2 == 0, claro, escuro)
-    fio = 5
+    claro = np.array([200, 200, 194], np.uint8)
+    escuro = np.array([118, 120, 122], np.uint8)
+    imagem = np.where(((x // quadrado) + (y // quadrado))[..., None] % 2 == 0, claro, escuro).astype(np.uint8)
+    fio = 6
     for coord in (x, y):
-        mascara = (coord < fio) | (coord >= n - fio)
-        imagem[mascara] = np.array([0.80, 0.18, 0.15])
-    for coord in (x, y):
-        mascara = (np.abs(coord - quadrado) < 2)
-        imagem[mascara] = imagem[mascara] * 0.82
-    rgba = np.concatenate([imagem, np.ones((n, n, 1))], axis=2).astype(np.float32)
-    img = bpy.data.images.new(nome, n, n, alpha=False)
-    img.pixels.foreach_set(np.ascontiguousarray(rgba[::-1]).ravel())
+        imagem[(coord < fio) | (coord >= n - fio)] = np.array([205, 46, 38], np.uint8)
+    caminho = os.path.join(ROOT, "out", "f4_1", f"{nome}.png")
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    Image.fromarray(imagem).save(caminho)
+    img = bpy.data.images.load(caminho)
+    img.name = nome
     img.colorspace_settings.name = "sRGB"
-    img.pack()
     return img
 
 
@@ -303,14 +306,16 @@ class Palco:
         for original in (rig, malha):
             original.hide_render = original.hide_viewport = True
         self.piso_real, self.piso_jogo = Piso(self.cena, "piso_real"), Piso(self.cena, "piso_jogo")
+        self.postes = self._criar_postes()
         self.largura, self.altura = largura, altura
         self.vista_atual = None
         self.camera = self._criar_camera()
         self._configurar_render(motor)
         self._luzes()
         self.pedestal = {"real": (-SEPARACAO, 0.0), "jogo": (SEPARACAO, 0.0)}
-        self._origem = {"real": (0.0, 0.0, 0.0), "jogo": (0.0, 0.0, 0.0)}      # (x, y) inicial e guinada inicial no mundo
-        self.arquivo_temporario = os.path.join(ROOT, "out", "f4_1", "_quadro_palco.png")
+        self._origem = {"real": None, "jogo": None}      # (x, y, guinada) do primeiro quadro de cada corpo, no mundo dele
+        # um arquivo por processo: várias comparações podem rodar ao mesmo tempo
+        self.arquivo_temporario = os.path.join(ROOT, "out", "movimento", f"_quadro_{os.getpid()}.png")
         os.makedirs(os.path.dirname(self.arquivo_temporario), exist_ok=True)
 
     # ---- montagem ----
@@ -325,6 +330,28 @@ class Palco:
         self.cena.camera = camera
         return camera
 
+    def _criar_postes(self):
+        """Postes finos ao longe, parados no palco: dão à câmera dos olhos um horizonte com relevo para o balanço da
+        cabeça aparecer (só entram na primeira pessoa)."""
+        import bmesh
+        material = bpy.data.materials.new("poste_palco")
+        material.use_nodes = False
+        material.diffuse_color = (0.22, 0.24, 0.30, 1.0)
+        postes = []
+        for i, (x, y) in enumerate(((-3.2, 7.0), (2.6, 9.0), (-1.0, 12.5), (4.5, 14.0), (-5.0, 16.0), (0.8, 19.0), (-2.6, 22.0))):
+            malha = bpy.data.meshes.new(f"poste_{i}")
+            construtor = bmesh.new()
+            bmesh.ops.create_cone(construtor, cap_ends=True, segments=8, radius1=0.07, radius2=0.07, depth=3.2)
+            construtor.to_mesh(malha)
+            construtor.free()
+            poste = bpy.data.objects.new(f"poste_{i}", malha)
+            poste.data.materials.append(material)
+            poste.location = (x, y, 1.6)
+            self.cena.collection.objects.link(poste)
+            poste.hide_render = poste.hide_viewport = True
+            postes.append(poste)
+        return postes
+
     def _configurar_render(self, motor):
         cena = self.cena
         cena.render.resolution_x, cena.render.resolution_y = self.largura, self.altura
@@ -338,7 +365,9 @@ class Palco:
         mundo.use_nodes = False
         mundo.color = (0.60, 0.63, 0.66)
         cena.world = mundo
-        if motor == "workbench":
+        if motor == "eevee":
+            self.eevee()
+        else:
             self.workbench()
 
     def workbench(self):
@@ -389,6 +418,8 @@ class Palco:
         if nome not in VISTAS:
             raise KeyError(f"vista desconhecida: {nome!r} (use {', '.join(VISTAS)})")
         self.vista_atual, self.lado_atual = nome, lado
+        for poste in self.postes:
+            poste.hide_render = poste.hide_viewport = nome != "primeira_pessoa"
         if nome == "primeira_pessoa":
             return self._vista_primeira_pessoa(lado)
         azimute, elevacao, distancia, altura_alvo = CAMERAS[nome]
@@ -403,7 +434,7 @@ class Palco:
             apontar = (alvo - self.camera.location)
             self.camera.rotation_euler = apontar.to_track_quat("-Z", "Y").to_euler()
         self.camera.data.angle = math.radians(fov or FOV_TERCEIRA)
-        direita = Vector((math.cos(az), -math.sin(az), 0.0))                  # eixo horizontal da imagem
+        direita = Vector((-math.cos(az), math.sin(az), 0.0))                  # eixo horizontal da imagem (frente x cima)
         if nome == "topo":
             direita = Vector((1.0, 0.0, 0.0))
         self.pedestal = {"real": (-direita.x * SEPARACAO, -direita.y * SEPARACAO), "jogo": (direita.x * SEPARACAO, direita.y * SEPARACAO)}
@@ -443,42 +474,64 @@ class Palco:
         corpo.colocar(centro, guinada - g0, z)
         piso.deslocar(centro, (xy[0], xy[1]), g0)
 
+    @staticmethod
+    def _quaternions(tabela, k):
+        """Interpola quaternions [..., 4] entre os quadros vizinhos de k (fracionário): nlerp com o sinal alinhado."""
+        i0 = int(np.clip(math.floor(k), 0, len(tabela) - 1))
+        i1 = min(i0 + 1, len(tabela) - 1)
+        f = float(np.clip(k - i0, 0.0, 1.0))
+        a, b = tabela[i0], tabela[i1]
+        sinal = np.where((a * b).sum(axis=-1, keepdims=True) < 0, -1.0, 1.0)
+        q = a * (1 - f) + b * sinal * f
+        return q / np.linalg.norm(q, axis=-1, keepdims=True)
+
+    @staticmethod
+    def _linear(tabela, k):
+        i0 = int(np.clip(math.floor(k), 0, len(tabela) - 1))
+        i1 = min(i0 + 1, len(tabela) - 1)
+        f = float(np.clip(k - i0, 0.0, 1.0))
+        return tabela[i0] * (1 - f) + tabela[i1] * f
+
     def pose_real(self, alvo, k):
-        """Quadro k de um `Retarget`."""
-        x, y, z, guinada = alvo.raiz[k]
-        if self._origem["real"] == (0.0, 0.0, 0.0):
+        """Quadro k (pode ser fracionário) de um `Retarget`."""
+        raiz = self._linear(alvo.raiz, k)
+        if self._origem["real"] is None:
             self.origem("real", alvo.raiz[0, :2], alvo.raiz[0, 3])
-        self.real.aplicar_solver(alvo.locais[k], alvo.deslocamento_quadril[k])
-        self._atualizar_piso("real", (x, y), guinada, z)
+        self.real.aplicar_solver(self._quaternions(alvo.locais, k), self._linear(alvo.deslocamento_quadril, k))
+        self._atualizar_piso("real", raiz[:2], raiz[3], raiz[2])
 
     def pose_jogo(self, gravacao, j):
-        """Quadro j de uma `Gravacao` (com ossos)."""
-        x, y, z, guinada = gravacao.raiz[j]
-        if self._origem["jogo"] == (0.0, 0.0, 0.0):
+        """Quadro j (pode ser fracionário) de uma `Gravacao` com ossos."""
+        raiz = self._linear(gravacao.raiz, j)
+        if self._origem["jogo"] is None:
             self.origem("jogo", gravacao.raiz[0, :2], gravacao.raiz[0, 3])
-        self.jogo.aplicar_gravado(gravacao.pose_b[j], gravacao.quadril_loc[j], gravacao.escala_peito[j])
-        self._atualizar_piso("jogo", (x, y), guinada, z - gravacao.raiz[0, 2])
+        self.jogo.aplicar_gravado(self._quaternions(gravacao.pose_b, j), self._linear(gravacao.quadril_loc, j),
+                                  self._linear(gravacao.escala_peito, j))
+        self._atualizar_piso("jogo", raiz[:2], raiz[3], raiz[2] - gravacao.raiz[0, 2])
 
-    def camera_nos_olhos(self, lado, posicao_mundo=None, rotacao=None):
-        """Primeira pessoa: leva a câmera ao olho do corpo `lado`. `posicao_mundo` e `rotacao` (matriz de câmera do
-        Blender) são o olhar real/gravado; o ponto vem do palco, convertendo a posição do mundo pelo pedestal."""
-        corpo = self.real if lado == "real" else self.jogo
-        bpy.context.view_layer.update()
-        if posicao_mundo is None:
-            self.camera.location = corpo.olho()
-        else:
-            self.camera.location = posicao_mundo
-        if rotacao is not None:
-            self.camera.rotation_euler = Matrix(rotacao.tolist()).to_euler()
-
-    def posicao_no_palco(self, lado, ponto_mundo, referencia_xy, guinada_inicial_referencia=None):
-        """Converte um ponto do mundo (x,y,z) para as coordenadas do palco do corpo `lado`, subtraindo o deslocamento e
-        girando pela guinada inicial (o mesmo movimento do piso)."""
-        x0, y0, g0 = self._origem[lado]
-        dx, dy = ponto_mundo[0] - referencia_xy[0], ponto_mundo[1] - referencia_xy[1]
+    def para_palco(self, lado, ponto_mundo, raiz_xy, z_base=0.0):
+        """Converte um ponto do mundo do corpo `lado` para o palco: tira o deslocamento da raiz, gira pela guinada inicial
+        (o mesmo movimento do piso) e põe no pedestal."""
+        g0 = self._origem[lado][2]
+        dx, dy = ponto_mundo[0] - raiz_xy[0], ponto_mundo[1] - raiz_xy[1]
         c, s = math.cos(-g0), math.sin(-g0)
         centro = self.pedestal[lado]
-        return Vector((centro[0] + c * dx - s * dy, centro[1] + s * dx + c * dy, ponto_mundo[2]))
+        return Vector((centro[0] + c * dx - s * dy, centro[1] + s * dx + c * dy, ponto_mundo[2] - z_base))
+
+    def rotacao_para_palco(self, lado, rotacao_mundo):
+        """Orientação (3x3) de uma câmera do mundo do corpo `lado`, vista do palco."""
+        g0 = self._origem[lado][2]
+        return np.array(Matrix.Rotation(-g0, 3, "Z")) @ np.asarray(rotacao_mundo)
+
+    def camera_na_primeira_pessoa(self, posicao_palco, rotacao_palco):
+        """Põe a câmera do palco no olhar dado (posição e matriz de câmera do Blender, ambas já em coordenadas do palco)."""
+        self.camera.location = posicao_palco
+        self.camera.rotation_euler = Matrix(np.asarray(rotacao_palco).tolist()).to_euler()
+
+    def olho_do_corpo(self, lado):
+        """Olho (palco) do esqueleto posado do corpo `lado`."""
+        bpy.context.view_layer.update()
+        return (self.real if lado == "real" else self.jogo).olho()
 
     # ---- saída ----
     def render(self, caminho=None):

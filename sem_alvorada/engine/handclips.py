@@ -24,22 +24,35 @@ from .handtrack import Clip, Event, Key, QuatTrack, Track, number
 SIDE_SIGN = {"R": 1.0, "L": -1.0}
 HANG_POS = {"R": (0.263, -0.844, -0.064), "L": (-0.263, -0.842, -0.075)}    # palma do braço solto, olhando em frente
 OFF_SCREEN = HANG_POS              # nome antigo: a mão sem peso fica onde o braço pende, abaixo do quadro
-REACH_LIMIT = 0.60                 # até onde a palma chega à frente do rosto (m)
+REACH_LIMIT = 0.52                 # até onde a palma chega do rosto (m). Com 0,60 o braço ia esticado ao centro da tela
+REACH_DROP = -0.08                 # e a palma fica pelo menos 8 cm abaixo da linha do olhar: a 0,52 m o cotovelo cai fora do
+                                   # quadro; com a palma na linha do olhar ele ficava a 34 cm do rosto, no meio da tela
 
-# Lei de tempo dos movimentos da mão. MEDIDA em 182 alcances limpos (ajuste de jerk mínimo com r > 0,90) de 24 clipes
-# da CMU (26_09, 15_06, 22_22, 69_68..75, 111_18, 115_01, 79_36/38/40, 80_25/40, 62_19, 144_22..25...):
-#     T = 0,464 + 0,193 * D / L     (s; D = distância percorrida pela mão, L = comprimento ombro-punho do clipe)
-# com desvio residual de 0,12 s. O pico de velocidade fica em 49 +- 6% da duração. O Daniel tem L = 0,60 m.
-# Abaixo de 0,18 m (D/L < 0,3) não há medida: o piso de 0,30 s é ESTIMADO.
-MOVE_A, MOVE_B = 0.464, 0.193
+# Lei de tempo dos movimentos da mão. MEDIDA em 199 alcances limpos (correlação > 0,9 com o perfil de jerk mínimo, trajetória
+# reta) de 20 clipes da CMU (15_06/07, 22_23, 23_23, 69_68..75, 79_36/38, 80_25, 111_17, 115_01, 13_09, 144_22..25), com o
+# punho relativo ao quadril e os alcances achados por `tools/movimento_ref/metricas.detectar_alcances` (a duração é onde a
+# velocidade passa de 6% do pico):
+#     T(6%) = 0,628 + 0,145 * D / L     (s; D = distância reta do punho, L = comprimento ombro-punho do clipe)
+# com desvio residual de 0,22 s (a dependência da distância é fraca) e o pico de velocidade em 49 +- 6% da duração. Para D/L
+# de 0,3 a 0,6 (18 a 36 cm no Daniel, L = 0,60 m) a média medida é 0,70 s. Uma segmentação mais estreita (de vale a vale,
+# 182 alcances) dá 0,464 + 0,193 D/L, uns 0,1 s mais curta: a incerteza do método. Um movimento de jerk mínimo de duração
+# nominal T passa de 6% do pico só em 87% de T, então a duração nominal que as chaves usam é T(6%) / 0,869, a mesma que
+# `metricas.ajuste_jerk_minimo` devolve. Abaixo de D/L = 0,6 não há dado confiável (o detector pede pico de 0,35 m/s, que
+# um movimento curto não tem): a duração desce linearmente até o piso de 0,30 s, ESTIMADO.
+MOVE_A, MOVE_B = 0.628 / 0.869, 0.145 / 0.869
 ARM_LENGTH = 0.60
-MOVE_MIN, MOVE_MAX = 0.30, 0.95
+MOVE_MIN, MOVE_MAX = 0.30, 1.1
+MEASURED_FROM = 0.6                # D/L a partir do qual a lei é medida
 GRASP_DWELL = 0.12                 # ESTIMADO: o vale de velocidade entre o alcance e o levantar nos clipes de pegar
 
 
 def move_time(distance):
-    """Duração (s) de um movimento da mão de `distance` metros, pela lei medida."""
-    return max(MOVE_MIN, min(MOVE_MAX, MOVE_A + MOVE_B * distance / ARM_LENGTH))
+    """Duração nominal (s) de um movimento da mão de `distance` metros, pela lei medida."""
+    ratio = distance / ARM_LENGTH
+    if ratio >= MEASURED_FROM:
+        return min(MOVE_MAX, MOVE_A + MOVE_B * ratio)
+    floor_to_law = (MOVE_A + MOVE_B * MEASURED_FROM - MOVE_MIN) / MEASURED_FROM
+    return MOVE_MIN + floor_to_law * max(0.0, ratio)
 
 # Dedos do polegar ao mindinho (valores na escala de `body.fingers.PRESETS`)
 OPEN = (0.35, 0.16, 0.18, 0.22, 0.28)            # mão que alcança: relaxada, o polegar não aponta para fora
@@ -275,7 +288,7 @@ HANG_ROT = {"R": _hang_rotation("R"), "L": _hang_rotation("L")}
 GLIDE = 0.40               # depois do contato o item que a mão não alcançou vem até o punho (a mesa fica abaixo do
                            # alcance do braço: o item sobe do lugar dele até a mão enquanto ela fecha)
 CLOSE_TIME = 0.20          # ESTIMADO: tempo que os dedos levam para fechar sobre o item
-NOMINAL_LIFT = 0.40        # distância típica (m) do ponto de pegar até a pose de mostrar o item
+GRASP_NOMINAL = (0.0, -0.08, -0.51)        # onde a palma costuma pegar (o limite do alcance, abaixo da linha do olhar)
 NOMINAL_RETURN = 0.60      # e da pose de mostrar até a mão solta
 REACH_DEFAULT = move_time(0.65)      # alcance típico: da mão solta ao item sobre uma mesa, 0,65 m
 
@@ -293,9 +306,11 @@ def reach(path, reach_s, grasp, grasp_rot, aperture, closed):
     path.hand(reach_s + GRASP_DWELL, grasp, grasp_rot, stop=True, space="grasp")      # a pinça acaba antes de levantar
 
 
+EXIT_FACTOR = 0.75         # ESTIMADO: a mão que só sai do quadro, sem alvo a acertar, leva 3/4 do tempo de um alcance
+
 def withdraw(path, t0, seconds=None):
-    """A mão volta ao braço solto em `seconds` (lei do movimento) e o IK solta o braço no fim."""
-    seconds = move_time(NOMINAL_RETURN) if seconds is None else seconds
+    """A mão volta ao braço solto e o IK solta o braço no fim. Sem alvo a acertar, leva `EXIT_FACTOR` da lei do movimento."""
+    seconds = EXIT_FACTOR * move_time(NOMINAL_RETURN) if seconds is None else seconds
     path.rest(t0 + seconds, HANG_ROT[path.side], RELAX, stop=True)
     path.weight(t0, 1.0).weight(t0 + seconds * 0.85, 1.0).weight(t0 + seconds, 0.0, stop=True)
     return t0 + seconds
@@ -317,7 +332,7 @@ def lantern_first(reach_s=REACH_DEFAULT):
     chest, chest_rot = (0.045, -0.055, -0.330), with_roll((26.0, 10.0, -6.0))
     contact = reach_s + 0.06
     lift = reach_s + GRASP_DWELL
-    at_chest = lift + move_time(NOMINAL_LIFT)
+    at_chest = lift + move_time(math.dist(GRASP_NOMINAL, chest))
     click_at = at_chest - 0.04
     leave = click_at + 0.38
     arrive = leave + move_time(math.dist(chest, hold))
@@ -330,7 +345,7 @@ def lantern_first(reach_s=REACH_DEFAULT):
     path.item(arrive, hold, hold_rot, FLASH_FIST, stop=True)
     path.attach(contact, 0.0, stop=True).attach(contact + GLIDE, 1.0, stop=True)
     last_burst = max(start + length for start, length in FLICKER_BURSTS)
-    duration = max(arrive, click_at + last_burst) + 0.06
+    duration = max(arrive, click_at + last_burst) + 0.10         # o filamento leva ~60 ms para assentar depois da rajada
     events = [ev(0.05, "sound", "hand_reach"), ev(contact, "contact", essential=True),
               ev(contact, "show", ("R", C.ITEM_FLASHLIGHT), essential=True), ev(click_at, "light_on", essential=True)]
     events += [ev(click_at + start, "burst", index) for index, (start, _) in enumerate(FLICKER_BURSTS)]
@@ -346,18 +361,16 @@ def battery_pickup(reach_s=REACH_DEFAULT):
     contact = reach_s + 0.06
     lift = reach_s + GRASP_DWELL
     show, show_rot = (-0.100, -0.050, -0.335), (-14.0, -8.0, 4.0)
-    near, near_rot = (-0.110, -0.040, -0.305), (-20.0, -12.0, 8.0)
-    at_show = lift + move_time(NOMINAL_LIFT)
-    at_near = at_show + move_time(math.dist(show, near)) + 0.10
+    at_show = lift + move_time(math.dist(GRASP_NOMINAL, show))
+    look = at_show + 0.25                                  # ESTIMADO: o tempo de olhar a pilha na palma
     reach(path, reach_s, (0.0, 0.016, 0.0), (-46.0, 2.0, 4.0), OPEN, CUP)
     path.item(at_show, show, show_rot, CUP, stop=True)           # no caminho a mão gira meio giro: palma de lado
-    path.item(at_near, near, near_rot, CUP, stop=True)
-    path.item(at_near + 0.12, near, near_rot, CUP, stop=True)
-    end = withdraw(path, at_near + 0.12)
+    path.item(look, show, show_rot, CUP, stop=True)
+    end = withdraw(path, look)
     path.attach(contact, 0.0, stop=True).attach(contact + GLIDE, 1.0, stop=True)
     events = [ev(0.04, "sound", "hand_reach"), ev(contact, "contact", essential=True),
               ev(contact, "show", ("L", C.ITEM_BATTERY), essential=True),
-              ev(at_near + 0.12 + 0.30, "hide", "L"), ev(end - 0.2, "sound", "cloth_rustle_1")]
+              ev(look + 0.30, "hide", "L"), ev(end - 0.2, "sound", "cloth_rustle_1")]
     return Clip("battery_pickup", end, path.tracks(), events,
                 meta={"side": "L", "kind": C.ITEM_BATTERY, "grasp": "L", "world_item": True, "rest": True})
 
@@ -371,18 +384,18 @@ def key_pickup(reach_s=REACH_DEFAULT):
     lift = reach_s + GRASP_DWELL
     hang = HOLD_ITEM[("L", C.ITEM_KEY)][0]
     flick, swing = (-0.150, -0.020, -0.390), (-0.236, -0.030, -0.385)
-    at_hang = lift + move_time(NOMINAL_LIFT)
+    at_hang = lift + move_time(math.dist(GRASP_NOMINAL, hang))
     reach(path, reach_s, (0.0, 0.015, 0.0), (-48.0, 2.0, 4.0), OPEN, PINCH)
     path.item(at_hang, hang, (0.0, 0.0, 0.0), PINCH, stop=True)
     # o puxão que faz o chaveiro balançar: um meio ciclo de punho de ~4 Hz, sem parar nas pontas
     path.item(at_hang + 0.12, flick, (0.0, 0.0, 0.0), PINCH)
     path.item(at_hang + 0.24, swing, (0.0, 0.0, 0.0), PINCH)
-    path.item(at_hang + 0.40, hang, (0.0, 0.0, 0.0), PINCH, stop=True)
-    end = withdraw(path, at_hang + 0.50)
+    path.item(at_hang + 0.38, hang, (0.0, 0.0, 0.0), PINCH, stop=True)
+    end = withdraw(path, at_hang + 0.40)
     path.attach(contact, 0.0, stop=True).attach(contact + GLIDE, 1.0, stop=True)
     events = [ev(0.04, "sound", "hand_reach"), ev(contact, "contact", essential=True),
               ev(contact, "show", ("L", C.ITEM_KEY), essential=True),
-              ev(at_hang + 0.17, "sound", "key_jingle"), ev(at_hang + 0.50 + 0.30, "hide", "L")]
+              ev(at_hang + 0.17, "sound", "key_jingle"), ev(at_hang + 0.40 + 0.30, "hide", "L")]
     return Clip("key_pickup", end, path.tracks(), events,
                 meta={"side": "L", "kind": C.ITEM_KEY, "grasp": "L", "world_item": True, "rest": True})
 
@@ -400,7 +413,7 @@ def map_pickup(reach_s=REACH_DEFAULT):
     lift = reach_s + GRASP_DWELL
     held, held_rot = (-0.205, -0.075, -0.380), (-18.0, 10.0, 4.0)
     shown, shown_rot = HOLD_ITEM[("L", C.ITEM_MAP)]
-    at_held = lift + move_time(NOMINAL_LIFT)
+    at_held = lift + move_time(math.dist(GRASP_NOMINAL, held))
     at_shown = at_held + move_time(math.dist(held, shown))
     reach(path, reach_s, (0.0, 0.016, 0.0), (-46.0, 2.0, 4.0), OPEN, PINCH)
     path.item(at_held, held, held_rot, PINCH, stop=True)
@@ -410,12 +423,12 @@ def map_pickup(reach_s=REACH_DEFAULT):
     path.extra("fold1", 0.0, FOLDED, stop=True).extra("fold2", 0.0, -FOLDED, stop=True)
     path.extra("fold2", first, -FOLDED, stop=True).extra("fold2", first + UNFOLD_TIME, 0.0, stop=True)
     path.extra("fold1", second, FOLDED, stop=True).extra("fold1", second + UNFOLD_TIME, 0.0, stop=True)
-    end = withdraw(path, at_shown + 0.20)
+    end = withdraw(path, at_shown + 0.15)
     path.attach(contact, 0.0, stop=True).attach(contact + GLIDE, 1.0, stop=True)
     events = [ev(0.04, "sound", "hand_reach"), ev(contact, "contact", essential=True),
               ev(contact, "show", ("L", C.ITEM_MAP), essential=True),
               ev(first + 0.1, "sound", "map_unfold"), ev(second + 0.1, "sound", "map_unfold"),
-              ev(at_shown + 0.20 + 0.30, "hide", "L")]
+              ev(at_shown + 0.15 + 0.30, "hide", "L")]
     return Clip("map_pickup", end, path.tracks(), events,
                 meta={"side": "L", "kind": C.ITEM_MAP, "grasp": "L", "world_item": True, "rest": True})
 
@@ -428,7 +441,7 @@ def note_pickup(reach_s=REACH_DEFAULT):
     contact = reach_s + 0.06
     lift = reach_s + GRASP_DWELL
     face, face_rot = FACE_ITEM[C.ITEM_NOTE]
-    at_face = lift + move_time(0.45)
+    at_face = lift + move_time(math.dist(GRASP_NOMINAL, face))
     reach(path, reach_s, (0.0, 0.012, 0.0), (-40.0, 2.0, 4.0), OPEN, HOLD_SHEET)
     path.item(at_face, face, face_rot, HOLD_SHEET, stop=True)
     path.attach(contact, 0.0, stop=True).attach(contact + GLIDE, 1.0, stop=True)
@@ -459,7 +472,7 @@ def note_putback():
     """O leitor fechou: a folha volta ao lugar onde estava e a mão recua."""
     path = Path("L", C.ITEM_NOTE)
     face, face_rot = FACE_ITEM[C.ITEM_NOTE]
-    back = move_time(0.45)
+    back = move_time(math.dist(GRASP_NOMINAL, face))
     path.item(0.00, face, face_rot, HOLD_SHEET, stop=True)
     path.hand(back, (0.0, 0.012, 0.0), (-8.0, 2.0, 0.0), HOLD_SHEET, stop=True, space="grasp")
     path.curl(back + 0.06, OPEN, stop=True)
@@ -610,7 +623,7 @@ def swap(left_start, left_end):
     t_lined = arrive + 0.10                                       # alinha com a boca
     t_in = t_lined + 0.30                                         # e desce pelo cano
     cap_close = (t_in + 0.04, t_in + 0.24)
-    t_back = cap_close[0]                                         # a direita volta a segurar enquanto a tampa fecha
+    t_back = cap_close[0] + 0.12                                  # a direita volta a segurar quando a esquerda já se afasta
     t_hold = t_back + move_time(math.dist(hold, tilted))
     click = t_hold - 0.02
     right.item(0.00, hold, hold_rot, FLASH_FIST, stop=True)

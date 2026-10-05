@@ -156,6 +156,18 @@ class AnfitriaoFalso:
         return (0.0, 0.0, 0.0, 0.0, 1.65)
 
 
+def anim_antes():
+    """O `cutscenes/anim.py` de ANTES da fase 4 (cópia em out/f4_4/tmp/anim.py), carregado como módulo irmão."""
+    import importlib.util
+    caminho = os.path.join(RAIZ, "out", "f4_4", "tmp", "anim.py")
+    spec = importlib.util.spec_from_file_location("sem_alvorada.cutscenes.anim_antes", caminho,
+                                                  submodule_search_locations=None)
+    modulo = importlib.util.module_from_spec(spec)
+    modulo.__package__ = "sem_alvorada.cutscenes"
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
 def _palco(objetos):
     from sem_alvorada.cutscenes.stage import Stage
     return Stage(AnfitriaoFalso(objetos))
@@ -178,6 +190,9 @@ def carro(duracao=20.0, fps=120.0):
     from sem_alvorada.cutscenes import anim, scene_ending as E
     nomes = [C.OBJ_CAR, "Car_Wheel_FL", "Car_Wheel_FR", "Car_Wheel_RL", "Car_Wheel_RR", "Cut_Bunny", "Cut_KeyCharm", "Cut_Wheel"]
     objetos = {n: ObjetoFalso(n) for n in nomes}
+    cubos = {"FL": (-0.8, 1.45, 0.33), "FR": (0.8, 1.45, 0.33), "RL": (-0.8, -1.45, 0.33), "RR": (0.8, -1.45, 0.33)}
+    for lado, posicao in cubos.items():
+        objetos[f"Car_Wheel_{lado}"].location = list(posicao)
     palco = _palco(objetos)
     ancora = layout.ANCHORS["car"]
     home = (ancora.x, ancora.y, ancora.z)
@@ -190,7 +205,8 @@ def carro(duracao=20.0, fps=120.0):
     n = int(round(duracao * fps))
     campos = ("t", "pos", "euler", "roda_FL", "roda_FR", "roda_RL", "roda_RR", "coelho", "chaveiro", "sinal")
     s = {"t": np.zeros(n), "pos": np.zeros((n, 3)), "euler": np.zeros((n, 3)), "coelho": np.zeros((n, 3)),
-         "chaveiro": np.zeros((n, 3)), "roda": np.zeros((n, 4, 3)), "volante": np.zeros((n, 4))}
+         "chaveiro": np.zeros((n, 3)), "roda": np.zeros((n, 4, 3)), "roda_pos": np.zeros((n, 4, 3)),
+         "volante": np.zeros((n, 4))}
     sinais = {k: np.zeros(n) for k in ("accel", "lateral", "speed", "engine", "steer", "pitch", "roll", "travel")}
 
     def colhe(k, t):
@@ -202,12 +218,14 @@ def carro(duracao=20.0, fps=120.0):
         s["volante"][k] = objetos["Cut_Wheel"].rotation_quaternion
         for i, lado in enumerate(("FL", "FR", "RL", "RR")):
             s["roda"][k, i] = objetos[f"Car_Wheel_{lado}"].rotation_euler
+            s["roda_pos"][k, i] = objetos[f"Car_Wheel_{lado}"].location
         car = palco.signals.get("car", {})
         for chave in sinais:
             sinais[chave][k] = car.get(chave, 0.0)
     rodar_palco(palco, duracao, fps, colhe)
     s["sinais"] = sinais
     s["suspensao"] = _info_suspensao(palco.actors["car"])
+    s["comprimentos"] = {"bunny": palco.actors["bunny"]._x.length, "key": palco.actors["key_charm"]._x.length}
     s["fps"] = fps
     s["home"] = home
     s["parada"] = parada
@@ -248,28 +266,30 @@ def portao(duracao=14.0, fps=120.0):
     return {"t": t_, "z": z, "fps": fps, "inicio": E.ROLLUP_START, "duracao": E.ROLLUP_SECONDS, "altura": 2.3}
 
 
-def cortina(duracao=40.0, fps=60.0, forca=0.5, gust=None, nomes=("Curtain_w_master_n", "Curtain_w_master_w")):
+def cortina(duracao=120.0, fps=60.0, forca=0.5, gust=None, nomes=("Curtain_w_master_n", "Curtain_w_master_w"), antes=False):
     """CurtainWind sobre a malha real da cortina do quarto (vértices lidos do .blend). Devolve o deslocamento de
     algumas linhas (altura abaixo da barra) numa coluna do meio e noutra a 1/4 da largura."""
-    from sem_alvorada.cutscenes import anim
+    from sem_alvorada.cutscenes import anim as anim_novo
     from sem_alvorada.cutscenes.curves import Curve
+    anim = anim_antes() if antes else anim_novo
     pasta = os.path.join(RAIZ, "out", "f4_4", "tmp")
     objetos = {n: ObjetoFalso(n, malha=MalhaFalsa(np.load(os.path.join(pasta, f"{n}.npy")))) for n in nomes}
     repouso = np.load(os.path.join(pasta, f"{nomes[0]}.npy"))
     palco = _palco(objetos)
-    gust = gust or Curve([(0.0, 0.25), (16.0, 0.6), (26.0, 1.0), (40.0, 0.5)])
+    gust = gust or Curve([(0.0, 1.0), (duracao, 1.0)])         # vento constante: o espectro mede a física, não a curva de cena
     palco.start_actor("curtains", anim.CurtainWind(nomes, forca, gust))
     z, x = repouso[:, 2], repouso[:, 0]
     topo, base = float(z.max()), float(z.min())
     fracoes = np.linspace(0.1, 1.0, 10)
-    colunas = (float(np.median(x)), float(x.min() + 0.25 * (x.max() - x.min())))
+    altura_h = (topo - z) / (topo - base)
+    colunas_cheias = [xv for xv in np.unique(np.round(x, 2))
+                      if (np.abs(x - xv) < 0.02).sum() >= 30 and altura_h[np.abs(x - xv) < 0.02].min() < 0.05
+                      and altura_h[np.abs(x - xv) < 0.02].max() > 0.98]              # colunas de ponta a ponta (a malha tem pregas)
+    colunas = tuple(min(colunas_cheias, key=lambda c: abs(c - alvo)) for alvo in (0.0, x.min() + 0.25 * (x.max() - x.min())))
     indices = []
     for coluna in colunas:
-        linha = []
-        for f in fracoes:
-            alvo = (np.hypot(x - coluna, 0.0) < 0.05) & (np.abs((topo - z) / (topo - base) - f) < 0.02)
-            linha.append(int(np.nonzero(alvo)[0][0]) if alvo.any() else int(np.argmin(np.hypot(x - coluna, (topo - z) / (topo - base) - f))))
-        indices.append(linha)
+        mesma = np.nonzero(np.abs(x - coluna) < 0.02)[0]
+        indices.append([int(mesma[np.argmin(np.abs(altura_h[mesma] - f))]) for f in fracoes])
     n = int(round(duracao * fps))
     saida = np.zeros((n, 2, len(fracoes), 3))
     t_ = np.zeros(n)
@@ -285,9 +305,10 @@ def cortina(duracao=40.0, fps=60.0, forca=0.5, gust=None, nomes=("Curtain_w_mast
             "largura": float(x.max() - x.min())}
 
 
-def poeira(duracao=10.0, fps=60.0):
+def poeira(duracao=10.0, fps=60.0, antes=False):
     """DustFall como na cena da garagem: altura de cada partícula e quando ela vive."""
-    from sem_alvorada.cutscenes import anim, objects as O
+    from sem_alvorada.cutscenes import anim as anim_novo, objects as O
+    anim = anim_antes() if antes else anim_novo
     objeto = ObjetoFalso(O.OBJ_DUST, malha=MalhaFalsa(np.zeros((O.DUST_PARTICLES * 4, 3))))
     palco = _palco({O.OBJ_DUST: objeto})
     inicio = 1.0
@@ -316,12 +337,14 @@ def luz_cascata(fps=240.0, morte=1.0, modo="die"):
     return {"t": t, "ganho": np.array([cascata.gain(x, morte, modo) for x in t]), "morte": morte, "fps": fps}
 
 
-def luz_pisca(quantidade, semente, duracao=120.0, fps=240.0):
-    """Brilho relativo de uma luz que pisca (engine.lights.flicker_gain) com `quantidade` de 0 a 1."""
+def luz_pisca(quantidade, semente, tipo="ceiling", duracao=120.0, fps=240.0):
+    """Brilho relativo de uma luz que pisca, pela função que o `LightManager` usa para o tipo (`quantidade` de 0 a 1)."""
     from sem_alvorada.engine import lights
+    funcao = {"fluorescent": getattr(lights, "burst_flicker_gain", lights.flicker_gain),
+              "tv": getattr(lights, "tv_gain", lights.flicker_gain)}.get(tipo, lights.flicker_gain)
     t = np.arange(int(round(duracao * fps))) / fps
-    return {"t": t, "ganho": np.array([lights.flicker_gain(x, quantidade, semente) for x in t]), "fps": fps,
-            "quantidade": quantidade}
+    return {"t": t, "ganho": np.array([funcao(x, quantidade, semente) for x in t]), "fps": fps, "quantidade": quantidade,
+            "tipo": tipo}
 
 
 def luz_liga_desliga(tipo="ceiling", fps=240.0):
@@ -346,7 +369,39 @@ def luz_liga_desliga(tipo="ceiling", fps=240.0):
 
 
 def luzes():
-    return {"cascata": luz_cascata(), "pisca": {n: luz_pisca(a, s) for n, (a, s) in
-                                                  {"fluorescente_garagem": (0.25, 1.9), "fluorescente_cozinha": (0.10, 3.6),
-                                                   "tv": (0.7, 5.3), "abajur": (0.1, 7.1), "apagao": (0.65, 8.8)}.items()},
+    return {"cascata": luz_cascata(),
+            "pisca": {"fluorescente_garagem": luz_pisca(0.25, 1.9, "fluorescent"),
+                      "fluorescente_cozinha": luz_pisca(0.10, 3.6, "fluorescent"),
+                      "tv": luz_pisca(0.7, 5.3, "tv"), "abajur": luz_pisca(0.1, 7.1, "lamp"),
+                      "apagao": luz_pisca(0.65, 8.8, "ceiling")},
             "liga_desliga": {tipo: luz_liga_desliga(tipo) for tipo in ("ceiling", "lamp", "fluorescent")}}
+
+
+def relogio(duracao=60.0, fps=60.0):
+    """O mecanismo do relógio de pé (engine/clockwork.py): ângulo do pêndulo, posição do ponteiro dos segundos e os tiques.
+
+    O laço de áudio `amb_clock_tick` começa em t = 0 (a fase é sincronizada nesse instante, como o Ambience faz) e tem um tique
+    em 0,5 s, 1,5 s, 2,5 s..."""
+    from sem_alvorada.engine import clockwork
+    pendulo, ponteiro = ObjetoFalso(clockwork.PENDULUM), ObjetoFalso(clockwork.SECOND_HAND)
+    cena = SimpleNamespace(objects={clockwork.PENDULUM: pendulo, clockwork.SECOND_HAND: ponteiro})
+    mecanismo = clockwork.ClockWork(cena)
+    mecanismo.update(1.0 / fps)                      # um quadro antes do laço (o pêndulo já vinha balançando)
+    for _ in range(37):
+        mecanismo.update(1.0 / fps)
+    mecanismo.sync()
+    mecanismo.time = 0.0
+    n = int(duracao * fps)
+    t = (np.arange(n) + 1) / fps                    # o estado gravado no quadro k é o do fim dele
+    theta, mao = np.zeros(n), np.zeros(n)
+    tiques = []
+    ultimo = None
+    for k in range(n):
+        mecanismo.update(1.0 / fps)
+        theta[k] = pendulo.rotation_euler[1]
+        mao[k] = -ponteiro.rotation_euler[1]
+        if mecanismo.last_tick is not None and mecanismo.last_tick != ultimo:
+            ultimo = mecanismo.last_tick
+            tiques.append(ultimo)
+    return {"t": t, "theta": theta, "mao": mao, "tiques": np.array(tiques), "fps": fps,
+            "equivalente": clockwork.EQUIVALENT_LENGTH, "amplitude": clockwork.AMPLITUDE}

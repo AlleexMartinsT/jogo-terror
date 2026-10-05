@@ -1,11 +1,20 @@
-"""Relógio de pé de nogueira, 1,98 m, parado às 6:12, com o pêndulo imóvel e os pesos atrás do vidro.
+"""Relógio de pé de nogueira, 1,98 m, com as horas paradas às 6:12, o pêndulo de segundos e os pesos atrás do vidro.
 
 Medidas de um relógio de salão americano: base de 0,46 m, corpo de 0,37 m, capelo de 0,47 m. Tem
 `depth` de 0,36 m, o mesmo da peça anterior, para encostar na parede sem invadir a passagem.
+
+O pêndulo e o ponteiro dos segundos são objetos próprios (filhos do relógio, com a origem no pivô e no centro do
+mostrador) para o engine animá-los (`engine/clockwork.py`). O pêndulo é de segundos (T = 2 s): um pêndulo composto de
+haste de latão e lentilha de 1,2 kg precisa de 1,024 m do pivô ao centro da lentilha para ter l_eq = 0,994 m
+(tools/movimento_ref/fisica/relogio.py). O pivô fica logo abaixo do mostrador, na altura de 1,44 m; a lentilha pende
+com o centro em 0,416 m e aparece na janela do corpo, cuja travessa de baixo foi encurtada para isso.
 """
 import math
 
+import bpy
+
 from .. import craft
+from .. import conventions as C
 from . import furniture_forms as forms
 from . import materials
 from .composite import Composite
@@ -15,6 +24,11 @@ DEPTH = 0.36
 HOUR_ANGLE = (6 + 12 / 60) * 30           # graus no sentido horário a partir das 12
 MINUTE_ANGLE = 12 * 6
 DIAL_CENTER_Z = 1.55
+PENDULUM_PIVOT_Z = 1.44                    # m, pivô da suspensão (atrás do mostrador)
+PENDULUM_LENGTH = 1.024                   # m, do pivô ao centro da lentilha: T = 2 s com a massa da haste e da lentilha
+BOB_RADIUS = 0.06
+SECOND_HAND_LENGTH = 0.135                # m, ponteiro dos segundos central
+WINDOW_BOTTOM = 0.395                     # m, base do vidro do corpo (a lentilha aparece nele)
 
 materials.SPECS.update({"case_inside": materials.Spec(color=(0.035, 0.024, 0.016), roughness=0.9),
                         "blued_steel": materials.Spec(color=(0.03, 0.04, 0.07), roughness=0.35, metallic=0.9)})
@@ -41,12 +55,13 @@ def _trunk(wood, round_part, trim, glass):
     wood.box(0, -0.145, z0, 0.34, 0.012, height, "case_inside")
     for side in (-1, 1):
         wood.box(side * 0.145, 0.138, z0, 0.05, 0.022, height, "walnut_v")
-    wood.box(0, 0.138, z0, 0.24, 0.022, 0.165, "walnut")                           # travessa de baixo
+    wood.box(0, 0.138, z0, 0.24, 0.022, WINDOW_BOTTOM - z0, "walnut")              # travessa de baixo
     wood.box(0, 0.138, 1.175, 0.24, 0.022, z1 - 1.175, "walnut")                  # travessa de cima
-    glass.panel(0, 0.131, 0.835, 0.24, 0.675, "glass_clear", "front")
+    window = 1.175 - WINDOW_BOTTOM
+    glass.panel(0, 0.131, WINDOW_BOTTOM + window / 2, 0.24, window, "glass_clear", "front")
     for side in (-1, 1):                                                           # frisos de latão da porta
-        trim.box(side * 0.121, 0.151, 0.50, 0.004, 0.003, 0.675, "brass_aged")
-    trim.box(0, 0.151, 0.50, 0.24, 0.003, 0.004, "brass_aged")
+        trim.box(side * 0.121, 0.151, WINDOW_BOTTOM, 0.004, 0.003, window, "brass_aged")
+    trim.box(0, 0.151, WINDOW_BOTTOM, 0.24, 0.003, 0.004, "brass_aged")
     trim.box(0, 0.151, 1.171, 0.24, 0.003, 0.004, "brass_aged")
     forms.escutcheon(trim, 0.108, 0.151, 0.84, "brass_aged")
     for side in (-1, 1):
@@ -100,17 +115,9 @@ def _hands(hands, trim):
         trim.cylinder(0, 0, 0, 0.008, 0.007, "brass_aged", seg=forms.seg(12), smooth=True)
 
 
-def _pendulum_and_weights(trim, wood):
-    """Pêndulo parado a 7 graus do prumo e dois pesos de latão pendurados em correntes finas."""
-    pivot = (0.0, 0.0, 1.16)
-    angle = math.radians(7)
-    bob = (pivot[0] + 0.54 * math.sin(angle), 0.0, pivot[2] - 0.54 * math.cos(angle))
-    trim.tube(pivot, bob, 0.0030, "brass_aged", seg=8, smooth=True)
-    with trim.at(*bob, rx=-90):
-        trim.lathe([(0.0, 0.0), (0.050, 0.0), (0.058, 0.004), (0.060, 0.009), (0.054, 0.014), (0.0, 0.0155)],
-                   0, 0, -0.0075, "brass_aged", seg=forms.seg(20), smooth=True)
-        trim.torus(0, 0, 0.008, 0.035, 0.0025, "brass_aged", seg=forms.seg(18), seg_minor=5)
-    for x, bottom, link_top in ((-0.075, 0.54, 1.16), (0.075, 0.63, 1.16)):
+def _weights(trim, wood):
+    """Dois pesos de latão pendurados em correntes finas, atrás do plano do pêndulo."""
+    for x, bottom, link_top in ((-0.075, 0.54, 1.34), (0.075, 0.63, 1.34)):
         trim.lathe([(0.0, 0.0), (0.030, 0.0), (0.034, 0.012), (0.034, 0.17), (0.030, 0.182), (0.0, 0.182)], x, -0.03, bottom,
                    "brass_aged", seg=forms.seg(16), smooth=True)
         trim.sphere(x, -0.03, bottom + 0.19, 0.008, "brass_aged", seg=8, rings=5)
@@ -123,6 +130,33 @@ def _pendulum_and_weights(trim, wood):
     wood.box(0, -0.10, 0.52, 0.33, 0.02, 0.012, "case_inside")
 
 
+def _pendulum(trim):
+    """Pêndulo de segundos pendurado do pivô (origem do objeto): haste de latão e lentilha com um anel gravado."""
+    trim.tube((0.0, 0.0, 0.0), (0.0, 0.0, -PENDULUM_LENGTH), 0.0030, "brass_aged", seg=8, smooth=True)
+    with trim.at(0.0, 0.0, -PENDULUM_LENGTH, rx=-90):
+        trim.lathe([(0.0, 0.0), (0.050, 0.0), (0.058, 0.004), (0.060, 0.009), (0.054, 0.014), (0.0, 0.0155)],
+                   0, 0, -0.0075, "brass_aged", seg=forms.seg(20), smooth=True)
+        trim.torus(0, 0, 0.008, 0.035, 0.0025, "brass_aged", seg=forms.seg(18), seg_minor=5)
+
+
+def _second_hand(hands):
+    """Ponteiro dos segundos de aço azulado, fino, desenhado para cima (12 h) a partir do centro do mostrador."""
+    needle = [(-0.0012, -0.032), (0.0012, -0.032), (0.0008, SECOND_HAND_LENGTH - 0.012), (0.0, SECOND_HAND_LENGTH),
+              (-0.0008, SECOND_HAND_LENGTH - 0.012)]
+    hands.extrude(needle, "xz", 0.0, 0.0015, "blued_steel")
+
+
+def _attach(ctx, parent, name, location, build, **finishes):
+    """Peça que se mexe: malha própria, filha do relógio, com a origem em `location` (espaço local do relógio)."""
+    part = Composite(name, **finishes)
+    build(part)
+    obj = bpy.data.objects.new(name, part.to_mesh(name))
+    obj.parent = parent
+    obj.location = location
+    ctx.link(obj, C.COL_PROPS)
+    return obj
+
+
 def make_grandfather_clock(ctx, room, x, y, yaw, *, anchor=None, z=None):
     """Relógio de pé encostado na parede, parado às 6:12."""
     cy = flush_center(room, x, y, yaw, DEPTH)
@@ -132,5 +166,10 @@ def make_grandfather_clock(ctx, room, x, y, yaw, *, anchor=None, z=None):
         _plinth(asm.wood, asm.round)
         _trunk(asm.wood, asm.round, asm.trim, asm.glass)
         _hood(asm.wood, asm.round, asm.trim, asm.glass, asm.hands)
-        _pendulum_and_weights(asm.trim, asm.wood)
-    return place(ctx, asm, room, "grandfather_clock", x, y, yaw, z, name="grandfather_clock", anchor=anchor)
+        _weights(asm.trim, asm.wood)
+    clock = place(ctx, asm, room, "grandfather_clock", x, y, yaw, z, name="grandfather_clock", anchor=anchor)
+    _attach(ctx, clock, "grandfather_clock_pendulum", (0.0, cy, PENDULUM_PIVOT_Z),
+            lambda part: _pendulum(part.trim), trim=forms.SMOOTH)
+    _attach(ctx, clock, "grandfather_clock_seconds", (0.0, cy + 0.1085, DIAL_CENTER_Z),
+            lambda part: _second_hand(part.hands), hands=craft.RAW)
+    return clock

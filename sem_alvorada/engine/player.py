@@ -32,8 +32,9 @@ IDLE_BREATH_HZ, HARD_BREATH_HZ = 0.25, 0.65
 IDLE_BREATH_Z, HARD_BREATH_Z = 0.0020, 0.0055          # amplitude da subida da cabeça (m)
 IDLE_BREATH_PITCH, HARD_BREATH_PITCH = math.radians(0.12), math.radians(0.40)
 IDLE_SWAY = 0.0065                                       # m, deslocamento lateral lento
-RUN_HEAD_DROP = 0.03           # m: a cabeça corre mais baixa que parada (16_57 e 143_02: 2 a 4 cm)
-HEAD_ROTATION_GAIN = 1.0       # fração dos giros medidos da cabeça (roll, pitch, yaw) que a câmera reproduz
+# A passada média achata o balanço da cabeça: a velocidade angular RMS da cabeça de pessoas reais (25,6 graus/s em 10
+# clipes de andar rápido) é 1,5 vez a da curva média (16,7), porque cada passada tem sua trepidação. Devolvemos 1,4.
+HEAD_ROTATION_GAIN = 1.4
 
 
 class Player:
@@ -94,6 +95,16 @@ class Player:
         """0 em pé .. 1 agachado, pela altura dos olhos (suave, como o corpo a vê)."""
         span = C.PLAYER_EYE_STAND - C.PLAYER_EYE_CROUCH
         return max(0.0, min(1.0, (C.PLAYER_EYE_STAND - self.eye) / span))
+
+    @property
+    def breath_phase(self):
+        """Fase da respiração (rad): o peito do corpo e a cabeça da câmera sobem e descem juntos."""
+        return self._breath_phase
+
+    @property
+    def breath_mix(self):
+        """0 respiração de repouso .. 1 ofegante."""
+        return self._breath_mix
 
     def forward(self):
         """Direção da mira (vetor unitário 3D)."""
@@ -320,7 +331,7 @@ class Player:
             v = s.values
             amp = self._amp
             lateral += v["cab_y"] * amp
-            vertical += (v["cab_z"] - RUN_HEAD_DROP * s.weights[1]) * amp
+            vertical += (v["cab_z"] - s.drop) * amp          # s.drop: o quadril anda mais baixo que com a perna esticada
             roll += math.radians(v["cab_roll"]) * amp * HEAD_ROTATION_GAIN
             pitch += math.radians(v["cab_pitch"]) * amp * HEAD_ROTATION_GAIN
             yaw += math.radians(v["cab_yaw"]) * amp * HEAD_ROTATION_GAIN

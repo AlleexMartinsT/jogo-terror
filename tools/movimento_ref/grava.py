@@ -70,6 +70,7 @@ class Passo:
     arfagem: float = 0.0               # graus/s, + para cima
     entradas: dict = field(default_factory=dict)       # edges do primeiro quadro: {"interact": True, "flashlight": True}
     ao_iniciar: object = None          # função(jogo) chamada antes do primeiro quadro (abrir porta, mudar estado...)
+    por_quadro: object = None          # função(jogo, t, k) chamada antes de CADA tick: t = segundos no passo, k = índice (mãos, alvos)
     rotulo: str = ""
 
 
@@ -519,6 +520,8 @@ def gravar(jogo, roteiro, nome="gravacao", ossos="armadura", cada=1, prefacio=0.
             if k == 0:
                 for chave, valor in passo.entradas.items():
                     setattr(entrada, chave, valor)
+            if passo.por_quadro is not None:
+                passo.por_quadro(jogo, k * DT_JOGO, k)
             jogo.tick(DT_JOGO, entrada)
             relogio += DT_JOGO
             tique += 1

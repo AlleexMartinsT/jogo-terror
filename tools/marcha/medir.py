@@ -394,7 +394,7 @@ ESPELHADAS = ("pelve_yaw", "tronco_yaw", "pelve_roll", "cab_y", "pelvis_y", "cab
 SOMENTE_PE = ("quadril", "joelho", "pe", "tornozelo")
 
 
-def curvas_por_passada(cap, ev=None, pontos=101):
+def curvas_por_passada(cap, ev=None, pontos=101, apoio=0.6):
     """Todas as passadas do clipe, cada uma normalizada para 0..100% (do toque do calcanhar de um pé ao seguinte do
     MESMO pé). Devolve ({nome: array [passadas, pontos]}, T_passada).
 
@@ -448,14 +448,11 @@ def curvas_por_passada(cap, ev=None, pontos=101):
                 add("cab_pitch", ang["pitch"], a, b)
                 add("cab_yaw", ang["yaw"] * sign, a, b)
     out = {k: np.array(v) for k, v in collect.items()}
-    # pé plano = apoio médio (a partir de 25% a 35% da passada, onde o pé está inteiro no chão)
-    for key in ("pe", "tornozelo"):
+    # pé plano = apoio médio: de 40% a 60% do apoio (25 a 35% da passada ao andar, 11 a 17% ao correr)
+    a, b = int(round(0.4 * apoio * 100)), max(int(round(0.6 * apoio * 100)), int(round(0.4 * apoio * 100)) + 2)
+    for key in ("pe", "tornozelo", "pe_alt", "bola_alt"):
         if key in out:
-            out[key] = out[key] - out[key][:, 25:35].mean(axis=1, keepdims=True)
-    # altura do pé em relação à altura média do apoio médio (tira o chão inclinado)
-    for key in ("pe_alt", "bola_alt"):
-        if key in out:
-            out[key] = out[key] - out[key][:, 25:35].mean(axis=1, keepdims=True)
+            out[key] = out[key] - out[key][:, a:b].mean(axis=1, keepdims=True)
     return out, T
 
 

@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 SAIDA = os.path.join(RAIZ, "out", "f4_4")
 ANTES = os.path.join(SAIDA, "antes")
+DEPOIS = os.path.join(SAIDA, "depois")
 FINAL = os.path.join(SAIDA, "final")
 FONTES = ("DERIVADO", "ESTIMADO", "MEDIDO")
 

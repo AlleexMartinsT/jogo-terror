@@ -112,9 +112,11 @@ sem_alvorada/
   ai/                  cérebro da entidade e malha de navegação
 assets/models/         malhas pré-calculadas (.npz) de peças que dependem de bibliotecas externas
 tools/                 capturas (prints.py), inspeção de objeto e scripts de modelagem auxiliar
+tools/movimento_ref/   mocap real (CMU), gravador do jogo, métricas, retarget, palco, vídeo lado a lado
 docs/CONTRACT.md       contrato entre os módulos
 docs/ACABAMENTO.md     padrão de modelagem da fase 2
 docs/FASE3.md          contrato da fase 3: corpo, mãos, roda de itens, HUD, portas, cutscenes
+docs/FASE4.md          fase 4: movimento verídico, referências reais e a divisão do trabalho
 tests/                 testes (scripts com assert)
 ```
 
@@ -146,6 +148,7 @@ python tests/test_body.py                # corpo: ossos, pesos, IK, passada, pla
 python tests/test_hands.py               # gestos dos itens, eventos, continuidade, lanterna
 python tests/test_inventory.py           # roda de itens
 python tests/test_speech_rule.py         # o personagem só fala nos casos previstos
+python tests/test_movimento_ref.py       # infraestrutura de comparação de movimento: métricas, gravador, câmeras
 python tests/test_doors.py               # curva das portas, ranger e reação da entidade
 python tests/test_cutscenes_fluency.py   # continuidade da câmera a 60 Hz nas cinco cenas
 python tests/test_audio_noise.py
@@ -153,6 +156,21 @@ python tests/test_ai_brain.py
 ```
 
 Capturas do jogo como o jogador veria: `LIBGL_ALWAYS_SOFTWARE=1 python tools/prints.py sala_sofa --out out/prints` (a lista de cenários está em `tools/prints.py`). Para olhar um objeto isolado, de vários ângulos: `tools/inspect_object.py`.
+
+## Movimento de referência
+
+A fase 4 julga o movimento do jogo contra pessoas reais (captura de movimento da CMU, que não restringe o uso) e contra a física dos objetos, sempre lado a lado e alinhado pela FASE do gesto. A infraestrutura está em `tools/movimento_ref/`:
+
+```
+LIBGL_ALWAYS_SOFTWARE=1 python -m tools.movimento_ref.comparar --lista                 # cenários registrados
+LIBGL_ALWAYS_SOFTWARE=1 python -m tools.movimento_ref.comparar andar \
+    --vistas frente,lado,topo,primeira --saida out/movimento/andar                     # vídeo, folha de contato, gráficos, tabela
+LIBGL_ALWAYS_SOFTWARE=1 python -m tools.movimento_ref.comparar --folha-retarget 07_01  # confere o retarget do mocap no Daniel
+python -m tools.movimento_ref.cmu                                                      # baixa os clipes de referência (19 MB)
+python tests/test_movimento_ref.py                                                     # BVH, métricas, gravador, coesão entre câmeras
+```
+
+O mocap é aplicado ao próprio corpo do jogador (`retarget.py`), o jogo é gravado sem janela (`grava.py`), as duas figuras aparecem no mesmo quadro de cada câmera (`palco.py`) e as mesmas métricas (`metricas.py`) saem dos dois lados. Veja o guia no topo de `tools/movimento_ref/__init__.py` e `docs/FASE4.md`.
 
 ## Por que não é um jogo "nativo" do Blender
 

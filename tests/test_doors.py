@@ -215,17 +215,19 @@ def test_door_close_noise_is_logged_when_closing_starts():
 
 
 def test_slam_is_fast_and_rebounds_a_little():
+    """A batida é um golpe de ~400 N por 0,15 s e a folha solta corre sozinha (física em tools/movimento_ref/fisica/porta.py):
+    chega em ~0,4 s, a ~4 m/s na ponta, e rebate só até a folga da lingueta. O estrondo cai no impacto."""
     game = fresh_game()
     game.doors.snap("den_hall", 1.0)
     assert game.doors.toggle("den_hall", hurried=True) == "slammed"
+    samples = trace_door(game, "den_hall", 1.0)
     assert "door_slam" in played(game)
-    samples = trace_door(game, "den_hall", 0.6)
     arrival = next(t for t, x, _ in samples if x <= 1e-9)
-    assert arrival <= 0.25, f"a batida levou {arrival:.2f} s"
+    assert 0.3 <= arrival <= 0.5, f"a batida levou {arrival:.2f} s"
     rebound = [x for t, x, _ in samples if t > arrival + FRAME]
     assert 0.003 < max(rebound) < 0.05, f"retorno da folha: {max(rebound):.3f}"
     last_moving = max(t for t, x, _ in samples if x > 0.0)
-    assert last_moving < 0.4, f"a folha só assentou em {last_moving:.2f} s"
+    assert last_moving - arrival < 0.5, f"a folha só assentou {last_moving - arrival:.2f} s depois do impacto"
     assert "door_latch" not in played(game), "a batida tem o próprio estrondo"
 
 

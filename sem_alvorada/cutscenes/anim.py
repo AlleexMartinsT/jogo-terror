@@ -47,11 +47,36 @@ def _write_vertices(mesh, array):
         mesh.update_tag()
 
 
-class CurtainWind(Actor):
-    """Vento nas cortinas: deformação por vértice em numpy, presa na barra e solta na barra de baixo.
+def _bessel_j0(x):
+    """J0(x) pela série de potências (x até ~9: os termos cancelam sem perder precisão em float64)."""
+    x = np.asarray(x, dtype=np.float64)
+    quarter = 0.25 * x * x
+    term = np.ones_like(x)
+    total = term.copy()
+    for k in range(1, 40):
+        term = -term * quarter / (k * k)
+        total += term
+    return total
 
-    Uma ondulação que percorre a largura, rajadas lentas (`gust`, curva do tempo absoluto da cutscene) e um
-    vaivém lateral pequeno. O peso cresce com a distância da barra, então o tecido pesa no alto e voa na bainha.
+
+# Zeros de J0 e J1(zero): os modos de um pano pendurado (corrente de Bernoulli). f_n = j_n sqrt(g / H) / (4 pi), DERIVADO:
+# para uma cortina de 2,26 m, 0,40 / 0,92 / 1,44 Hz. Forma do modo n: J0(j_n sqrt(1 - h)), h = distância à barra / altura.
+CURTAIN_ZEROS = (2.404826, 5.520078, 8.653728)
+CURTAIN_J1 = (0.519147, -0.340265, 0.271452)
+CURTAIN_ZETA = 0.15             # amortecimento do ar num tecido leve (ESTIMADO 0,08 a 0,3)
+WIND_SCALE = 5.0                # s: escala de tempo da turbulência (ESTIMADO); espectro de von Karman
+WIND_CONVECTION = 1.5           # m/s: a rajada atravessa a janela com a velocidade do vento (turbulência congelada)
+WIND_LINES = 36                 # linhas espectrais, de 0,05 a 2,5 Hz espaçadas em escala logarítmica (12% entre vizinhas)
+
+
+class CurtainWind(Actor):
+    """Vento nas cortinas: o pano é uma corrente pendurada na barra e o vento turbulento excita os modos dela.
+
+    O deslocamento é o vento médio (o pano abre em ângulo, linear com a distância à barra) mais as oscilações dos três
+    primeiros modos de um pano pendurado (0,4 / 0,9 / 1,4 Hz para 2,26 m), cada um com a sua ressonância amortecida e o
+    espectro do vento de von Karman, sintetizado por 36 senoides com fases fixas (determinístico e sem estado: serve a
+    qualquer taxa de quadros). A fase anda pela largura com a velocidade do vento (a rajada atravessa a janela). `gust`
+    é a curva lenta da força do vento no tempo da cutscene; a barra de cima não anda.
     """
 
     def __init__(self, names, strength=1.0, gust=None, seed=0.0, reach=0.20):
@@ -72,36 +97,89 @@ class CurtainWind(Actor):
             rest = _read_vertices(obj.data)
             z, x, y = rest[:, 2], rest[:, 0], rest[:, 1]
             top, bottom = float(z.max()), float(z.min())
-            hang = np.clip((top - z) / max(top - bottom, 1e-3), 0.0, 1.0)
-            weight = hang ** 1.4 * np.clip((top - z) / 0.12, 0.0, 1.0)      # a barra de cima não anda
+            height = max(top - bottom, 1e-3)
+            hang = np.clip((top - z) / height, 0.0, 1.0)
             # a cortina fica entre a parede (y local ~ 0) e o quarto: "para fora" é o sinal de y
             outward = -1.0 if float(y.mean()) < 0.0 else 1.0
-            self._cloth.append((obj.data, rest, weight.astype(np.float32), outward, index + self.seed, x))
+            shapes = [_bessel_j0(zero * np.sqrt(1.0 - hang)) for zero in CURTAIN_ZEROS]
+            freqs = np.array(CURTAIN_ZEROS) * math.sqrt(GRAVITY / height) / (4.0 * math.pi)
+            lines = 0.05 * (2.5 / 0.05) ** (np.arange(WIND_LINES) / (WIND_LINES - 1.0))
+            width = lines * math.log(2.5 / 0.05) / (WIND_LINES - 1.0)
+            wind = np.sqrt((4.0 * WIND_SCALE / (1.0 + 70.8 * (lines * WIND_SCALE) ** 2) ** (5.0 / 6.0)) * width)
+            k = np.arange(WIND_LINES, dtype=np.float64)
+            phases = np.abs(np.sin(k * 12.9898 + (index + self.seed) * 78.233)) * 43758.5453 % 1.0 * math.tau
+            # ganho de cada modo em cada linha: participação / w_n^2 x ressonância (1 / sqrt((1-r^2)^2 + (2 zeta r)^2))
+            gains = np.zeros((3, WIND_LINES))
+            lags = np.zeros((3, WIND_LINES))
+            for n in range(3):
+                r = lines / freqs[n]
+                participation = 2.0 / (CURTAIN_ZEROS[n] * CURTAIN_J1[n]) / (TAU * freqs[n]) ** 2
+                gains[n] = participation / np.sqrt((1.0 - r * r) ** 2 + (2.0 * CURTAIN_ZETA * r) ** 2) * wind
+                lags[n] = np.arctan2(2.0 * CURTAIN_ZETA * r, 1.0 - r * r)
+            # normaliza: a oscilação na bainha (todos os modos somados) passa a ter desvio padrão 1
+            samples = np.linspace(0.0, 400.0, 4000)[:, None]
+            at_hem = sum(np.sum(gains[n][None, :] * np.sin(TAU * lines[None, :] * samples + phases[None, :] - lags[n][None, :]),
+                                axis=1) for n in range(3))
+            hem = float(np.std(at_hem))
+            stations = np.linspace(float(x.min()), float(x.max()), 9)
+            self._cloth.append({"mesh": obj.data, "rest": rest, "outward": outward, "hang": hang.astype(np.float32),
+                                "shapes": [sh.astype(np.float32) for sh in shapes], "x": x, "stations": stations,
+                                "lines": lines, "phases": phases, "gains": gains / max(hem, 1e-12), "lags": lags})
 
     def update(self, stage, dt):
         t = stage.t
-        gust = self.gust(t) * self.strength
-        for mesh, rest, weight, outward, phase, x in self._cloth:
-            wave = np.sin(x * 2.3 + t * 1.55 + phase * 1.9) * 0.6 + np.sin(x * 5.1 - t * 2.4 + phase) * 0.4
-            billow = 0.55 + 0.45 * math.sin(t * 0.8 + phase)
-            push = weight * (0.5 + 0.5 * wave) * (billow * gust * self.reach)
-            sway = weight * np.sin(x * 1.1 + t * 0.9 + phase) * (0.35 * gust * self.reach)
-            moved = rest.copy()
-            moved[:, 1] += outward * push
-            moved[:, 0] += sway
-            _write_vertices(mesh, moved)
+        amount = self.gust(t) * self.strength * self.reach
+        for cloth in self._cloth:
+            lines, gains, lags = cloth["lines"], cloth["gains"], cloth["lags"]
+            # fase de cada linha em cada estação da largura: a rajada anda com WIND_CONVECTION
+            phase = (TAU * lines[None, :] * t + cloth["phases"][None, :]
+                     + TAU * lines[None, :] * cloth["stations"][:, None] / WIND_CONVECTION)
+            displacement = np.zeros_like(cloth["hang"])
+            for n in range(3):
+                modal = np.sum(gains[n][None, :] * np.sin(phase - lags[n][None, :]), axis=1)         # [estações]
+                displacement += cloth["shapes"][n] * np.interp(cloth["x"], cloth["stations"], modal).astype(np.float32)
+            push = amount * (0.45 * cloth["hang"] + 0.25 * displacement)      # vento médio (linear) + oscilação dos modos
+            moved = cloth["rest"].copy()
+            moved[:, 1] += cloth["outward"] * push
+            _write_vertices(cloth["mesh"], moved)
 
     def stop(self, stage):
-        for mesh, rest, *_ in self._cloth:
-            _write_vertices(mesh, rest)
+        for cloth in self._cloth:
+            _write_vertices(cloth["mesh"], cloth["rest"])
         self._cloth.clear()
 
 
-class DustFall(Actor):
-    """Poeira e lascas de reboco caindo do forro a partir de `t0`: balística com arrasto, tudo num objeto só.
+# Poeira: velocidade terminal pela lei de arrasto (Schiller-Naumann) com densidade de reboco ~1800 kg/m3 (ESTIMADO):
+# poeira fina (20 a 45 micra) cai a 2 a 10 cm/s; grãos (100 a 300 micra) a ~0,5 a 1,7 m/s; lascas finas (placas de 1 a 2 mm
+# de espessura e 4 a 10 mm de lado) a 3 a 6 m/s. O tempo de relaxação é tau = v_t / g.
+DUST_DENSITY = 1800.0
+AIR_DENSITY, AIR_VISCOSITY = 1.2, 1.81e-5
 
-    O objeto `Cut_Dust` tem `count` partículas de 4 vértices; aqui cada uma ganha instante de partida, ponto
-    no forro, velocidade terminal e tamanho. Partícula fora da vida fica colapsada num ponto (não desenha).
+
+def terminal_velocity_sphere(diameter):
+    """Velocidade terminal (m/s) de esferas de reboco no ar, arrasto de Schiller-Naumann (ponto fixo)."""
+    d = np.asarray(diameter, dtype=np.float64)
+    effective = (DUST_DENSITY - AIR_DENSITY) * GRAVITY * math.pi * d ** 3 / 6.0
+    v = effective / (3.0 * math.pi * AIR_VISCOSITY * d)
+    for _ in range(40):
+        re = np.maximum(AIR_DENSITY * v * d / AIR_VISCOSITY, 1e-9)
+        cd = 24.0 / re * (1.0 + 0.15 * re ** 0.687)
+        v = np.sqrt(2.0 * effective / (AIR_DENSITY * cd * math.pi * d * d / 4.0))
+    return v
+
+
+def terminal_velocity_flake(side, thickness, drag_coefficient=1.3):
+    """Placa fina de reboco caindo de lado: m g = 1/2 rho Cd A v^2."""
+    mass = DUST_DENSITY * side * side * thickness
+    return np.sqrt(2.0 * mass * GRAVITY / (AIR_DENSITY * drag_coefficient * side * side))
+
+
+class DustFall(Actor):
+    """Poeira e lascas de reboco caindo do forro a partir de `t0`: cada partícula cai à velocidade terminal da sua classe.
+
+    O objeto `Cut_Dust` tem `count` partículas de 4 vértices; aqui cada uma ganha instante de partida, ponto no forro,
+    classe (65% poeira fina, 25% grãos, 10% lascas), velocidade terminal e tamanho. A velocidade tende ao terminal com
+    tau = v_t / g (arrasto linear). Partícula fora da vida fica colapsada num ponto (não desenha).
     """
 
     def __init__(self, center, radius, ceiling_z, floor_z, t0, spread=1.4, seed=1.0, size=1.0, object_name="Cut_Dust"):
@@ -126,9 +204,14 @@ class DustFall(Actor):
         angle, rad = h(2.0) * math.tau, np.sqrt(h(3.0)) * self.radius
         self.x = self.center[0] + np.cos(angle) * rad
         self.y = self.center[1] + np.sin(angle) * rad
-        self.terminal = 0.25 + 0.9 * h(4.0) ** 2          # os pedaços grandes caem mais depressa
-        self.drift = (h(5.0) - 0.5) * 0.18
-        self.grain = (0.0022 + 0.006 * h(6.0) ** 3) * self.size
+        kind, mix = h(4.0), h(5.0)
+        fine, grit = kind < 0.65, (kind >= 0.65) & (kind < 0.90)
+        diameter = np.where(fine, 20e-6 * (45.0 / 20.0) ** mix, 100e-6 * 3.0 ** mix)
+        flake = terminal_velocity_flake(0.004 + 0.006 * mix, 0.001 + 0.001 * h(8.0))
+        self.terminal = np.where(fine | grit, terminal_velocity_sphere(diameter), flake)
+        self.drift = (h(6.0) - 0.5) * 0.18                         # correntes de ar de um cômodo: ~0,1 m/s
+        size = np.where(fine, 0.0015 + 0.0015 * mix, np.where(grit, 0.003 + 0.002 * mix, 0.004 + 0.005 * mix))
+        self.grain = size * self.size
         self.spin = h(7.0) * math.tau
         base = np.array([[-1, 0, -1], [1, 0, -1], [1, 0, 1], [-1, 0, 1]], dtype=np.float32)
         self._shape = np.tile(base, (count, 1))
@@ -139,8 +222,9 @@ class DustFall(Actor):
             return
         tau = stage.t - self.t0 - self.delay
         alive = (tau > 0.0) & (self.ceiling_z - self.floor_z > 0.0)
-        drag = 2.6
-        fall = self.terminal * (tau - (1.0 - np.exp(-drag * np.clip(tau, 0.0, None))) / drag)
+        relax = self.terminal / GRAVITY
+        clipped = np.clip(tau, 0.0, None)
+        fall = self.terminal * (clipped - relax * (1.0 - np.exp(-clipped / relax)))
         z = self.ceiling_z - 0.02 - fall
         alive &= z > self.floor_z
         size = np.where(alive, self.grain, 0.0)
@@ -292,7 +376,8 @@ ENGINE_ROLL_KICK = 0.0026       # rad: torque do motor pegando (~200 N m) sobre 
 STEERING_RATIO = 15.0           # ESTIMADO: volante / roda, direção hidráulica americana (14 a 18)
 IDLE_HZ = 700.0 / 60.0          # DERIVADO: 1a ordem do motor a 700 rpm (11,7 Hz)
 IDLE_ACCEL_RMS = 0.35           # m/s2 vertical no assoalho em marcha lenta (ESTIMADO 0,05 a 0,4): o teto da faixa, para aparecer
-WANDER_WAVELENGTH = 9.0         # m: correção lenta de volante; uma onda mais curta pediria curva mais fechada que o carro faz
+WANDER_WAVELENGTH = 10.0        # m: correção lenta de volante (ESTIMADO); uma onda mais curta pediria curva mais fechada que o carro faz
+WANDER_FADE = 3.0               # m para a correção de volante chegar à amplitude cheia
 TAU = 2.0 * math.pi
 IDLE_AMPLITUDE = IDLE_ACCEL_RMS * math.sqrt(2.0) / (TAU * IDLE_HZ) ** 2     # m de pico: a = x (2 pi f)^2
 
@@ -342,6 +427,8 @@ class HalfCar:
 
     def advance(self, dt, front, rear, a_forward):
         """`front` e `rear`: (altura no início do quadro, no fim) do chão sob cada eixo."""
+        if dt <= 0.0:
+            return
         steps = max(1, int(math.ceil(dt / self.STEP)))
         h = dt / steps
         for k in range(steps):
@@ -375,7 +462,7 @@ class CarMotion(Actor):
     """
 
     def __init__(self, home, stop, move_start, move_end, yaw_deg=180.0, crank_start=None, catch=None, lights_on=None,
-                 object_name=C.OBJ_CAR, wander=0.04):
+                 object_name=C.OBJ_CAR, wander=0.03):
         self.home, self.stop_point = home, stop
         self.t0, self.t1 = move_start, move_end
         self.yaw0 = math.radians(yaw_deg)
@@ -388,6 +475,8 @@ class CarMotion(Actor):
         self._prev_ground = None
         self._obj = None
         self._wheels = {}
+        self._hubs = {}
+        self._spin = {}
 
     def start(self, stage):
         self._obj = stage.touch(stage.obj(self.name))
@@ -395,6 +484,8 @@ class CarMotion(Actor):
             obj = stage.touch(stage.obj(f"Car_Wheel_{wheel}"))
             if obj is not None:
                 self._wheels[wheel] = obj
+                self._hubs[wheel] = tuple(obj.location)
+                self._spin[wheel] = 0.0
         self._prev_ground = None
         stage.set_mount(self.name, self.home, (0.0, 0.0, self.yaw0))
 
@@ -424,15 +515,22 @@ class CarMotion(Actor):
         return crank_level * (1.0 - settle) + (1.0 + 0.25 * (1.0 - settle)) * settle, False
 
     def _path(self, forward):
-        """Desvio lateral da correção de volante (m, para a direita), a inclinação dele e a curvatura (1/m, positiva = esquerda)."""
+        """Caminho do eixo traseiro: desvio lateral da correção de volante (m, para a direita), a inclinação dele e a
+        curvatura (1/m, positiva = esquerda).
+
+        A amplitude cresce nos primeiros `WANDER_FADE` m por uma curva suave (derivadas contínuas), então o volante não dá tranco.
+        """
         if not self.wander:
             return 0.0, 0.0, 0.0
         k = TAU / WANDER_WAVELENGTH
-        fade, fade_rate = clamp01(forward / 2.0), (0.5 if 0.0 < forward < 2.0 else 0.0)
+        u = clamp01(forward / WANDER_FADE)
+        fade = u ** 3 * (10.0 - 15.0 * u + 6.0 * u * u)                 # subida suave com 1a e 2a derivadas nulas nas pontas
+        fade_rate = 30.0 * u * u * (1.0 - u) ** 2 / WANDER_FADE
+        fade_bend = 60.0 * u * (1.0 - u) * (1.0 - 2.0 * u) / WANDER_FADE ** 2
         sine, cosine = math.sin(k * forward), math.cos(k * forward)
         e = self.wander * sine * fade
         slope = self.wander * (k * cosine * fade + sine * fade_rate)
-        bend = self.wander * (-k * k * sine * fade + 2.0 * k * cosine * fade_rate)
+        bend = self.wander * (-k * k * sine * fade + 2.0 * k * cosine * fade_rate + sine * fade_bend)
         return e, slope, -bend / (1.0 + slope * slope)
 
     def update(self, stage, dt):
@@ -441,13 +539,17 @@ class CarMotion(Actor):
         way = math.cos(self.yaw0)                                 # +1 se a frente do carro aponta para +Y do mundo
         forward, v_forward, a_forward = s * way, v_world * way, a_world * way
         offset, slope, curvature = self._path(forward)
-        heading = -math.atan(slope)                               # o carro aponta ao longo do caminho que faz
-        yaw = self.yaw0 + heading
-        x = self.home[0] + offset * math.cos(self.yaw0)
-        y = self.home[1] + s + offset * math.sin(self.yaw0)
+        yaw = self.yaw0 - math.atan(slope)                        # o carro aponta ao longo do caminho que o eixo traseiro faz
+        # o eixo traseiro segue o caminho (não derrapa de lado); a origem do carro fica meio entre-eixos à frente dele
+        ahead = (-math.sin(self.yaw0), math.cos(self.yaw0))
+        right = (math.cos(self.yaw0), math.sin(self.yaw0))
+        rear_x = self.home[0] - ahead[0] * CAR_WHEELBASE / 2.0 + forward * ahead[0] + offset * right[0]
+        rear_y = self.home[1] - ahead[1] * CAR_WHEELBASE / 2.0 + forward * ahead[1] + offset * right[1]
+        x = rear_x - math.sin(yaw) * CAR_WHEELBASE / 2.0
+        y = rear_y + math.cos(yaw) * CAR_WHEELBASE / 2.0
         engine, cranking = self._engine(t)
 
-        front_y, rear_y = y + way * CAR_WHEELBASE / 2.0, y - way * CAR_WHEELBASE / 2.0
+        front_y = rear_y + math.cos(yaw) * CAR_WHEELBASE
         ground = (ground_height(front_y) + self.home[2], ground_height(rear_y) + self.home[2])
         if self._prev_ground is None:
             self._suspension.rest_on(*ground)
@@ -469,10 +571,22 @@ class CarMotion(Actor):
         if self._obj is not None:
             self._obj.location = origin
             self._obj.rotation_euler = euler
-        spin = -forward / WHEEL_RADIUS                            # rolar para a frente gira a roda no sentido de -X
-        steer = math.atan(CAR_WHEELBASE * curvature)              # Ackermann
+        steer = math.atan(CAR_WHEELBASE * curvature)              # Ackermann (eixo dianteiro, no meio)
+        suspension = self._suspension
         for wheel, obj in self._wheels.items():
-            obj.rotation_euler = (spin, 0.0, steer if wheel.startswith("F") else 0.0)
+            hx, hy, hz = self._hubs[wheel]
+            front = wheel.startswith("F")
+            # cada roda anda o seu caminho: o centro de curvatura fica à esquerda do eixo traseiro, a 1/kappa, então a roda de
+            # fora anda mais e a dianteira de dentro esterça mais (Ackermann). Rolar sem deslizar = distância / raio.
+            run = 1.0 + curvature * hx
+            angle = math.atan(CAR_WHEELBASE * curvature / run) if front else 0.0
+            speed = v_forward * run / math.cos(angle)
+            self._spin[wheel] -= speed * dt / WHEEL_RADIUS
+            obj.rotation_euler = (self._spin[wheel], 0.0, angle)
+            # a roda fica no chão: a suspensão se comprime ou se estende pelo quanto o corpo se afastou da pista
+            deflection = (suspension.z + (suspension.a if front else -suspension.b) * suspension.theta
+                          - (ground[0] if front else ground[1]))
+            obj.location = (hx, hy, hz - deflection)
         stage.signals["car"] = {"accel": a_forward, "lateral": a_side, "speed": v_forward, "engine": engine,
                                 "cranking": cranking, "steer": steer, "pitch": pitch_total, "roll": roll_total,
                                 "travel": forward}
@@ -492,6 +606,7 @@ class CarMotion(Actor):
     def stop(self, stage):
         self._obj = None
         self._wheels.clear()
+        self._hubs.clear()
 
 
 class PropPath(Actor):
@@ -706,7 +821,7 @@ class GarageLift(Actor):
         bounce = self._bounce.advance(dt) * 0.12 if tau >= self.dur else 0.0
         moving = 0.0 < tau < self.dur
         rattle = (0.0016 * noise(t * 38.0, 1.0) + 0.0009 * math.sin(t * 90.0)) if moving else 0.0
-        jerk = 0.004 * math.exp(-8.0 * max(tau, 0.0)) * math.sin(60.0 * tau) if tau > 0.0 else 0.0
+        jerk = 0.0015 * math.exp(-8.0 * max(tau, 0.0)) * math.sin(60.0 * tau) if tau > 0.0 else 0.0     # folga da corrente
         self._obj.location = (self._obj.location[0], self._obj.location[1], z + bounce + jerk)
         self._obj.rotation_euler = (rattle, rattle * 0.6, 0.0)
 

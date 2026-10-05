@@ -462,17 +462,218 @@ def teste_movimento_do_jogo():
     assert np.isfinite(r.v["cadencia"]) and np.isfinite(r.v["passo"])
 
 
+# --------------------------------------------------------------------------
+# Coesão entre ângulos (palco) e fase entre a câmera dos olhos e o corpo
+# --------------------------------------------------------------------------
+def teste_alinhamento_por_fase():
+    from tools.movimento_ref.cenarios.base import Alinhamento
+    a = Alinhamento([0.30, 1.40, 2.50], [0.90, 1.80, 2.70])
+    assert np.allclose(a.jogo_de_real(np.array([0.30, 1.40, 2.50])), [0.90, 1.80, 2.70])
+    assert abs(float(a.jogo_de_real(0.85)) - 1.35) < 1e-9                      # meio do primeiro ciclo
+    assert abs(float(a.jogo_de_real(0.0)) - (0.90 - 0.30 * (0.90 / 1.10))) < 1e-9     # extrapola com a inclinação da ponta
+    assert abs(a.razao(0.8) - 0.9 / 1.1) < 1e-6
+    assert abs(float(a.real_de_jogo(float(a.jogo_de_real(1.1)))) - 1.1) < 1e-9
+
+
+class PalcoDeTeste:
+    """Palco com o mocap retargetado e uma gravação do jogo, montados uma vez."""
+    pronto = None
+
+    @classmethod
+    def obter(cls):
+        if cls.pronto is None:
+            from tools.movimento_ref import grava, palco, retarget
+            alvo = retarget.retargetar(cmu.carregar("07_01"))
+            jogo = Cena.obter()
+            jogo.place_player(0.0, 0.0, 0.0, 0.0)
+            for _ in range(20):
+                from sem_alvorada.engine.inputstate import InputState
+                jogo.tick(1 / 60, InputState())
+            rec = grava.gravar(jogo, grava.roteiro_de_texto("andar 4"), nome="coesao", ossos="armadura", prefacio=0.3)
+            cena = palco.Palco(320, 180)
+            cena.origem("real", alvo.raiz[0, :2], alvo.raiz[0, 3])
+            cena.origem("jogo", rec.raiz[0, :2], rec.raiz[0, 3])
+            cls.pronto = (alvo, rec, cena)
+        return cls.pronto
+
+
+def _para_corpo(posicoes_palco, rig):
+    """Posições do palco no referencial do próprio corpo (raiz na origem, olhando para +Y)."""
+    from mathutils import Matrix
+    giro = np.array(Matrix.Rotation(-rig.rotation_euler.z, 3, "Z"))
+    return (posicoes_palco - np.array(rig.location)) @ giro.T
+
+
+def teste_coesao_do_estado_entre_angulos():
+    """No mesmo instante, TODAS as câmeras mostram o mesmo estado: as posições dos ossos, medidas no referencial do
+    corpo, são idênticas em todas as vistas e iguais ao que o solver (real) e a gravação (jogo) dizem; e a projeção de cada
+    junta na imagem cai onde o dado manda, a menos de meio pixel."""
+    from sem_alvorada.body import skeleton as S
+    alvo, rec, cena = PalcoDeTeste.obter()
+    from mathutils import Matrix
+    vistas = ("frente", "lado", "costas", "topo", "tres_quartos")
+    pior_pose, pior_vistas, pior_pixel = 0.0, 0.0, 0.0
+    for k, j in ((40, 60), (95, 120), (150, 170), (230, 220)):
+        vistos = {"real": [], "jogo": []}
+        esperado_real = np.array([tuple(h) for h in alvo.solucao(k).head])
+        x, y, z, g = rec.raiz[j]
+        giro_jogo = np.array(Matrix.Rotation(-g, 3, "Z"))
+        esperado_jogo = (rec.cabecas[j] - np.array([x, y, z])) @ giro_jogo.T
+        for vista in vistas:
+            cena.vista(vista)
+            cena.pose_real(alvo, k)
+            cena.pose_jogo(rec, j)
+            import bpy
+            bpy.context.view_layer.update()
+            for lado, corpo, esperado in (("real", cena.real, esperado_real), ("jogo", cena.jogo, esperado_jogo)):
+                no_corpo = _para_corpo(corpo.posicoes(), corpo.rig)
+                vistos[lado].append(no_corpo)
+                pior_pose = max(pior_pose, float(np.abs(no_corpo - esperado).max()))
+                # projeção: o ponto do dado, levado ao palco do mesmo jeito que o piso é, cai no mesmo pixel
+                for osso in ("Hips", "Neck", "Hand.L", "Foot.R", "Toe.L"):
+                    i = S.BONE_ORDER.index(osso)
+                    do_palco = corpo.posicoes()[i]
+                    do_dado = np.array(corpo.rig.matrix_world.to_3x3() @ __import__("mathutils").Vector(esperado[i]) + corpo.rig.location)
+                    a, b = cena.projetar(do_palco), cena.projetar(do_dado)
+                    assert a is not None and b is not None, (vista, osso)
+                    pior_pixel = max(pior_pixel, abs(a[0] - b[0]), abs(a[1] - b[1]))
+        for lado in ("real", "jogo"):
+            for outro in vistos[lado][1:]:
+                pior_vistas = max(pior_vistas, float(np.abs(outro - vistos[lado][0]).max()))
+    assert pior_pose < 2.5e-3, f"pose no palco difere do dado em até {pior_pose * 1000:.2f} mm"
+    assert pior_vistas < 1e-5, f"as vistas divergem entre si em até {pior_vistas * 1000:.4f} mm"
+    assert pior_pixel < 0.5, f"projeção difere do dado em até {pior_pixel:.2f} px"
+    return f"pose {pior_pose:.1e} m, entre vistas {pior_vistas:.1e} m, projeção {pior_pixel:.1e} px"
+
+
+def teste_cores_na_imagem_batem_com_a_projecao():
+    """A esfera da cabeça (azul no real, laranja no jogo) aparece na imagem renderizada onde a projeção diz, em 3 vistas."""
+    from sem_alvorada.body import skeleton as S
+    alvo, rec, cena = PalcoDeTeste.obter()
+    pior = 0.0
+    for vista in ("frente", "lado", "tres_quartos"):
+        cena.vista(vista)
+        cena.pose_real(alvo, 60)
+        cena.pose_jogo(rec, 120)
+        imagem = cena.render_array().astype(int)
+        for lado, corpo, cor in (("real", cena.real, np.array([42, 120, 214])), ("jogo", cena.jogo, np.array([235, 104, 52]))):
+            centro = corpo.marcas["cabeca"].matrix_world.translation
+            px, py = cena.projetar(centro)
+            raio = 8
+            janela = imagem[max(0, int(py) - raio):int(py) + raio, max(0, int(px) - raio):int(px) + raio]
+            dominante = np.median(janela.reshape(-1, 3), axis=0)
+            # cor da esfera sombreada: mesma matiz da cor nominal (azul tem B alto, laranja tem R alto)
+            canal = int(np.argmax(cor))
+            assert dominante[canal] == dominante.max() and dominante[canal] > dominante.mean() + 15, (vista, lado, dominante)
+            pior = max(pior, abs(px - cena.largura / 2) / cena.largura)
+    return "esfera da cabeça no pixel projetado, nas 3 vistas"
+
+
+def _fase_do_passo(mov, metodo="zeni"):
+    ev = metricas.eventos_marcha(mov, metodo)
+    fases, _ = metricas.fases_do_ponto_baixo_por_passo(mov.cabeca_pos()[:, 2], ev)
+    return ev, fases
+
+
+def teste_fase_camera_corpo():
+    """A câmera dos olhos e o corpo estão em FASE: o ponto mais baixo da cabeça cai logo depois do toque do calcanhar (no
+    duplo apoio) e o sobe e desce acompanha a passada (duas oscilações por passada, na frequência dos passos)."""
+    alvo, rec, cena = PalcoDeTeste.obter()
+    jogo = rec.movimento_do_passo(0, margem=0.8)
+    ev, fases = _fase_do_passo(jogo)
+    reais = [carregar_clipe(c) for c in cmu.GRUPOS["andar"]]
+    reais = [m for m in reais if m is not None]
+    fases_reais = np.concatenate([_fase_do_passo(m)[1] for m in reais])
+    no_duplo_real = np.nanmean([metricas.cabeca_baixa_no_duplo_apoio(m.cabeca_pos()[:, 2], metricas.eventos_marcha(m, "zeni")) for m in reais])
+    fase_real, fase_jogo = float(np.median(fases_reais)), float(np.median(fases))
+    no_duplo_jogo = metricas.cabeca_baixa_no_duplo_apoio(jogo.cabeca_pos()[:, 2], ev)
+    cadencia = metricas.medir_marcha(jogo, "zeni").v["cadencia"]
+    f_cabeca = metricas.frequencia_dominante(jogo.cabeca_pos()[:, 2], jogo.fps)
+    relato = (f"ponto mais baixo da cabeça: real {fase_real:.2f} do passo (n={len(fases_reais)}, {100 * no_duplo_real:.0f}% dos passos no "
+              f"duplo apoio), jogo {fase_jogo:.2f} ({100 * (no_duplo_jogo if np.isfinite(no_duplo_jogo) else 0):.0f}% no duplo apoio); "
+              f"oscilação da cabeça a {f_cabeca:.2f} Hz, passos a {cadencia / 60:.2f} Hz")
+    assert no_duplo_real > 0.8, f"o critério não vale nem no mocap real: {relato}"
+    assert abs(f_cabeca - cadencia / 60.0) < 0.06 * cadencia / 60.0, f"a câmera não acompanha a passada: {relato}"
+    assert abs(fase_jogo - fase_real) <= 0.12, f"câmera e corpo FORA DE FASE: {relato}"
+    assert no_duplo_jogo > 0.6, f"o ponto baixo da cabeça não cai no duplo apoio: {relato}"
+    return relato
+
+
+def teste_detectar_alcances_separa_movimentos():
+    fps = 120.0
+    t = np.arange(0.0, 4.0, 1 / fps)
+
+    def lobo(centro, largura, pico):
+        return pico * np.exp(-0.5 * ((t - centro) / largura) ** 2)
+    separados = lobo(1.0, 0.18, 1.2) + lobo(2.6, 0.18, 1.0)                  # dois alcances com a mão parada entre eles
+    juntos = lobo(1.0, 0.20, 1.2) + lobo(1.45, 0.20, 1.1)                    # dois lobos de um movimento só (vale raso)
+    assert len(metricas.detectar_alcances(separados, fps, 0.3)) == 2
+    assert len(metricas.detectar_alcances(juntos, fps, 0.3)) == 1
+
+
+def teste_registro_de_cenarios():
+    from tools.movimento_ref import cenarios
+    from tools.movimento_ref.cenarios import Cenario, registrar
+    nomes = [n for n, _ in cenarios.listar()]
+    assert "andar" in nomes and "alcance_exemplo" in nomes, nomes
+
+    @registrar
+    class Provisorio(Cenario):
+        nome = "provisorio_teste"
+        titulo = "só para o teste"
+    assert cenarios.obter("provisorio_teste").titulo == "só para o teste"
+    del cenarios.REGISTRO["provisorio_teste"]
+    try:
+        cenarios.obter("não existe")
+    except KeyError as erro:
+        assert "andar" in str(erro)
+    else:
+        raise AssertionError("cenário inexistente deveria falhar")
+
+
+def teste_retarget_reproduz_o_movimento_real():
+    """O Daniel retargetado mantém os ângulos do mocap (casamento de direção) e os pés no chão, sem deslizar mais que o real."""
+    from tools.movimento_ref import retarget
+    clip = cmu.carregar("07_01")
+    alvo = retarget.retargetar(clip)
+    original, daniel = alvo.origem, alvo.movimento()
+    a, b = metricas.angulos(original), metricas.angulos(daniel)
+    pior = {chave: float(np.sqrt(np.mean((a[chave] - b[chave]) ** 2))) for chave in a}
+    for chave in ("joelho_e", "joelho_d", "cotovelo_e", "cotovelo_d", "ombro_e", "ombro_d", "pelve_rot", "torax_rot"):
+        assert pior[chave] < 1.0, f"{chave}: o retarget erra {pior[chave]:.2f} graus (rms)"
+    # tronco e tornozelo: a coluna do Daniel tem 3 ossos de comprimentos diferentes dos da CMU, e o pé é mais longo
+    assert pior["tronco_incl"] < 2.0 and pior["tornozelo_e"] < 2.0 and pior["tornozelo_d"] < 2.0, pior
+    # a perna do Daniel é o fator de escala; o tornozelo plano fica a 8,5 cm do chão
+    piso_tornozelo = metricas.estimar_piso(daniel)[0]
+    assert abs(piso_tornozelo - 0.085) < 0.02, piso_tornozelo
+    ma, mb = metricas.medir_marcha(original, "zeni"), metricas.medir_marcha(daniel, "zeni")
+    assert abs(mb.v["cadencia"] - ma.v["cadencia"]) < 4.0, (ma.v["cadencia"], mb.v["cadencia"])
+    assert abs(mb.v["passo"] / alvo.escala - ma.v["passo"]) < 0.06, (ma.v["passo"], mb.v["passo"], alvo.escala)
+    assert mb.v["deslize_apoio"] < ma.v["deslize_apoio"] + 0.03, (ma.v["deslize_apoio"], mb.v["deslize_apoio"])
+    # os braços por IK levam o punho ao ponto escalado pelo braço: a distância ombro-punho é a do mocap x razão dos braços
+    ik = retarget.retargetar(clip, bracos="ik")
+    assert np.isfinite(ik.locais).all()
+    return f"ângulos rms <= {max(pior.values()):.1f} graus, escala {alvo.escala:.3f}"
+
+
 GRUPOS = (("puro", [teste_bvh_conhecido, teste_movimento_reamostrar, teste_marcha_sintetica, teste_deslize_do_pe,
                     teste_froude_escolhe_o_metodo, teste_angulos_de_postura_conhecida, teste_sinal_da_dorsiflexao, teste_rotacao_da_pelve,
                     teste_jerk_minimo, teste_velocidade_angular_da_cabeca, teste_tabela_e_figuras]),
           ("real", [teste_clipe_andar_07_01, teste_clipe_correr_09_01, teste_andar_devagar_mais_lento_que_andar]),
+          ("cenários", [teste_detectar_alcances_separa_movimentos, teste_registro_de_cenarios, teste_retarget_reproduz_o_movimento_real]),
           ("gravador", [teste_roteiro_de_texto, teste_gravador_taxa_e_conteudo, teste_ossos_armadura_igual_solver,
-                        teste_gravacao_deterministica_e_disco, teste_movimento_do_jogo]))
+                        teste_gravacao_deterministica_e_disco, teste_movimento_do_jogo]),
+          ("coesão", [teste_alinhamento_por_fase, teste_coesao_do_estado_entre_angulos, teste_cores_na_imagem_batem_com_a_projecao,
+                      teste_fase_camera_corpo]))
+
+# testes que descrevem um defeito conhecido do jogo (o agente de locomoção corrige): falham com números e não derrubam o
+# resultado geral, a menos que se passe --estrito
+PENDENTES = set()
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    grupos = [g for g in GRUPOS if not ("--puro" in argv and g[0] != "puro" and g[0] != "real")]
+    grupos = [g for g in GRUPOS if not ("--puro" in argv and g[0] not in ("puro", "real"))]
     falhas = 0
     for nome_grupo, testes in grupos:
         for teste in testes:
@@ -481,6 +682,9 @@ def main(argv=None):
                 nota = teste()
                 print(f"  ok   {teste.__name__:52s} {time.time() - inicio:5.1f}s" + (f"  ({nota})" if nota else ""))
             except Exception as erro:       # noqa: BLE001
+                if teste.__name__ in PENDENTES and "--estrito" not in argv:
+                    print(f"  PENDENTE {teste.__name__}: {erro}")
+                    continue
                 falhas += 1
                 print(f"  FALHOU {teste.__name__}: {type(erro).__name__}: {erro}")
     print("test_movimento_ref OK" if not falhas else f"test_movimento_ref: {falhas} falha(s)")
