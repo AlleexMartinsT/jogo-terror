@@ -94,7 +94,7 @@ def painel_porta_abrir(g, antes):
         ax[3][c].set_xlabel("segundos desde a folha sair do repouso")
         ax[0][c].set_xlim(-0.1, dur + 0.15)
     ax[0][2].legend(loc="lower right")
-    return _salvar(fig, "porta_abrir.png")
+    return _salvar(fig, "grafico_porta_abrir.png")
 
 
 def painel_porta_empurrao():
@@ -129,7 +129,7 @@ def painel_porta_empurrao():
     ax[2].set_ylabel("força de pico na maçaneta (N)")
     ax[2].set_ylim(0, 260)
     ax[2].legend()
-    return _salvar(fig, "porta_empurrao_e_esforco.png")
+    return _salvar(fig, "grafico_porta_empurrao_e_esforco.png")
 
 
 def painel_porta_fecha_batida(g, antes):
@@ -177,7 +177,7 @@ def painel_porta_fecha_batida(g, antes):
         a.set_ylabel("velocidade (rad/s)")
         a.set_xlabel("segundos desde o golpe")
         a.set_xlim(-0.02, 0.8)
-    return _salvar(fig, "porta_fecha_e_batida.png")
+    return _salvar(fig, "grafico_porta_fecha_e_batida.png")
 
 
 def painel_porta_inverte(g, antes):
@@ -202,7 +202,7 @@ def painel_porta_inverte(g, antes):
         a.set_xlim(0, 2.4)
     ax[0].set_ylabel("abertura (0 fechada, 1 aberta)")
     ax[0].legend(loc="upper right")
-    return _salvar(fig, "porta_inverte.png")
+    return _salvar(fig, "grafico_porta_inverte.png")
 
 
 def painel_porta_13(g, antes):
@@ -229,7 +229,7 @@ def painel_porta_13(g, antes):
     ax[1].set_yticklabels([])
     ax[1].set_xlabel("duração da abertura (s)")
     ax[1].legend(loc="lower right")
-    return _salvar(fig, "porta_13_portas.png")
+    return _salvar(fig, "grafico_porta_13_portas.png")
 
 
 def painel_mao_real(g):
@@ -265,7 +265,7 @@ def painel_mao_real(g):
     ax[1].set_xlabel("trajeto da mão (m)")
     ax[1].set_ylabel("duração (s)")
     ax[1].legend(loc="upper left")
-    return _salvar(fig, "porta_mao_real.png")
+    return _salvar(fig, "grafico_porta_mao_real.png")
 
 
 # --------------------------------------------------------------------------
@@ -307,7 +307,7 @@ def painel_relogio(r):
         a.set_xlabel("segundos")
     ax[2][0].set_title("Degraus de 6 graus a cada tique (60 dentes)", loc="left")
     ax[2][1].set_title("Jogo: salto com acomodação de mola (18 Hz, zeta 0,35)", loc="left")
-    return _salvar(fig, "relogio_pendulo.png")
+    return _salvar(fig, "grafico_relogio_pendulo.png")
 
 
 # --------------------------------------------------------------------------
@@ -335,7 +335,7 @@ def painel_carro_suspensao(s, s0):
     for c in range(3):
         ax[2][c].set_xlabel("segundos (a cena)")
     ax[2][2].text(12.6, 0.12, "antes: arfagem invertida\n(usava a aceleração do eixo Y\ndo mundo, não a da frente do carro)", fontsize=7.5, color=TINTA_SUAVE)
-    return _salvar(fig, "carro_arfagem.png")
+    return _salvar(fig, "grafico_carro_arfagem.png")
 
 
 def painel_carro_rodas(s, s0):
@@ -397,7 +397,7 @@ def painel_carro_rodas(s, s0):
     ax[1][2].legend()
     for a in (ax[0][0], ax[0][1], ax[0][2]):
         a.set_xlabel("segundos")
-    return _salvar(fig, "carro_rodas_direcao.png")
+    return _salvar(fig, "grafico_carro_rodas_direcao.png")
 
 
 def painel_charm(s, s0):
@@ -420,7 +420,7 @@ def painel_charm(s, s0):
     for c in range(3):
         ax[1][c].set_xlabel("segundos")
     ax[1][0].text(6.3, -9.0, "ângulo positivo = para a frente do carro: acelerar joga o pêndulo para trás, frear para a frente", fontsize=8, color=TINTA_SUAVE)
-    return _salvar(fig, "charm_pendulos.png")
+    return _salvar(fig, "grafico_charm_pendulos.png")
 
 
 def painel_portao(p, p0, s, s0):
@@ -470,7 +470,7 @@ def painel_portao(p, p0, s, s0):
     ax[2].set_ylabel("folga teto do carro - folha (m)")
     ax[2].set_title("enquanto o carro passa sob a folha", loc="left")
     ax[2].legend()
-    return _salvar(fig, "portao_garagem.png")
+    return _salvar(fig, "grafico_portao_garagem.png")
 
 
 # --------------------------------------------------------------------------
@@ -516,7 +516,7 @@ def painel_cortina(c, c0):
     ax[1][1].set_ylabel("distância à barra / altura")
     ax[1][1].set_title("Amplitude cresce de cima para baixo", loc="left")
     ax[1][1].legend(loc="lower left", fontsize=8)
-    return _salvar(fig, "cortina_modos.png")
+    return _salvar(fig, "grafico_cortina_modos.png")
 
 
 def painel_poeira(p, p0):
@@ -552,7 +552,7 @@ def painel_poeira(p, p0):
     ax[2].set_xlabel("segundos depois do abalo")
     ax[2].set_ylabel("altura (m)")
     ax[2].set_title("Quedas (1 em cada 7 partículas)", loc="left")
-    return _salvar(fig, "poeira_queda.png")
+    return _salvar(fig, "grafico_poeira_queda.png")
 
 
 def painel_luz(l, l0):
@@ -616,7 +616,7 @@ def painel_luz(l, l0):
                   f"ESTIMADO: fluorescente com reator ruim, 3 a 10 Hz,\n3 a 8 piscadas por rajada\n\n"
                   f"DERIVADO: o ruído de 300 mil pixels varia {KL.flutuacao_do_ruido() * 100:.2f}% a luz média\n"
                   f"ESTIMADO: sobra uma variação lenta de 2 a 4%", fontsize=8.5, va="top", color=TINTA)
-    return _salvar(fig, "luz_incandescente_fluorescente_tv.png")
+    return _salvar(fig, "grafico_luz_incandescente_fluorescente_tv.png")
 
 
 # --------------------------------------------------------------------------

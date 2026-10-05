@@ -197,7 +197,6 @@ def medir_lanterna_real():
         erro = float(((va - ganho * saida_lp) ** 2).sum())
         if melhor is None or erro < melhor[0]:
             melhor = (erro, tau)
-    atraso = np.abs(np.degrees(0) + (guinada(antebraco) - guinada(olhar))[mascara])
     saida.update(atraso_xcorr_ms=float(atrasos[k] * 1000.0 / mov.fps), correlacao=float(cc[k]), tau_ms=float(melhor[1] * 1000.0))
     forte = np.abs(vh) > 100.0
     desvio = (guinada(antebraco) - guinada(olhar))[mascara]
@@ -527,6 +526,16 @@ class Pilhas(CenarioMao):
     trecho = (2.4, 3.5)
     lado_mao = "d"
     gesto = "troca"
+    alcance_jogo = 0              # a primeira subida da mão esquerda até a boca da lanterna
+
+    def recorte_jogo(self, rec):
+        """A troca tem vários movimentos seguidos (subir, puxar a pilha velha, encaixar, recolher); o ajuste de jerk mínimo olha
+        meia janela além do alcance e leria o puxão seguinte como parte da subida. O recorte termina no vale que fecha a subida."""
+        mov, t0 = super().recorte_jogo(rec)
+        achados = metricas.detectar_alcances(metricas.perfil_mao(mov, self.lado_jogo), mov.fps, self.vel_minima)
+        if len(achados) > 1:
+            mov = mov.trecho(0.0, achados[0][1] / mov.fps)
+        return mov, t0
 
 
 @registrar
@@ -598,8 +607,9 @@ def medir_pendulo_do_engine(jogo, angulo0=0.2, duracao=6.0):
     return t, theta
 
 
-def medir_filamento(jogo, dt=0.001):
-    """Tempo (ms) de subida de 10 a 90% ao ligar e de descida de 90 a 10% ao desligar, a 1 kHz, com a lanterna do jogo."""
+def medir_filamento(jogo, dt=0.001, series=None):
+    """Tempo (ms) de subida de 10 a 90% ao ligar e de descida de 90 a 10% ao desligar, a 1 kHz, com a lanterna do jogo.
+    `series` (dict) recebe as curvas de brilho de 1 ms em "subida" e "descida", para os gráficos."""
     fl = jogo.flashlight
     s = jogo.state
     s.has_flashlight, s.battery = True, 1.0
@@ -619,12 +629,15 @@ def medir_filamento(jogo, dt=0.001):
         b = int(np.argmax(trilha >= alvo[1])) if subindo else int(np.argmax(trilha <= alvo[1]))
         return 1000.0 * (b - a) * dt, trilha
     subida, trilha_subida = tempo(True)
-    descida, _ = tempo(False)
+    descida, trilha_descida = tempo(False)
+    if series is not None:
+        series["subida"], series["descida"] = [float(x) for x in trilha_subida], [float(x) for x in trilha_descida]
     return subida, descida
 
 
-def medir_piscada(jogo, comprimento=0.13, dt=0.001):
-    """A maior duração contínua (ms) com brilho abaixo de 50% numa rajada de `comprimento` s, e quantas quedas distintas."""
+def medir_piscada(jogo, comprimento=0.13, dt=0.001, series=None):
+    """A maior duração contínua (ms) com brilho abaixo de 50% numa rajada de `comprimento` s, e quantas quedas distintas.
+    `series` (dict) recebe o brilho de 1 ms em "brilho"."""
     fl = jogo.flashlight
     s = jogo.state
     s.has_flashlight, s.battery, s.flashlight_on = True, 1.0, True
@@ -635,6 +648,8 @@ def medir_piscada(jogo, comprimento=0.13, dt=0.001):
     for _ in range(int((comprimento + 0.3) / dt)):
         fl.update(dt, 0.0, 0.0)
         trilha.append(fl.intensity)
+    if series is not None:
+        series["brilho"] = [float(x) for x in trilha]
     baixo = np.array(trilha) < 0.5
     maior, atual, quedas = 0, 0, 0
     for i, b in enumerate(baixo):
@@ -645,16 +660,22 @@ def medir_piscada(jogo, comprimento=0.13, dt=0.001):
     return maior * dt * 1000.0, quedas, float(np.min(trilha))
 
 
-def medir_atraso_do_feixe(jogo, taxa=40.0, duracao=1.2, dt=1.0 / 120.0):
-    """Gira a câmera a `taxa` graus/s e mede o atraso angular da luz em regime: tau = atraso / taxa (ms)."""
+def medir_atraso_do_feixe(jogo, taxa=40.0, duracao=1.2, dt=1.0 / 120.0, series=None):
+    """Gira a câmera a `taxa` graus/s e mede o atraso angular da luz em regime: tau = atraso / taxa (ms).
+    `series` (dict) recebe, a cada quadro, a guinada da câmera e o atraso do feixe, em graus ("guinada", "atraso")."""
     fl = jogo.flashlight
     s = jogo.state
     s.has_flashlight, s.flashlight_on, s.battery = True, True, 1.0
     yaw = 0.0
     fl.snap_to_camera(yaw, 0.0)
+    guinada, lag = [], []
     for _ in range(int(duracao / dt)):
         yaw += math.radians(taxa) * dt
         fl.update(dt, yaw, 0.0)
+        guinada.append(math.degrees(yaw))
+        lag.append(abs(math.degrees(fl.offset[1])))
+    if series is not None:
+        series["guinada"], series["atraso"] = guinada, lag
     atraso = abs(fl.offset[1])
     return 1000.0 * atraso / math.radians(taxa)
 

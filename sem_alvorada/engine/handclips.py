@@ -9,6 +9,10 @@ Trilhas de uma mão (`side` = "R" ou "L"): `pos`, `rot`, `curl` (5 dedos, 0 aber
 IK: 0 solta o braço) e `attach` (0 o item ainda está no mundo, 1 está preso à mão). Extras `x.*` movem partes
 do item: tampa da lanterna (`cap`), dobras do mapa (`fold1`, `fold2`) e o fechar do campo de visão (`zoom`).
 
+Perfil e duração (fase 4). Toda trilha de posição entre duas chaves paradas (`stop`) é um movimento de jerk mínimo, com o
+pico de velocidade a 50% da duração (`handtrack`), e as durações seguem a lei medida no mocap real (`move_time`). O alcance
+parte da mão solta, onde o braço pende (âncora viva `rest`), e vai em linha reta ao ponto de pegar (âncora viva `grasp`).
+
 Depois do contato o que importa é onde o ITEM aparece na tela (legível no escuro, sem cobrir a mira): essas
 chaves são escritas como poses do item e convertidas para a mão pela garra de cada item (`GRIPS`). Antes do
 contato a mão é quem lidera e a chave pode ser relativa ao ponto de pegar ao vivo (`space="grasp"`).
@@ -288,11 +292,11 @@ HANG_ROT = {"R": _hang_rotation("R"), "L": _hang_rotation("L")}
 GLIDE = 0.40               # depois do contato o item que a mão não alcançou vem até o punho (a mesa fica abaixo do
                            # alcance do braço: o item sobe do lugar dele até a mão enquanto ela fecha)
 CLOSE_TIME = 0.20          # ESTIMADO: tempo que os dedos levam para fechar sobre o item
-GRASP_PITCH = 15.0                         # graus: dedos um pouco acima da horizontal. A palma pega a ~0,5 m do rosto com o
-                                           # cotovelo baixo (antebraço quase vertical): com os dedos 46 graus para baixo o pulso
-                                           # dobrava até o limite do solver (80 graus); a +15 fica em ~58
+GRASP_PITCH = 15.0         # graus: dedos um pouco acima da horizontal. A palma pega a ~0,5 m do rosto com o cotovelo baixo
+                           # (antebraço quase vertical): com os dedos 46 graus para baixo o pulso dobrava até o limite do
+                           # solver (80 graus) e a manga apertava; com +15 o pedido cai a ~58 e o solver ainda comprime
 GRASP_NOMINAL = (0.0, -0.08, -0.51)        # onde a palma costuma pegar (o limite do alcance, abaixo da linha do olhar)
-NOMINAL_RETURN = 0.60      # e da pose de mostrar até a mão solta
+NOMINAL_RETURN = 0.60      # distância típica (m) da pose de mostrar até a mão solta
 REACH_DEFAULT = move_time(0.65)      # alcance típico: da mão solta ao item sobre uma mesa, 0,65 m
 
 
@@ -310,6 +314,7 @@ def reach(path, reach_s, grasp, grasp_rot, aperture, closed):
 
 
 EXIT_FACTOR = 0.75         # ESTIMADO: a mão que só sai do quadro, sem alvo a acertar, leva 3/4 do tempo de um alcance
+
 
 def withdraw(path, t0, seconds=None):
     """A mão volta ao braço solto e o IK solta o braço no fim. Sem alvo a acertar, leva `EXIT_FACTOR` da lei do movimento."""

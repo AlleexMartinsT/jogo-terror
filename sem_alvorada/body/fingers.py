@@ -23,6 +23,9 @@ THUMB_SPREAD = 38.0
 # ~35 graus do indicador, à frente da palma e um pouco dobrado. Direções dos ossos CMC, MCP e IP nessa pose, nas
 # componentes (dedos, lado do polegar, normal da palma). ESTIMADO (proporções de livro-texto, ajustado a olho).
 THUMB_RELAXED = ((0.80, 0.45, 0.40), (0.90, 0.25, 0.35), (0.85, 0.15, 0.50))
+# Polegar em oposição, no meio do caminho (curl 0,5): a ponta vem para a frente da palma, junto ao indicador. Sem este ponto
+# o caminho do relaxado ao fechado abria o polegar para o lado (a ponta ia a 12 cm do eixo da mão) em todo curl médio.
+THUMB_OPPOSED = ((0.62, 0.20, 0.75), (0.80, 0.12, 0.58), (0.85, 0.05, 0.52))
 
 # polegar: (rotação em torno de F, em torno do eixo de dobra, em torno de p) por osso na chave fechada, graus
 THUMB_CLOSED = {0: (-52.4, 1.2, 59.4), 1: (0.0, 32.0, 0.0), 2: (0.0, 64.3, 0.0)}
@@ -61,14 +64,16 @@ class HandAxes:
         self.f, self.p = f, p
         self.curl = f.cross(p).normalized()          # girar em torno dele fecha o dedo para a palma
         self.side = side
-        self.thumb_relaxed = self._relaxed_thumb(side, f, p, t)
+        self.thumb_relaxed = self._thumb_pose(side, f, p, t, THUMB_RELAXED)
+        self.thumb_opposed = self._thumb_pose(side, f, p, t, THUMB_OPPOSED)
 
     @staticmethod
-    def _relaxed_thumb(side, f, p, t):
-        """Quaternions locais dos três ossos do polegar na pose relaxada (rotação mínima do repouso até a direção alvo)."""
+    def _thumb_pose(side, f, p, t, directions):
+        """Quaternions locais dos três ossos do polegar numa pose dada pelas direções (dedos, lado do polegar, normal da palma)
+        de cada osso: a rotação mínima do repouso até a direção alvo."""
         bones = [S.BONE_MAP[f"Thumb{i}.{side}"] for i in range(3)]
         quats, parent = [], IDENTITY
-        for bone, (cf, ct, cp) in zip(bones, THUMB_RELAXED):
+        for bone, (cf, ct, cp) in zip(bones, directions):
             target = (f * cf + t * ct + p * cp).normalized()
             local_target = parent.inverted() @ target
             q = bone.rest_dir.rotation_difference(local_target)
@@ -104,7 +109,11 @@ def finger_rotations(side, curls, spread=0.0, joint_curls=None):
         about_f, about_curl, about_p = THUMB_CLOSED[index]
         closed = (Quaternion(axes.f, math.radians(about_f)) @ Quaternion(axes.curl, math.radians(about_curl))
                   @ Quaternion(axes.p, math.radians(about_p)))
-        q = axes.thumb_relaxed[index].slerp(closed, _clamp01(row[index]))
+        u = _clamp01(row[index])
+        if u < 0.5:
+            q = axes.thumb_relaxed[index].slerp(axes.thumb_opposed[index], u / 0.5)
+        else:
+            q = axes.thumb_opposed[index].slerp(closed, (u - 0.5) / 0.5)
         if index == 0 and spread:
             q = Quaternion(axes.p, math.radians(-THUMB_SPREAD * spread * (1 if side == "R" else -1))) @ q
         out[bone] = q

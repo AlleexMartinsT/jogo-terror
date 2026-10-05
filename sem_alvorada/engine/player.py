@@ -15,9 +15,11 @@ CROUCH_HEIGHT = 1.20
 PITCH_LIMIT = math.radians(85.0)
 ACCELERATION = 14.0            # 1/s: perto da velocidade desejada a aproximação é exponencial (acabamento suave)
 BACKWARD_FACTOR = 0.8
-EYE_FOLLOW = 9.0
+EYE_FOLLOW = 6.5               # 1/s: agachar leva 0,35 s de 10% a 90% da descida em 136_09 (taxa exponencial equivalente 6,3)
 Z_FOLLOW = 18.0                # suaviza o piso sob os pés (desníveis pequenos)
-Z_FOLLOW_STAIRS = 6.0          # na escada o corpo sobe de degrau em degrau, mas a cabeça sobe em rampa (83_27: ~0,5 s/degrau)
+# Na escada o corpo sobe de degrau em degrau e a cabeça sobe quase em rampa: a oscilação vertical da cabeça sem a subida é de
+# 6,0 a 8,6 cm pico a pico em 83_27 a 83_35 (x1,11 pelo tamanho do Daniel = 6,7 a 9,5); com 3/s o jogo dá 7,6 cm (6/s dava 10,2)
+Z_FOLLOW_STAIRS = 3.0
 SPEED_FILTER = 0.08            # s: constante do filtro da velocidade que alimenta a passada
 STEP_KIND = {"crouch": "crouch_walk", "walk": "walk", "run": "run"}
 BREATH_STAMINA = 0.30
@@ -34,7 +36,17 @@ IDLE_BREATH_PITCH, HARD_BREATH_PITCH = math.radians(0.12), math.radians(0.40)
 IDLE_SWAY = 0.0065                                       # m, deslocamento lateral lento
 # A passada média achata o balanço da cabeça: a velocidade angular RMS da cabeça de pessoas reais (25,6 graus/s em 10
 # clipes de andar rápido) é 1,5 vez a da curva média (16,7), porque cada passada tem sua trepidação. Devolvemos 1,4.
+# Arfagem e rolagem pedem mais na corrida e agachado (RMS real 22,9 e 9,8 graus/s contra 12,6 e 3,9 da curva média x 1,4),
+# onde a trepidação por passada pesa mais que a oscilação regular; a guinada da corrida já passa com 1,4.
 HEAD_ROTATION_GAIN = 1.4
+HEAD_TILT_GAIN = {"walk": 1.4, "run": 1.8, "crouch": 2.0}
+# Inclinar para dentro da curva. Em 16_17 (andar a 0,7 m/s e virar a 140 graus/s) a cabeça rola 1,9 e o tronco 1,4 graus
+# para o lado da curva, 0,2 e 0,15 do ângulo que a força centrípeta pediria (atan(v w / g) = 9,4 graus). Vale a mesma fração
+# para o giro do mouse; o teto evita que um giro rápido deite a câmera.
+TURN_RATE_SMOOTH = 0.10               # s, filtro da velocidade de giro (o mouse chega aos trancos)
+TURN_LEAN_GAIN = 0.22
+TURN_LEAN_MAX = math.radians(5.0)
+TURN_LEAN_FOLLOW = 0.15               # s
 
 
 class Player:
@@ -56,6 +68,9 @@ class Player:
         self.z_visual = self.z
         self.room_id = None
         self._vx = self._vy = 0.0
+        self._brake_from = 0.0                   # m/s, velocidade em que a parada em curso começou
+        self._turn_rate = 0.0                    # rad/s, giro suavizado (+ para a esquerda)
+        self.turn_lean = 0.0                     # rad, inclinação para dentro da curva (+ esquerda): câmera e tronco
         self._cycle = gait.START_CYCLE          # fração do ciclo: 0 = toque do calcanhar esquerdo
         self._amp = 0.0                          # 0..1: amplitude da passada (apaga ao parar)
         self._was_moving = False
@@ -150,6 +165,7 @@ class Player:
         self._last_step = int(self._cycle * 2.0)
         self._was_moving = False
         self._head = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        self._turn_rate = self.turn_lean = 0.0
         self._refresh_room()
 
     def reset_body(self):
@@ -166,8 +182,17 @@ class Player:
         self._advance_gait(dt)
         self._breathe(dt)
         self._follow_height(dt)
+        self._lean_into_turn(dt, inp)
         self._update_head(dt)
         self._refresh_room()
+
+    def _lean_into_turn(self, dt, inp):
+        rate = -inp.look_dx / dt if dt > 1e-6 else 0.0
+        self._turn_rate += (rate - self._turn_rate) * (1.0 - math.exp(-dt / TURN_RATE_SMOOTH))
+        centripetal = self.gait_speed * self._turn_rate
+        target = TURN_LEAN_GAIN * math.atan(centripetal / gait.G) * self._amp
+        target = max(-TURN_LEAN_MAX, min(TURN_LEAN_MAX, target))
+        self.turn_lean += (target - self.turn_lean) * (1.0 - math.exp(-dt / TURN_LEAN_FOLLOW))
 
     def _look(self, inp):
         self.yaw = angles.wrap(self.yaw - inp.look_dx)
@@ -219,12 +244,19 @@ class Player:
         # com acabamento exponencial perto da velocidade desejada
         delta_x, delta_y = goal_x - self._vx, goal_y - self._vy
         delta = math.hypot(delta_x, delta_y)
+        current = math.hypot(self._vx, self._vy)
         if delta > 1e-9:
-            speeding_up = math.hypot(goal_x, goal_y) > math.hypot(self._vx, self._vy)
-            limit = C.ACCEL_START if speeding_up else C.ACCEL_BRAKE
+            speeding_up = math.hypot(goal_x, goal_y) > current
+            if speeding_up:
+                limit = C.ACCEL_START
+                self._brake_from = current
+            else:       # a freada vem da velocidade em que a parada começou, senão ela viraria uma cauda exponencial
+                limit = max(C.ACCEL_BRAKE_MIN, min(C.ACCEL_BRAKE, self._brake_from / C.STOP_TIME))
             change = delta if delta < 1e-4 else min(delta, limit * dt, delta * ACCELERATION * dt)
             self._vx += delta_x / delta * change
             self._vy += delta_y / delta * change
+        else:
+            self._brake_from = current
         old_x, old_y = self.x, self.y
         segments = self.game.doors.segments(self.level)
         self.x, self.y, self.z = collision.move_and_slide(
@@ -324,7 +356,7 @@ class Player:
                             + 0.4 * math.sin(self._sway_clock * 2.0 * math.pi * 0.29 + 1.3)) * still
         lateral = sway
         vertical = breath_z
-        roll = 0.0
+        roll = self.turn_lean
         pitch = breath_pitch
         yaw = 0.0
         ahead = 0.0
@@ -335,8 +367,9 @@ class Player:
             lateral += v["cab_y"] * amp
             ahead += v["cab_x"] * amp
             vertical += (v["cab_z"] - s.drop) * amp          # s.drop: o quadril anda mais baixo que com a perna esticada
-            roll += math.radians(v["cab_roll"]) * amp * HEAD_ROTATION_GAIN
-            pitch += math.radians(v["cab_pitch"]) * amp * HEAD_ROTATION_GAIN
+            tilt_gain = sum(w * g for w, g in zip(s.weights, (HEAD_TILT_GAIN["walk"], HEAD_TILT_GAIN["run"], HEAD_TILT_GAIN["crouch"])))
+            roll += math.radians(v["cab_roll"]) * amp * tilt_gain
+            pitch += math.radians(v["cab_pitch"]) * amp * tilt_gain
             yaw += math.radians(v["cab_yaw"]) * amp * HEAD_ROTATION_GAIN
         self._head = (lateral, vertical, roll, pitch, yaw, ahead)
 

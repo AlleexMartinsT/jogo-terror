@@ -7,8 +7,12 @@ Cenários: porta, pendulo_relogio, chaveiro, portao, carro, cortina. Cada um rod
 modelo físico independente (`fisica/*.py`), escreve a tabela métrica a métrica (valor físico, jogo antes, jogo depois, tolerância,
 origem DERIVADO/ESTIMADO/MEDIDO), os painéis [modelo | jogo | sobrepostos] e o vídeo lado a lado (MP4, 30 quadros/s).
 
-Os vídeos são esquemas desenhados a partir das posições (vista de cima da porta, vista de frente do relógio, de lado do carro e
-do portão): quem se move é o objeto, e os dois lados vêm de fontes independentes. Fonte de cada número:
+Os vídeos deste cenário (`esquema_*.mp4` e `grafico_*.png`) são esquemas matplotlib desenhados a partir das posições. Os RENDERS do
+objeto real do jogo no Blender (porta de 25 e de 40 kg, pêndulo do relógio, carro saindo da garagem; modelo físico como fantasma azul
+no mesmo espaço 3D; várias câmeras sobre a mesma gravação) saem de `fisica/cenas3d.py`:
+    LIBGL_ALWAYS_SOFTWARE=1 python -m tools.movimento_ref.fisica.cenas3d [porta_25kg porta_40kg relogio carro] [--eevee]
+e ficam em out/f4_4/final/blender/ (`render3d_*.mp4`, `render3d_*_folha.png`); a coerência entre as câmeras é o teste
+tests/test_objetos_3d.py. Quem se move é o objeto, e os dois lados vêm de fontes independentes. Fonte de cada número:
   MEDIDO   a mão que empurra e ergue (mocap CMU 56_03..08, 81_05..82_07): duração, pico e razão pico/média do gesto;
   DERIVADO leis sobre medidas do modelo 3D: I = m L^2 / 3, pêndulo composto, Bernoulli da cortina, Stefan-Boltzmann, rolar sem
            deslizar, Ackermann, Schiller-Naumann;

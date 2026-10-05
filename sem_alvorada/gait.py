@@ -21,9 +21,10 @@ LEG = D.LEG_DANIEL                  # coxa + canela do Daniel (m); as tabelas de
 G = 9.81
 HIP_STRAIGHT = 0.93                 # altura da junta do quadril do Daniel com a perna esticada (m)
 # O chão do BVH não tem altura conhecida (+-2,5 cm), então a queda do quadril medida pela altura absoluta é incerta.
-# O que o mocap garante é a distância quadril-tornozelo sobre o comprimento da perna: 0,955 no apoio médio (5 clipes de
-# andar rápido); o Daniel só chega a ela com mais esta queda, ajustada nos testes de `tests/test_locomocao.py`.
-HIP_DROP_EXTRA = {"walk": 0.0, "run": 0.03, "crouch": 0.0}
+# O que o mocap garante é a altura da junta do quadril sobre (perna + tornozelo): 0,963 andando rápido, 0,950 correndo. Na
+# corrida o Daniel precisa de um pouco mais de queda que a da razão para o joelho no apoio e o tornozelo ficarem na faixa
+# do mocap (varredura em tests/test_locomocao.py: 0,00 deixa o quadril 3 cm alto demais, 0,03 dobra o joelho 10 graus a mais).
+HIP_DROP_EXTRA = {"walk": 0.0, "run": 0.01, "crouch": 0.0}
 # A tabela real x jogo conta o pé como apoiado enquanto o tornozelo, a bola ou a ponta estão a menos de ~3 cm do chão: o
 # apoio dela é ~8% do ciclo mais longo que o contato mecânico da sola. O rolamento do pé dura o apoio medido menos isso.
 ROLL_TRIM = 0.08

@@ -11,5 +11,6 @@ Cada módulo traz, para um objeto, três coisas:
     medidas  a tabela métrica a métrica: valor físico, jogo antes, jogo depois, tolerância
 
 Módulos: porta, mao_real, relogio, charm, portao, carro, cortina, luz. `relatorio` junta tudo em
-out/f4_4/final/. As gravações "antes" (jogo sem as correções da fase 4) ficam em out/f4_4/antes/*.json.
+out/f4_4/final/. `render3d` e `cenas3d` renderizam no Blender (Workbench) o objeto REAL do jogo na pose da gravação, com o
+modelo físico como fantasma azul no mesmo espaço 3D (out/f4_4/final/blender/). As gravações "antes" (jogo sem as correções da fase 4) ficam em out/f4_4/antes/*.json.
 """

@@ -86,7 +86,11 @@ SPEED_CROUCH = 0.8
 SPEED_WALK = 1.7
 SPEED_RUN = 4.0
 ACCEL_START = 5.0         # m/s2, partida: ~70% do que 143_03 mede (7,2 m/s2 até 4,9 m/s em 0,68 s)
-ACCEL_BRAKE = 6.0         # m/s2, parada: 143_02 (corrida) freia a 7,8; 16_08 e 16_57 (corrida, parada suave) a 1,9 a 2,4
+ACCEL_BRAKE = 6.0         # m/s2, teto da parada: 143_02 (corrida) freia a 7,8; 16_08 e 16_57 (corrida, parada suave) a 1,9 a 2,4
+# Parar leva o mesmo tempo qualquer que seja a velocidade: 16_33 para de 0,9 m/s em 0,7 s (1,3 m/s2) e 143_02 de 5 m/s em
+# 0,7 s (7,8 m/s2). A freada é a velocidade sobre este tempo, entre ACCEL_BRAKE_MIN e ACCEL_BRAKE.
+STOP_TIME = 0.65
+ACCEL_BRAKE_MIN = 1.2
 # Escada: o ritmo é dos degraus. Medido em 83_27 a 83_35 (8 clipes, degraus de 12 a 16 cm): um degrau a cada 0,79 a 0,90 s
 # (1,17 passo/s). Usamos 1,5 passo/s andando (ESTIMADO, 1,5 a 1,8 na literatura para subida confortável), 2,4 correndo e
 # 1,1 agachado, vezes a profundidade do degrau do jogo (0,3 m): 0,45 / 0,72 / 0,33 m/s.

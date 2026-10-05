@@ -111,6 +111,7 @@ class Style:
     step_roll: float = 0.0
     step_pitch: float = 0.0
     step_length: float = 0.72       # metros por passo (liga o balanço à distância percorrida)
+    step_yaw: float = 0.0           # guinada da cabeça, um ciclo a cada dois passos
 
 
 STYLES = {
@@ -118,7 +119,13 @@ STYLES = {
     "lying": Style(0.0035, 0.18, 0.45, 0.0055, 0.30, 0.19, 0.0009, 1.15),
     "sitting": Style(0.0045, 0.22, 0.50, 0.0050, 0.28, 0.24),
     "stand": Style(0.0040, 0.20, 0.55, 0.0040, 0.22, 0.27),
-    "walk": Style(0.0045, 0.22, 0.60, 0.0025, 0.12, 0.27, 0.0, 1.2, 0.024, 0.016, 0.55, 0.45),
+    # walk, MEDIDO em 23 caminhadas da CMU de 0,85 a 1,45 m/s (assets/referencia/marcha_ref.json), a 1,2 m/s (ganho 1):
+    # cabeça sobe e desce 3,6 cm pico a pico a cada passo (bob 1,8 cm), 4,9 cm de lado por passada (sway 2,4 cm),
+    # rola 2,0, arfa 1,35 e guina 4,2 graus pico a pico; arfagem, rolagem e guinada x1,4 porque a passada média achata
+    # a trepidação de cada passada (a velocidade angular da cabeça real é 1,5 vez a da curva média). Cadência de 105
+    # passos/min a 1,2 m/s = 0,69 m por passo. Fases tiradas das mesmas curvas: rolagem e guinada em quadratura com o
+    # balanço, arfagem 0,19 passo depois do ponto baixo.
+    "walk": Style(0.0045, 0.22, 0.60, 0.0025, 0.12, 0.27, 0.0, 1.2, 0.0178, 0.0243, 1.38, 0.94, 0.69, 2.9),
     "drive": Style(0.0030, 0.12, 0.50, 0.0020, 0.08, 0.25),
     "panic": Style(0.012, 0.80, 1.10, 0.008, 0.60, 0.60, 0.002, 1.8),
 }
@@ -161,17 +168,21 @@ def _hand_offsets(hand, t, stress, step_phase, speed_gain):
              + 0.7 * stress * noise(t * 37.0, 15.0 + s))
     roll = style.drift_rot * 0.8 * noise(t * drift_w * 0.6, 6.0 + s) + 1.1 * stress * noise(t * 30.0, 16.0 + s)
     if style.step_bob and step_phase is not None:
-        g = speed_gain
+        g = speed_gain * curves.ease("smooth", t / STEP_FADE_IN)
         up += -style.step_bob * g * math.cos(2 * math.pi * step_phase)
         right += style.step_sway * g * math.sin(math.pi * step_phase)
-        roll += style.step_roll * g * math.sin(math.pi * step_phase)
-        pitch += style.step_pitch * g * math.cos(2 * math.pi * step_phase + 0.4)
+        roll -= style.step_roll * g * math.cos(math.pi * step_phase)
+        yaw -= style.step_yaw * g * math.cos(math.pi * step_phase)
+        pitch += style.step_pitch * g * math.cos(2 * math.pi * step_phase - 1.22)
     k = amount
     return ((right * k, forward * k, up * k),
             tuple(math.radians(v * k) for v in (yaw, pitch, roll)))
 
 
-HAND_CROSSFADE = 0.9           # s para trocar de um estilo de mão para outro (deitado -> sentado -> andando)
+# s para trocar de um estilo de mão para outro (deitado -> sentado -> andando). Levantar da cadeira leva 1,5 a 2 s do
+# primeiro inclinar do tronco até estar de pé (111_09: olho 1,0 -> 0,91 -> 1,36 m entre 1,5 e 4,0 s; sobe os 44 cm em 0,5 s).
+HAND_CROSSFADE = 1.5
+STEP_FADE_IN = 0.5             # s: o balanço dos passos entra aos poucos, para o plano começar exatamente na vista do jogador
 
 
 def _hand_blend(hand, t, stress, step_phase, speed_gain):

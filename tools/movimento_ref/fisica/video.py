@@ -395,8 +395,9 @@ def cena_cortina():
 
 CENAS = {"porta": cena_porta, "relogio": cena_relogio, "carro": cena_carro, "charm": cena_charm, "portao": cena_portao,
          "cortina": cena_cortina}
-ARQUIVOS = {"porta": "porta.mp4", "relogio": "pendulo_relogio.mp4", "carro": "carro.mp4", "charm": "chaveiro.mp4", "portao": "portao.mp4",
-            "cortina": "cortina.mp4"}
+ARQUIVOS = {"porta": "esquema_porta.mp4", "relogio": "esquema_pendulo_relogio.mp4", "carro": "esquema_carro.mp4", "charm": "esquema_chaveiro.mp4",
+            "portao": "esquema_portao.mp4",
+            "cortina": "esquema_cortina.mp4"}
 
 
 def gerar(nome, pasta=None):

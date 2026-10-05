@@ -32,10 +32,11 @@ GROUND_FOLLOW = 30.0                   # 1/s: o pé acompanha o degrau sob a sol
 HIP_AHEAD_CORRECTION = {"walk": 0.09, "run": -0.05, "crouch": 0.09}      # calibrada contra a curva do quadril; ver docs/FASE4.md
 # antiga:          # m: a junta do quadril do mocap fica 3,76 cm à frente da raiz Hips; a do Daniel, 1 cm (3,76 - 1,0)
 TOE_HINGE, TOE_LENGTH = 0.16, 0.105    # articulação dos dedos (bola) e comprimento do dedão ao tornozelo (m), de skeleton.py
+TOE_TIP = TOE_HINGE + TOE_LENGTH       # ponta do dedão em relação ao tornozelo, no plano
 TOE_RELAX = 0.15                       # fração do ciclo que os dedos levam para relaxar depois de o pé sair do chão
+TRUNK_TURN_LEAN = 0.75                 # tronco / câmera ao inclinar para dentro da curva (1,4 / 1,9 graus em 16_17)
 SWING_MARGIN = 0.015                   # m: folga entre a ponta do pé e o chão no balanço
 RUN_ROCKER_OFF = 1.0                   # 1: na corrida vale só a trajetória medida do pé (o pé não rola como no passo)
-FRONT_SCALE = 1.0                      # encurta o pé à frente do quadril (o pé do Daniel é mais comprido que o do mocap)
 RAMP_FRACTION = 0.15
 STANCE_RAMP = 0.12                     # fração do ciclo que o apoio rolante leva para entrar e sair
 PELVIS_FOLLOW = 0.5                    # s: o "ponto suave da pelve" (referência das tabelas do pé) é o quadril filtrado
@@ -192,8 +193,9 @@ class Locomotion:
 
     def _spine(self, rot, lean, lag, sampled, player):
         shares = (("Hips", 0.10), ("Spine1", 0.28), ("Spine2", 0.32), ("Spine3", 0.30))
+        tilt = TRUNK_TURN_LEAN * getattr(player, "turn_lean", 0.0)
         for name, share in shares:
-            rot[name] = Quaternion(AXIS_X, -math.radians(lean * share))
+            rot[name] = Quaternion(AXIS_X, -math.radians(lean * share)) @ Quaternion(AXIS_Y, -tilt * share)
         # a pelve gira e se inclina com a passada; a coluna torce o tórax no sentido oposto (tronco_yaw - pelve_yaw)
         v = sampled.values
         amp = self.gain
@@ -222,8 +224,6 @@ class Locomotion:
             phase, weight, relax = self._foot_phase(cycle, sampled.roll)
             toe = min(TOE_UP_MAX, max(0.0, -pitch)) * relax          # dedos dobrados enquanto o pé rola sobre a bola
             along_table = table["pe_frente"] * gait.LEG * scale * reach_scale
-            if along_table > 0.0:
-                along_table *= FRONT_SCALE
             z_table = max(table["pe_alt"] * gait.LEG, sole_rise(pitch, toe) + SWING_MARGIN * (1.0 - weight))
             along, z = along_table, z_table
             weight *= 1.0 - sampled.weights[1] * RUN_ROCKER_OFF
@@ -280,11 +280,11 @@ class Locomotion:
     def _ground_under(self, side, x, y, root, dt):
         """Quanto o piso sob o pé está acima da raiz (degraus da escada), suavizado para o pé não saltar na quina.
 
-        A sola inteira conta: o pé apoia no degrau mais alto que algum ponto dela (calcanhar, tornozelo, bola) toca,
-        então o pé sobe antes de a ponta passar do espelho do degrau, e não atravessa a quina."""
+        A sola inteira conta: o pé apoia no degrau mais alto que algum ponto dela (calcanhar, tornozelo, bola, ponta do
+        dedão) toca, então o pé sobe antes de a ponta passar do espelho do degrau, e não atravessa a quina."""
         c, s = math.cos(self.body_yaw), math.sin(self.body_yaw)
         want = None
-        for reach in (SOLE_BACK, 0.0, BALL_FRONT):
+        for reach in (SOLE_BACK, 0.0, BALL_FRONT, TOE_TIP):
             fy = y + reach
             wx, wy = root.x + c * x - s * fy, root.y + s * x + c * fy
             height = layout.stairs_height(wx, wy)

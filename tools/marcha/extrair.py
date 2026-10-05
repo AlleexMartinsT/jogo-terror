@@ -185,14 +185,18 @@ def razao_quadril(mov):
     return float(quadril.mean() / (metricas.comprimento_perna(mov) + movimento.ALTURA_TORNOZELO))
 
 
-def trecho_andando(mov):
-    """Maior trecho contínuo a passo estável (pelve a mais de metade do p90 da velocidade)."""
+def janela_andando(mov):
+    """(início, fim) em segundos do maior trecho contínuo a passo estável (pelve a mais de metade do p90 da velocidade)."""
     sm = metricas.gaussiano(mov.j("quadril")[:, :2], 0.25, mov.fps)
     v = np.linalg.norm(np.gradient(sm, axis=0), axis=1) * mov.fps
     corridas = metricas._corridas(v > 0.5 * np.percentile(v, 90))
     a, b = max(corridas, key=lambda r: r[1] - r[0])
     corte = int(0.4 * mov.fps)
-    return mov.trecho((a + corte) / mov.fps, (b - corte) / mov.fps)
+    return (a + corte) / mov.fps, (b - corte) / mov.fps
+
+
+def trecho_andando(mov):
+    return mov.trecho(*janela_andando(mov))
 
 
 # --------------------------------------------------------------------------

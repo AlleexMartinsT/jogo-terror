@@ -62,7 +62,6 @@ def medir_gestos():
         r, rel = maos.alcance_do_jogo(rec, g["lado"], t0)
         indice = 0 if g["lado"] == "e" else 1
         com_peso = rec.peso_alvo[:, indice] > 0.02
-        depois = np.where(com_peso & (rec.t >= t0))[0]
         dados = dict(duracao_total=maos.duracao_ocupada(jogo), dobra_do_pulso=dobra_do_pulso(rec, g["lado"], com_peso),
                      cotovelo_no_centro=_cotovelo_no_centro(rec, g["lado"], com_peso))
         if r is not None:
@@ -103,7 +102,7 @@ def medir_troca():
 def medir_folga_da_troca():
     """Menor distância (mm) entre o centro da palma esquerda e a superfície do corpo da lanterna enquanto a pilha entra."""
     import math as m
-    from mathutils import Euler, Matrix, Vector
+    from mathutils import Euler, Vector
     jogo = maos.montar_jogo_maos()
     maos.estado(jogo, carga=0.2, pilhas=2, segurar="BATTERY")
     from sem_alvorada.engine.inputstate import InputState
@@ -128,13 +127,14 @@ def medir_folga_da_troca():
 def medir_fisica():
     jogo = maos.montar_jogo_maos()
     saida = {}
-    subida, descida = maos.medir_filamento(jogo)
+    curvas = saida["curvas_luz"] = {}
+    subida, descida = maos.medir_filamento(jogo, series=curvas.setdefault("filamento", {}))
     saida["filamento_subida_ms"], saida["filamento_descida_ms"] = subida, descida
     jogo = maos.montar_jogo_maos()
-    abertura, quedas, fundo = maos.medir_piscada(jogo)
+    abertura, quedas, fundo = maos.medir_piscada(jogo, series=curvas.setdefault("piscada", {}))
     saida["piscada_abertura_ms"], saida["piscada_quedas"], saida["piscada_fundo"] = abertura, quedas, fundo
     jogo = maos.montar_jogo_maos()
-    saida["feixe_tau_ms"] = maos.medir_atraso_do_feixe(jogo)
+    saida["feixe_tau_ms"] = maos.medir_atraso_do_feixe(jogo, series=curvas.setdefault("feixe", {}))
     # chaveiro
     jogo = maos.montar_jogo_maos()
     t, theta = maos.medir_pendulo_do_engine(jogo)
@@ -181,7 +181,6 @@ def medir_cascata():
     for _ in range(240):
         jogo.body.update(dt, jogo.player, (0.0, 0.0))
     braco.set_target((0.2, -0.15, -0.4), (0, 0, 0), 1.0)
-    tempos = {}
     trilha = {"base": [], "ponta": []}
     for i in range(int(0.6 / dt)):
         braco.set_target((0.2, -0.15, -0.4), (0, 0, 0), 1.0)
@@ -340,6 +339,36 @@ def figuras(pasta, antes, depois, ref):
     arquivos["pendulo"] = os.path.join(pasta, "chaveiro_pendulo.png")
     figura.savefig(arquivos["pendulo"], dpi=110)
     plt.close(figura)
+    # 3. lanterna: subida da lâmpada, piscada de pilha fraca e atraso do feixe, antes e depois
+    ca, cd = antes["fisica"].get("curvas_luz"), depois["fisica"].get("curvas_luz")
+    if ca and cd:
+        figura, eixos = plt.subplots(1, 3, figsize=(15, 3.9))
+        cores = (("antes", ca, "#9a9a95"), ("depois", cd, graficos.COR_JOGO))
+        ax = eixos[0]
+        for rotulo, c, cor in cores:
+            y = np.array(c["filamento"]["subida"])
+            ax.plot(np.arange(len(y)), y, color=cor, linewidth=2, label=rotulo)
+        ax.axvspan(20, 80, color=graficos.COR_REAL, alpha=0.12, label="subida ESTIMADA, 10 a 90%: 20 a 80 ms")
+        ax.set_xlim(-5, 140); ax.set_xlabel("ms depois de ligar"); ax.set_ylabel("brilho (0 a 1)")
+        ax.set_title("Lâmpada incandescente ao ligar", loc="left"); ax.legend(loc="lower right", fontsize=8)
+        ax = eixos[1]
+        for rotulo, c, cor in cores:
+            y = np.array(c["piscada"]["brilho"])
+            ax.plot(np.arange(len(y)), y, color=cor, linewidth=1.6, label=rotulo)
+        ax.axhline(0.5, color="#555555", linewidth=0.8, linestyle=(0, (3, 3)))
+        ax.set_xlabel("ms desde o início da rajada"); ax.set_ylabel("brilho (0 a 1)")
+        ax.set_title("Pilha fraca: rajada de mau contato", loc="left"); ax.legend(loc="lower right", fontsize=8)
+        ax = eixos[2]
+        for rotulo, c, cor in cores:
+            t = np.arange(len(c["feixe"]["atraso"])) / 120.0
+            ax.plot(t, c["feixe"]["atraso"], color=cor, linewidth=2, label=f"{rotulo}")
+        ax.axhline(40.0 * 0.077, color=graficos.COR_REAL, linewidth=1.4, linestyle=(0, (4, 3)), label="real: 77 ms x 40 graus/s")
+        ax.set_xlabel("segundos girando a 40 graus/s"); ax.set_ylabel("feixe atrás da câmera (graus)")
+        ax.set_title("Atraso do feixe em relação à cabeça", loc="left"); ax.legend(loc="lower right", fontsize=8)
+        figura.tight_layout()
+        arquivos["luz"] = os.path.join(pasta, "lanterna_luz.png")
+        figura.savefig(arquivos["luz"], dpi=110)
+        plt.close(figura)
     return arquivos
 
 
