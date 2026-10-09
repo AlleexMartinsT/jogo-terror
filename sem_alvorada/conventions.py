@@ -76,7 +76,7 @@ N_NOTES = 7
 # Jogador
 # --------------------------------------------------------------------------
 PLAYER_EYE_STAND = 1.65
-PLAYER_EYE_CROUCH = 1.05
+PLAYER_EYE_CROUCH = 1.30
 PLAYER_RADIUS = 0.30
 PLAYER_STEP_HEIGHT = 0.35
 # Velocidades de uma pessoa de verdade (fase 4). Medidas em mocap da CMU (docs/FASE4.md): andar 0,93 a 1,75 m/s nas

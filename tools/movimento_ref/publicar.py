@@ -38,9 +38,12 @@ def plano():
     itens = []
     marcha = ("andar", "andar_devagar", "correr", "agachado")
     for origem, nome in _por_cenario(LOCOMOCAO, marcha, [("folha_contato.png", "folha.png"), ("curvas.png", "curvas.png"),
-                                                          ("antes_depois.png", "antes_depois.png"),
                                                           ("apoios.png", "apoios.png")]):
         itens.append((origem, "locomocao", nome))
+    # a tabela antes e depois do agachado ficou de fora: foi feita antes de a profundidade mudar
+    for cenario in ("andar", "andar_devagar", "correr"):
+        itens.append((f"{LOCOMOCAO}/{cenario}/antes_depois.png", "locomocao", f"{cenario}_antes_depois.png"))
+    itens.append((f"{LOCOMOCAO}/agachado/folha_contato_antes.png", "locomocao", "agachado_folha_antes.png"))
     for cenario in ("andar", "correr", "agachado"):
         itens.append((f"{LOCOMOCAO}/{cenario}/video.mp4", "locomocao", f"{cenario}_video.mp4"))
     for origem, nome in _por_cenario(LOCOMOCAO, ("parar", "curva"), [("folha_contato.png", "folha.png"),

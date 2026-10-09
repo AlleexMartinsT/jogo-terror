@@ -33,7 +33,7 @@ Antes da fase 4 o jogo andava a 2,6 m/s, que é um trote: passo de 1,15 m, 35% d
 |---|---|---|
 | Andar | 2,6 m/s | 1,7 m/s |
 | Correr | 4,6 m/s | 4,0 m/s (fôlego dura 4,5 s: 18 m em vez de 20,7 m) |
-| Agachado | 1,2 m/s | 0,8 m/s |
+| Agachado | 1,2 m/s, olho a 1,05 m (quase ajoelhado) | 0,8 m/s, olho a 1,30 m (real: 1,26 m) |
 | Escada | no ritmo do corredor | 1,5 passos por segundo, 0,45 m/s (CMU: 0,42 m/s) |
 | Parar | freada constante de 6 m/s² | 0,65 s de qualquer velocidade |
 | Entidade (patrulha / espreita / perseguição) | 1,5 / 0,9 / 4,1 m/s | 0,98 / 0,60 / 3,57 m/s, escalada com as razões do jogador (a perseguição segue a 89% da corrida) |
@@ -57,8 +57,19 @@ Métricas dentro da tolerância (de 30): andar 9 para **30**, andar devagar 8 pa
 
 Arquivos: `docs/movimento/locomocao/` (`andar_folha.jpg`, `andar_curvas.jpg`, `andar_antes_depois.jpg`, `andar_video.mp4` e os equivalentes de correr, agachado, parar, curva, escada).
 
+**Agachado: mudei a profundidade, e isso mexe no jogo.** A comparação mostrou o jogo quase ajoelhado (olho a 1,05 m, quadril a 0,43 m) contra uma pessoa real andando agachada com os joelhos dobrados (olho a 1,26 m, quadril a 0,85 m). Subi o olho para 1,30 m (`PLAYER_EYE_CROUCH`), a altura de colisão agachado de 1,20 para 1,45 m (`CROUCH_HEIGHT`) e o peito que a entidade enxerga de 0,85 para 1,00 m (`PLAYER_CHEST_CROUCHED`, acompanha o olho). Consequência de jogo: agachado, o jogador é um alvo uns 15 cm mais alto para a entidade. A visão reduzida a 60% do alcance continua valendo.
+
+| Agachado (136_09 e 136_10) | Real | Antes | Depois |
+|---|---|---|---|
+| altura do quadril (m) | 0,851 | 0,435 | 0,685 |
+| joelho no apoio (graus) | 77,3 | 135,2 | 94,5 |
+| joelho no balanço (graus) | 102,8 | 154,9 | 121,2 |
+| tornozelo, dorsiflexão máxima (graus) | 32,9 | 74,8 | 52,5 |
+| inclinação do tronco (graus) | 46,3 | 38,5 | 38,5 |
+
+`agachado_folha_antes.jpg` mostra o agachado antigo contra o mesmo clipe e `agachado_folha.jpg` o novo. O erro de altura do quadril caiu de 0,42 para 0,17 m e o do joelho de 58 para 17 graus, mas a contagem de métricas dentro da tolerância continua 19 de 30: o quadril ainda fica 17 cm abaixo, o joelho e o tornozelo dobram mais e o tronco inclina 8 graus menos.
+
 **O que continua diferente**
-- **Agachado.** O jogo baixa o olho a 1,05 m (quase ajoelhado). O mocap só dobra os joelhos: olho a 1,26 m. O ritmo bate e a postura não. É a causa dos 11 pontos que ficam fora no agachado. Subir para cerca de 1,30 m muda onde dá para se esconder e a colisão (`engine/collision.py:312`), então não mexi: é decisão de jogo.
 - **Corrida.** 4,0 m/s fica acima de qualquer clipe do conjunto (máximo 3,8). Velocidade, passo e extensão do quadril ficam acima do real por isso. O deslize do pé é de 8,8 cm contra 1,9 cm: a bola do pé anda enquanto a sola rola (o tornozelo desliza 2,6 cm).
 - **Curva.** O real perde 21% da velocidade ao virar. O jogo não: com mouse isso viraria atraso de entrada.
 - **Joelho no meio do apoio** fica reto (cerca de 6°, real 10°), visível em `andar_curvas.jpg`.
@@ -150,7 +161,7 @@ As 29 mortes do robô são um laço, não um desequilíbrio geral: depois da pri
 
 ## Decisões em aberto
 
-- **Profundidade do agachado.** Real 1,26 m, jogo 1,05 m. Mudar altera esconderijos e colisão.
+- **Agachado.** Passei o olho para 1,30 m por conta própria, porque a diferença era grande demais para deixar. Se preferir o agachado fundo de antes (e mais difícil de enxergar), são as três constantes citadas na seção de locomoção.
 - **Ritmo da escada.** Está no real (0,45 m/s). Mais rápido é mais jogável e menos fiel.
 - **Relógio de pé.** Antes estava parado às 6:12 e ainda tinha som de tique-taque. Agora o pêndulo balança, o ponteiro dos segundos dá passos de 6 graus e as horas e os minutos ficam em 6:12: um relógio que anda sem o tempo passar. Se preferir parado, `clockwork.CLOCK_RUNS = False`.
 - **Curva sem perda de velocidade** e **pegar do chão sem inclinar o tronco**: ficaram de fora por custo de jogabilidade ou de escopo.

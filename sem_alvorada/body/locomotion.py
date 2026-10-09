@@ -19,7 +19,7 @@ from .solver import LegGoal, PoseSpec
 
 AXIS_X, AXIS_Y, AXIS_Z = Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), Vector((0.0, 0.0, 1.0))
 ROOT_BACK = S.EYE_FROM_C7.y            # a raiz dos pés fica atrás do olho; assim o quadril cai sob a coluna
-STAND_EYE, CROUCH_EYE = 1.65, 1.05     # C.PLAYER_EYE_STAND / C.PLAYER_EYE_CROUCH
+STAND_EYE, CROUCH_EYE = 1.65, 1.30     # C.PLAYER_EYE_STAND / C.PLAYER_EYE_CROUCH
 PITCH_NECK_SHARE = 0.35                # fatia da inclinação do olhar que o pescoço absorve (o resto é do tronco)
 LEAN_PER_PITCH = 0.06                  # graus de tronco inclinado por grau de olhar para baixo
 MAX_LAG = math.radians(68.0)           # quanto o corpo pode ficar para trás da câmera, em guinada

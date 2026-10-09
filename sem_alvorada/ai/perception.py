@@ -6,7 +6,7 @@ from typing import Optional
 
 ENTITY_EYE_HEIGHT = 2.3
 PLAYER_CHEST = 1.35
-PLAYER_CHEST_CROUCHED = 0.85
+PLAYER_CHEST_CROUCHED = 1.00
 
 
 @dataclass

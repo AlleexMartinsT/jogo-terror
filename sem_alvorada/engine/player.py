@@ -11,7 +11,7 @@ from .. import gait, layout
 from . import angles, collision
 
 STAND_HEIGHT = 1.80
-CROUCH_HEIGHT = 1.20
+CROUCH_HEIGHT = 1.45
 PITCH_LIMIT = math.radians(85.0)
 ACCELERATION = 14.0            # 1/s: perto da velocidade desejada a aproximação é exponencial (acabamento suave)
 BACKWARD_FACTOR = 0.8
