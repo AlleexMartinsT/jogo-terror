@@ -290,7 +290,7 @@ def test_crouch_and_run(scene):
     assert abs(ankle.z - S.ANKLE_Z) < 0.02, "pés devem continuar no chão agachado"
     player.crouching, player.eye = False, C.PLAYER_EYE_STAND
     settle(rig, player, 1.0, speed=0.0)
-    settle(rig, player, 1.0, speed=4.6, running=True)
+    settle(rig, player, 1.0, speed=C.SPEED_RUN, running=True)
     lean = rig._solution.head[S.BONE_INDEX["Neck"]].y - rig._solution.head[S.BONE_INDEX["Hips"]].y
     assert lean > 0.05, "correr inclina o tronco"
 
