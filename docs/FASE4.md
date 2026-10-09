@@ -148,6 +148,22 @@ métricas ficarem dentro de tolerância (diga a tolerância e justifique). Ponto
 - Cenários de comparação em `tools/movimento_ref/cenarios/locomocao.py`: andar, andar_devagar, parar, correr, curva,
   agachado, furtivo, escada.
 
+**Resultado do agente 2** (painéis em `out/f4_2/final/<cenário>/`, teste em `tests/test_locomocao.py`):
+
+| Velocidade | Antes | Agora | Referência CMU |
+|---|---|---|---|
+| andar (`SPEED_WALK`) | 2,6 m/s | 1,7 m/s | caminhadas de 1,55 a 1,80 m/s: 29 das 30 métricas dentro da tolerância |
+| correr (`SPEED_RUN`) | 4,6 m/s | 4,0 m/s | corridas de 3,0 a 3,8 m/s: cadência 163 (real 164), apoio 32,6% (32,6), voo 35% (35) |
+| agachado (`SPEED_CROUCH`) | 1,2 m/s | 0,8 m/s | 136_09 e 136_10: 0,84 m/s, ritmo e apoio dentro; a profundidade do agachado do jogo é outra |
+
+- A comparação é com a FAIXA DE VELOCIDADE do jogo (`assets/referencia/marcha_ref.json`), não com o grupo geral de 1,2 a
+  1,6 m/s: contra o grupo geral sobram 6 métricas fora (velocidade, cadência, passada, passo, extensão do quadril e
+  altura do quadril), todas efeito de andar a 1,72 m/s e não a 1,35, ou da raiz Hips do mocap ficar ~9 cm acima das juntas.
+- A entidade manteve as razões (patrulha 0,58 e espreita 0,35 da velocidade de andar; perseguição 0,89 da de correr).
+- Na escada o ritmo é o dos degraus (1,5 passos/s, 0,45 m/s; a CMU mede 1,0 a 1,2 passos/s em degraus de 12 a 16 cm): o
+  trajeto do quarto à porta da garagem passou de 9,2 s (andando) e 6,5 s (correndo) para 20,2 s e 18,0 s, dos quais ~9 s
+  são a escada. Com 1,8 passos/s (0,54 m/s) seria 18,8 s e 16,9 s; com 2,2 passos/s, 17,6 s e 16,1 s.
+
 ### Agente 3: mãos, itens e lanterna
 
 Referências: 26_09 (abaixar e pegar), 15_06 (alcançar), 77_05 (olhar com lanterna), 22_22 (apanhar chaves), 81_05
