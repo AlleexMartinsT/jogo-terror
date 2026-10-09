@@ -151,12 +151,13 @@ def _attach(ctx, parent, name, location, build, **finishes):
     obj = bpy.data.objects.new(name, part.to_mesh(name))
     obj.parent = parent
     obj.location = location
+    obj["sa_prop_part"] = True      # peça filha: sem isso a reconstrução deixaria uma cópia órfã ".001"
     ctx.link(obj, C.COL_PROPS)
     return obj
 
 
 def make_grandfather_clock(ctx, room, x, y, yaw, *, anchor=None, z=None):
-    """Relógio de pé encostado na parede, parado às 6:12."""
+    """Relógio de pé encostado na parede, com as horas e os minutos parados às 6:12 (o pêndulo e os segundos andam)."""
     cy = flush_center(room, x, y, yaw, DEPTH)
     asm = Composite("grandfather_clock", wood=forms.WOOD, round=forms.SMOOTH, trim=forms.SMOOTH, glass=craft.RAW,
                     hands=craft.RAW)

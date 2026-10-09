@@ -1,7 +1,7 @@
 """Gravador do jogo: executa uma linha do tempo de entradas no `Game` sem janela e guarda o que aconteceu por quadro.
 
     from tools.movimento_ref import grava
-    jogo = grava.montar_jogo()                              # .blend completo (out/estado_f3.blend), jogador numa pista livre
+    jogo = grava.montar_jogo()                              # .blend completo (out/estado_completo_<versão>.blend), jogador numa pista livre
     jogo = grava.montar_jogo(palco=True)                    # só o corpo e o piso: ~10x mais rápido de montar
     rec = grava.gravar(jogo, grava.roteiro_de_texto("andar 5; parar 1; correr 3; agachar 2; virar 90 1.5"))
     mov = rec.movimento()                                   # `Movimento` (movimento.py) para metricas/graficos
@@ -48,7 +48,8 @@ from sem_alvorada.engine.inputstate import InputState  # noqa: E402
 
 from .movimento import INDICE, JUNTAS, MAPA_DANIEL, Movimento  # noqa: E402
 
-BLEND_COMPLETO = os.path.join(ROOT, "out", "estado_f3.blend")
+# Um .blend salvo no Blender 5.x não abre no 4.2 (e vice-versa): cada versão guarda o seu cache.
+BLEND_COMPLETO = os.path.join(ROOT, "out", "estado_completo_%d.%d.blend" % bpy.app.version[:2])
 DT_JOGO = 1.0 / 60.0
 OSSOS = list(S.BONE_ORDER)
 OSSO_INDICE = {nome: i for i, nome in enumerate(OSSOS)}

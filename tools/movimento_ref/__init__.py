@@ -4,7 +4,7 @@ ESTADO: MARCO 1 PRONTO (gravador, métricas, gráficos, teste). MARCO 2 PRONTO (
 
 Guia de uso (rode tudo com LIBGL_ALWAYS_SOFTWARE=1; detalhes no topo de cada módulo):
   1. Real:   clip = cmu.carregar("07_01"); real = movimento.movimento_de_mocap(clip)       # Movimento: [T, 21 juntas, 3]
-  2. Jogo:   jogo = grava.montar_jogo(palco=True)      # só corpo e piso (3 s); sem palco=True abre out/estado_f3.blend (13 s)
+  2. Jogo:   jogo = grava.montar_jogo(palco=True)      # só corpo e piso (3 s); sem palco=True abre out/estado_completo_<versão do Blender>.blend (13 s)
              rec = grava.gravar(jogo, grava.roteiro_de_texto("andar 5; parar 1; correr 3"), ossos="armadura")
              mov = rec.movimento_do_passo(0)           # miolo do trecho "andar", sem a aceleração inicial -> Movimento
   3. Medir:  r = metricas.medir_tudo(mov, "zeni")      # r.v = escalares (cadência, passo, apoio, deslize...), r.curvas = % do ciclo

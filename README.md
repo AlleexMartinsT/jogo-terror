@@ -6,6 +6,8 @@ A segunda fase refez a ambientação. Nada é mais caixa com textura: móveis t�
 
 A terceira fase pôs o jogo para se mexer. Daniel tem corpo (olhar para baixo mostra peito, cinto, pernas e botas) e mãos que pegam cada item de um jeito próprio: a lanterna sai desligada, acende e pisca porque a pilha já não é nova; a chave balança com o coelhinho; o mapa se desdobra em dois tempos. As portas abrem com aceleração e podem ranger, e o ranger é ruído que a entidade escuta. O HUD ficou quase vazio (objetivos só no Esc), o personagem só fala no começo e ao pegar item principal, e o inventário é uma roda de cinco itens. As cinco cutscenes foram refeitas com caminhos de câmera contínuos e o corpo do Daniel em quadro. O contrato dessa fase está em [`docs/FASE3.md`](docs/FASE3.md). O Alto (a entidade) ainda é o modelo da primeira fase e fica para a próxima.
 
+A quarta fase foi de movimento verídico. A passada do Daniel agora sai de captura de movimento humano (CMU): anda a 1,7 m/s, corre a 4,0, o pé pousa e rola sem deslizar, a cabeça balança em fase com as pernas e o som do passo sai no toque do calcanhar. Os gestos de pegar duram o que a distância pede, as portas, o carro, o portão, o pêndulo do relógio e a lâmpada seguem leis físicas conferidas por código à parte. Tudo foi comparado lado a lado com a referência, em vários ângulos, e as fotos e os vídeos estão em [`docs/movimento/`](docs/movimento/). O relatório, com o que é medido, derivado ou estimado e o que o jogo ainda faz diferente, está em [`docs/MOVIMENTO.md`](docs/MOVIMENTO.md). A casa ficou mais lenta de atravessar (cerca de 2,2 vezes), o que mexe no ritmo do jogo.
+
 Domingo, 6:47, Harlan Ridge, Ohio. O sol devia ter nascido às 6:12 e a janela continua preta. Daniel acorda sozinho numa casa americana de dois andares e precisa de três coisas para sair dela: a **chave do carro**, o **mapa da cidade** e **três pilhas reserva** para a lanterna. Com tudo em mãos, a porta da garagem destranca. Enquanto isso, o Alto, uma figura de 2,65 m com olhos brancos, anda pela casa. Ele escuta melhor do que enxerga.
 
 ## Capturas
@@ -90,7 +92,7 @@ A entidade segue regras que dá para aprender:
 - Ela **ouve** o que passa do limiar (0,08 depois da propagação) e vai até a origem do som, com erro maior quanto mais fraco ele foi.
 - Ela **vê** a lanterna acesa de longe (18 m) e quase nada no escuro (5,5 m). Agachado e parado reduzem isso. A percepção sobe aos poucos, não de uma vez.
 - Quando você está perto e quieto, ela espreita: se aproxima devagar e **sem fazer som**. O zumbido grave dela some. Se ele parou, ela está perto.
-- Ela é mais lenta que você correndo (4,1 contra 4,6 m/s), mas você se cansa antes.
+- Ela é mais lenta que você correndo (3,57 contra 4,0 m/s), mas você se cansa antes.
 
 ## Estrutura do projeto
 
@@ -149,6 +151,10 @@ python tests/test_hands.py               # gestos dos itens, eventos, continuida
 python tests/test_inventory.py           # roda de itens
 python tests/test_speech_rule.py         # o personagem só fala nos casos previstos
 python tests/test_movimento_ref.py       # infraestrutura de comparação de movimento: métricas, gravador, câmeras
+python tests/test_locomocao.py           # passada, cabeça, escada, parar e agachar contra a CMU (--rapido pula a escada)
+python tests/test_maos_movimento.py      # duração e perfil dos gestos, lâmpada, chaveiro, dedos
+python tests/test_objetos_fisica.py      # portas, carro, portão, relógio, cortina, luz contra o modelo físico
+python tests/test_objetos_3d.py          # as mesmas poses vistas de câmeras diferentes (precisa de out/integration/full.blend)
 python tests/test_doors.py               # curva das portas, ranger e reação da entidade
 python tests/test_cutscenes_fluency.py   # continuidade da câmera a 60 Hz nas cinco cenas
 python tests/test_audio_noise.py
@@ -170,7 +176,7 @@ python -m tools.movimento_ref.cmu                                               
 python tests/test_movimento_ref.py                                                     # BVH, métricas, gravador, coesão entre câmeras
 ```
 
-O mocap é aplicado ao próprio corpo do jogador (`retarget.py`), o jogo é gravado sem janela (`grava.py`), as duas figuras aparecem no mesmo quadro de cada câmera (`palco.py`) e as mesmas métricas (`metricas.py`) saem dos dois lados. Veja o guia no topo de `tools/movimento_ref/__init__.py` e `docs/FASE4.md`.
+O mocap é aplicado ao próprio corpo do jogador (`retarget.py`), o jogo é gravado sem janela (`grava.py`), as duas figuras aparecem no mesmo quadro de cada câmera (`palco.py`) e as mesmas métricas (`metricas.py`) saem dos dois lados. Veja o guia no topo de `tools/movimento_ref/__init__.py` e `docs/FASE4.md`. Os resultados estão em [`docs/MOVIMENTO.md`](docs/MOVIMENTO.md) e as fotos e os vídeos em `docs/movimento/` (`python -m tools.movimento_ref.publicar` os reúne a partir de `out/`).
 
 ## Por que não é um jogo "nativo" do Blender
 
@@ -187,8 +193,8 @@ O Blender removeu o Game Engine na versão 2.80. Este jogo roda como um operador
 - O Alto (a entidade) continua com o modelo da primeira fase. Ele destoa do resto, agora mais detalhado, e é o próximo item.
 - Ficaram simplificados: o interior do forno e do freezer (as tampas não abrem), as portas do carro (só fresta e maçaneta, sem animação) e o desenho de ranhuras do pneu (sulcos em geometria, relevo fino só em textura).
 - O corpo do Daniel não tem cabeça (o pescoço termina atrás da câmera) e as roupas são dobras assadas na malha, sem simulação de pano. As mãos ainda não têm o acabamento final: de perto, alguns presets de dedos parecem tubos. No escuro só aparece o que está no cone da lanterna; por isso materiais e mãos têm um brilho mínimo e há uma luz de 1,4 W junto às mãos quando seguram algo.
-- Os gestos de pegar a lanterna (2,9 s) e o mapa (2,6 s) passam do 1 s planejado. O jogador anda e olha durante todo o gesto; só o E fica bloqueado. A mesa fica além do alcance do braço (0,6 m), então o item "vem" até a mão em 0,26 s.
-- A passada usa a velocidade de caminhada do jogo (2,6 m/s), que para o passo de 1,15 m já é um trote: o pé desliza de 10 a 25% da velocidade do chão durante o apoio.
+- Os gestos de pegar levam em média 2,5 s de ponta a ponta (o alcance em si, 0,8 s, vem da lei medida na CMU). O jogador anda e olha durante todo o gesto; só o E fica bloqueado. A mesa fica além do alcance do braço (0,6 m), então o item "vem" até a mão.
+- Movimento contra referência real: o agachado do jogo baixa o olho a 1,05 m (quase ajoelhado) e o real a 1,26 m; a corrida a 4,0 m/s está acima de qualquer clipe do conjunto da CMU; o jogo não perde velocidade nas curvas. Não existe vídeo real de portas, carros ou lanternas aqui, então os objetos são comparados com modelos físicos, não com filmagem. Detalhes em `docs/MOVIMENTO.md`.
 - Na maçaneta, só a lingueta se mexe: as maçanetas da casa são peças torneadas e girá-las não muda a imagem.
 - Nas cutscenes, a profundidade de campo está ligada por padrão e pode ser desligada (`SA_CUTSCENE_DOF=0`); a lanterna não aparece na mão do Daniel dentro das cenas.
 - Duas famílias de funções de ruído para textura (`props/tex_noise.py` e `props/tex_ruido.py`) cobrem coisas parecidas e podem ser unificadas.

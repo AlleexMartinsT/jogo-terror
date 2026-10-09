@@ -17,7 +17,7 @@ from .stage import Actor
 # Vêm de `body.solver` sobre `body.poses`; um teste (test_cutscenes_build) confere que ainda batem.
 EYE_LOCAL = {"stand": (0.0, 0.075, 1.65), "sit_bed": (0.0, 0.131, 0.782), "lying_bed": (0.0, -0.700, 0.184),
              "driving": (0.0, 0.130, 0.778)}
-STEP_LENGTH = 0.75                 # m por passo: cada pi de `stride_phase` é um passo, como no Player
+STEP_LENGTH = 0.69                 # m por passo: cada pi de `stride_phase` é um passo, como no Player
 PLAYER_EYE = 1.65
 
 
