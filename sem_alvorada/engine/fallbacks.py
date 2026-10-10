@@ -135,6 +135,9 @@ class NullArm:
     def set_fingers(self, curls, spread=0.0, blend=1.0):
         pass
 
+    def set_finger_joints(self, joints):
+        pass
+
     def release(self, blend=1.0):
         pass
 
@@ -145,6 +148,9 @@ class NullArm:
         pass
 
     def hand_world_position(self):
+        return None
+
+    def shoulder_world_position(self):
         return None
 
 
@@ -176,6 +182,11 @@ class NullBody:
     def eye_position(self, pose="stand"):
         """Sem corpo, os olhos ficam na altura do jogador em pé, no ponto de `place`."""
         return (0.0, 0.0, 1.65)
+
+    def shoulder_world(self, side):
+        return None
+
+    trunk_yaw = 0.0
 
     def reset(self):
         pass

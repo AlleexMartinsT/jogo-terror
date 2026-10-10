@@ -1782,6 +1782,529 @@
    }
   }
  },
+ "andar_rapido": {
+  "descricao": "andar rápido (1,5 a 1,6 m/s, a faixa do jogo a 1,7), 1 pessoa, 3 clipes",
+  "clipes": {
+   "08_01": {
+    "ombro": {
+     "e": {
+      "media": [
+       -0.2359,
+       -0.08,
+       -0.2165
+      ],
+      "amplitude": [
+       0.0093,
+       0.0211,
+       0.0243
+      ],
+      "desvio": [
+       0.0027,
+       0.0066,
+       0.0084
+      ],
+      "frequencia_frente": 1.0,
+      "frequencia_cima": 0.938,
+      "no_campo": 0.0,
+      "quadros": 262,
+      "velocidade_do_quadril": 1.6
+     },
+     "d": {
+      "media": [
+       0.2351,
+       -0.0732,
+       -0.26
+      ],
+      "amplitude": [
+       0.0116,
+       0.0254,
+       0.0269
+      ],
+      "desvio": [
+       0.0035,
+       0.0081,
+       0.0088
+      ],
+      "frequencia_frente": 0.875,
+      "frequencia_cima": 0.938,
+      "no_campo": 0.0,
+      "quadros": 262,
+      "velocidade_do_quadril": 1.6
+     }
+    },
+    "cotovelo": {
+     "e": {
+      "media": [
+       -0.2818,
+       -0.0985,
+       -0.5614
+      ],
+      "amplitude": [
+       0.0718,
+       0.319,
+       0.057
+      ],
+      "desvio": [
+       0.0227,
+       0.1095,
+       0.0172
+      ],
+      "frequencia_frente": 1.0,
+      "frequencia_cima": 2.0,
+      "no_campo": 0.0,
+      "quadros": 262,
+      "velocidade_do_quadril": 1.6
+     },
+     "d": {
+      "media": [
+       0.1983,
+       -0.1173,
+       -0.5949
+      ],
+      "amplitude": [
+       0.1166,
+       0.3259,
+       0.0711
+      ],
+      "desvio": [
+       0.036,
+       0.1142,
+       0.0222
+      ],
+      "frequencia_frente": 1.0,
+      "frequencia_cima": 2.0,
+      "no_campo": 0.0,
+      "quadros": 262,
+      "velocidade_do_quadril": 1.6
+     }
+    },
+    "punho": {
+     "e": {
+      "media": [
+       -0.3059,
+       -0.0172,
+       -0.7238
+      ],
+      "amplitude": [
+       0.0461,
+       0.6372,
+       0.2054
+      ],
+      "desvio": [
+       0.0141,
+       0.2334,
+       0.0688
+      ],
+      "frequencia_frente": 1.0,
+      "frequencia_cima": 1.063,
+      "no_campo": 0.0,
+      "quadros": 262,
+      "velocidade_do_quadril": 1.6
+     },
+     "d": {
+      "media": [
+       0.2037,
+       -0.0514,
+       -0.7733
+      ],
+      "amplitude": [
+       0.1358,
+       0.6566,
+       0.1921
+      ],
+      "desvio": [
+       0.0421,
+       0.2404,
+       0.0594
+      ],
+      "frequencia_frente": 1.0,
+      "frequencia_cima": 1.0,
+      "no_campo": 0.0,
+      "quadros": 262,
+      "velocidade_do_quadril": 1.6
+     }
+    }
+   },
+   "08_02": {
+    "ombro": {
+     "e": {
+      "media": [
+       -0.2285,
+       -0.083,
+       -0.23
+      ],
+      "amplitude": [
+       0.0099,
+       0.0187,
+       0.0347
+      ],
+      "desvio": [
+       0.0029,
+       0.0058,
+       0.0116
+      ],
+      "frequencia_frente": 1.125,
+      "frequencia_cima": 0.938,
+      "no_campo": 0.0,
+      "quadros": 294,
+      "velocidade_do_quadril": 1.538
+     },
+     "d": {
+      "media": [
+       0.2439,
+       -0.0671,
+       -0.2453
+      ],
+      "amplitude": [
+       0.0109,
+       0.0247,
+       0.0369
+      ],
+      "desvio": [
+       0.0034,
+       0.0069,
+       0.0123
+      ],
+      "frequencia_frente": 0.75,
+      "frequencia_cima": 1.0,
+      "no_campo": 0.0,
+      "quadros": 294,
+      "velocidade_do_quadril": 1.538
+     }
+    },
+    "cotovelo": {
+     "e": {
+      "media": [
+       -0.2526,
+       -0.0996,
+       -0.5703
+      ],
+      "amplitude": [
+       0.1167,
+       0.3821,
+       0.0737
+      ],
+      "desvio": [
+       0.0366,
+       0.1284,
+       0.0225
+      ],
+      "frequencia_frente": 0.938,
+      "frequencia_cima": 1.938,
+      "no_campo": 0.0,
+      "quadros": 294,
+      "velocidade_do_quadril": 1.538
+     },
+     "d": {
+      "media": [
+       0.2262,
+       -0.0855,
+       -0.5835
+      ],
+      "amplitude": [
+       0.1038,
+       0.3733,
+       0.0706
+      ],
+      "desvio": [
+       0.0332,
+       0.1237,
+       0.0208
+      ],
+      "frequencia_frente": 0.938,
+      "frequencia_cima": 1.938,
+      "no_campo": 0.0,
+      "quadros": 294,
+      "velocidade_do_quadril": 1.538
+     }
+    },
+    "punho": {
+     "e": {
+      "media": [
+       -0.2761,
+       -0.0372,
+       -0.7427
+      ],
+      "amplitude": [
+       0.1357,
+       0.7044,
+       0.239
+      ],
+      "desvio": [
+       0.0391,
+       0.2519,
+       0.0764
+      ],
+      "frequencia_frente": 0.938,
+      "frequencia_cima": 1.0,
+      "no_campo": 0.0,
+      "quadros": 294,
+      "velocidade_do_quadril": 1.538
+     },
+     "d": {
+      "media": [
+       0.2316,
+       0.0019,
+       -0.7545
+      ],
+      "amplitude": [
+       0.0927,
+       0.7078,
+       0.2143
+      ],
+      "desvio": [
+       0.0282,
+       0.2452,
+       0.0697
+      ],
+      "frequencia_frente": 0.938,
+      "frequencia_cima": 0.938,
+      "no_campo": 0.0,
+      "quadros": 294,
+      "velocidade_do_quadril": 1.538
+     }
+    }
+   },
+   "08_03": {
+    "ombro": {
+     "e": {
+      "media": [
+       -0.2342,
+       -0.0996,
+       -0.2313
+      ],
+      "amplitude": [
+       0.0148,
+       0.0237,
+       0.0371
+      ],
+      "desvio": [
+       0.0049,
+       0.0068,
+       0.0123
+      ],
+      "frequencia_frente": 2.938,
+      "frequencia_cima": 1.0,
+      "no_campo": 0.0,
+      "quadros": 338,
+      "velocidade_do_quadril": 1.525
+     },
+     "d": {
+      "media": [
+       0.2372,
+       -0.0656,
+       -0.2434
+      ],
+      "amplitude": [
+       0.015,
+       0.0292,
+       0.0355
+      ],
+      "desvio": [
+       0.0048,
+       0.01,
+       0.0121
+      ],
+      "frequencia_frente": 0.75,
+      "frequencia_cima": 1.0,
+      "no_campo": 0.0,
+      "quadros": 338,
+      "velocidade_do_quadril": 1.525
+     }
+    },
+    "cotovelo": {
+     "e": {
+      "media": [
+       -0.2601,
+       -0.113,
+       -0.5828
+      ],
+      "amplitude": [
+       0.1043,
+       0.2917,
+       0.0517
+      ],
+      "desvio": [
+       0.0307,
+       0.0972,
+       0.0159
+      ],
+      "frequencia_frente": 0.938,
+      "frequencia_cima": 1.938,
+      "no_campo": 0.0,
+      "quadros": 338,
+      "velocidade_do_quadril": 1.525
+     },
+     "d": {
+      "media": [
+       0.2242,
+       -0.082,
+       -0.5825
+      ],
+      "amplitude": [
+       0.1026,
+       0.3445,
+       0.0599
+      ],
+      "desvio": [
+       0.0325,
+       0.1182,
+       0.0175
+      ],
+      "frequencia_frente": 1.0,
+      "frequencia_cima": 1.938,
+      "no_campo": 0.0,
+      "quadros": 338,
+      "velocidade_do_quadril": 1.525
+     }
+    },
+    "punho": {
+     "e": {
+      "media": [
+       -0.2809,
+       -0.0349,
+       -0.754
+      ],
+      "amplitude": [
+       0.0904,
+       0.5958,
+       0.2049
+      ],
+      "desvio": [
+       0.0269,
+       0.2143,
+       0.0659
+      ],
+      "frequencia_frente": 0.938,
+      "frequencia_cima": 0.938,
+      "no_campo": 0.0,
+      "quadros": 338,
+      "velocidade_do_quadril": 1.525
+     },
+     "d": {
+      "media": [
+       0.229,
+       0.0029,
+       -0.7544
+      ],
+      "amplitude": [
+       0.0931,
+       0.6623,
+       0.2141
+      ],
+      "desvio": [
+       0.0301,
+       0.2385,
+       0.0694
+      ],
+      "frequencia_frente": 1.0,
+      "frequencia_cima": 1.0,
+      "no_campo": 0.0,
+      "quadros": 338,
+      "velocidade_do_quadril": 1.525
+     }
+    }
+   }
+  },
+  "resumo": {
+   "ombro": {
+    "e": {
+     "media": [
+      -0.2342,
+      -0.083,
+      -0.23
+     ],
+     "amplitude": [
+      0.0099,
+      0.0211,
+      0.0347
+     ],
+     "frequencia_frente": 1.125,
+     "frequencia_cima": 0.938,
+     "no_campo": 0.0
+    },
+    "d": {
+     "media": [
+      0.2372,
+      -0.0671,
+      -0.2453
+     ],
+     "amplitude": [
+      0.0116,
+      0.0254,
+      0.0355
+     ],
+     "frequencia_frente": 0.75,
+     "frequencia_cima": 1.0,
+     "no_campo": 0.0
+    }
+   },
+   "cotovelo": {
+    "e": {
+     "media": [
+      -0.2601,
+      -0.0996,
+      -0.5703
+     ],
+     "amplitude": [
+      0.1043,
+      0.319,
+      0.057
+     ],
+     "frequencia_frente": 0.938,
+     "frequencia_cima": 1.938,
+     "no_campo": 0.0
+    },
+    "d": {
+     "media": [
+      0.2242,
+      -0.0855,
+      -0.5835
+     ],
+     "amplitude": [
+      0.1038,
+      0.3445,
+      0.0706
+     ],
+     "frequencia_frente": 1.0,
+     "frequencia_cima": 1.938,
+     "no_campo": 0.0
+    }
+   },
+   "punho": {
+    "e": {
+     "media": [
+      -0.2809,
+      -0.0349,
+      -0.7427
+     ],
+     "amplitude": [
+      0.0904,
+      0.6372,
+      0.2054
+     ],
+     "frequencia_frente": 0.938,
+     "frequencia_cima": 1.0,
+     "no_campo": 0.0
+    },
+    "d": {
+     "media": [
+      0.229,
+      0.0019,
+      -0.7545
+     ],
+     "amplitude": [
+      0.0931,
+      0.6623,
+      0.2141
+     ],
+     "frequencia_frente": 1.0,
+     "frequencia_cima": 1.0,
+     "no_campo": 0.0
+    }
+   }
+  }
+ },
  "correr": {
   "descricao": "correr sem nada nas mãos",
   "clipes": {

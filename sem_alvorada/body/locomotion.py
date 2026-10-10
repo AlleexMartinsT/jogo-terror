@@ -34,6 +34,11 @@ HIP_AHEAD_CORRECTION = {"walk": 0.09, "run": -0.05, "crouch": 0.09}      # calib
 TOE_HINGE, TOE_LENGTH = 0.16, 0.105    # articulação dos dedos (bola) e comprimento do dedão ao tornozelo (m), de skeleton.py
 TOE_TIP = TOE_HINGE + TOE_LENGTH       # ponta do dedão em relação ao tornozelo, no plano
 TOE_RELAX = 0.15                       # fração do ciclo que os dedos levam para relaxar depois de o pé sair do chão
+REACH_LEAN_SHARE = {"Hips": 0.38, "Spine1": 0.22, "Spine2": 0.20, "Spine3": 0.20}     # ESTIMADO: na curvatura para pegar
+REACH_NECK_SHARE = 0.55                # a cabeça acompanha 45% da curvatura do tronco (MEDIDO em 12 clipes de pegar do chão: o vetor
+                                       # C7 -> olho gira cerca de 0,7 vezes o ângulo do tronco, dos quais o olhar para baixo já dá uns 20 graus)
+REACH_DROOP = 1.0 - REACH_NECK_SHARE
+REACH_LEAN_CAL = 1.0 / 0.9             # o tronco medido (C7 - lombar) sai com 0,9 do que a coluna recebe: a postura pede graus medidos
 TRUNK_TURN_LEAN = 0.75                 # tronco / câmera ao inclinar para dentro da curva (1,4 / 1,9 graus em 16_17)
 SWING_MARGIN = 0.015                   # m: folga entre a ponta do pé e o chão no balanço
 RUN_ROCKER_OFF = 1.0                   # 1: na corrida vale só a trajetória medida do pé (o pé não rola como no passo)
@@ -146,7 +151,8 @@ class Locomotion:
         lean = self._lean(pitch, sampled)
         self._spine(rot, lean, lag, sampled, player)
         cam_body = body_from_world @ (cam_pos - root)
-        eye_offset = Matrix.Rotation(lag, 3, "Z") @ Matrix.Rotation(pitch * PITCH_NECK_SHARE, 3, "X") @ S.EYE_FROM_C7
+        droop = math.radians(getattr(player, "reach_lean", 0.0) * REACH_DROOP)       # pegar baixo: a cabeça pende à frente do C7
+        eye_offset = Matrix.Rotation(lag, 3, "Z") @ Matrix.Rotation(pitch * PITCH_NECK_SHARE - droop, 3, "X") @ S.EYE_FROM_C7
         neck_target = cam_body - eye_offset
         spec.hips_shift = neck_target - _neck_base(rot)
 
@@ -194,8 +200,10 @@ class Locomotion:
     def _spine(self, rot, lean, lag, sampled, player):
         shares = (("Hips", 0.10), ("Spine1", 0.28), ("Spine2", 0.32), ("Spine3", 0.30))
         tilt = TRUNK_TURN_LEAN * getattr(player, "turn_lean", 0.0)
+        reach = getattr(player, "reach_lean", 0.0) * REACH_LEAN_CAL      # pegar baixo (engine/posture.py): o quadril dobra mais que a coluna
         for name, share in shares:
-            rot[name] = Quaternion(AXIS_X, -math.radians(lean * share)) @ Quaternion(AXIS_Y, -tilt * share)
+            bend = lean * share + reach * REACH_LEAN_SHARE[name]
+            rot[name] = Quaternion(AXIS_X, -math.radians(bend)) @ Quaternion(AXIS_Y, -tilt * share)
         # a pelve gira e se inclina com a passada; a coluna torce o tórax no sentido oposto (tronco_yaw - pelve_yaw)
         v = sampled.values
         amp = self.gain
@@ -208,7 +216,7 @@ class Locomotion:
             rot[name] = Quaternion(AXIS_Z, twist * share) @ rot[name]
         breath = math.sin(getattr(player, "breath_phase", self.clock * 1.5)) * (0.35 + 0.5 * getattr(player, "breath_mix", 0.0))
         rot["Spine2"] = Quaternion(AXIS_X, math.radians(breath)) @ rot["Spine2"]
-        rot["Neck"] = Quaternion(AXIS_X, math.radians(lean * 0.45))
+        rot["Neck"] = Quaternion(AXIS_X, math.radians(lean * 0.45 + reach * REACH_NECK_SHARE))
 
     def _legs(self, spec, sampled, scale, root, dt):
         amp = self.gain

@@ -17,8 +17,11 @@ from mathutils import Euler, Matrix, Quaternion, Vector
 from .. import conventions as C
 from . import collision
 from . import handclips as K
-from .handheld import GRAVITY, Handhelds, Pendulum, PivotAcceleration, Sway, SupportAcceleration
+from .handheld import GRAVITY, Handhelds, Pendulum, PivotAcceleration, SupportAcceleration
+from .handsway import HandSway
 from .handtrack import ClipPlayer, number
+from .handactions import HandActions
+from .gripdrive import GripDrive, press_envelope
 
 FOV_ZOOM = 0.17                  # quanto o campo de visão fecha quando o rosto "se aproxima" de uma nota na parede
 MAP_LOOK_SECONDS = 1.6           # o mapa fica diante do rosto este tempo, se o jogador não apertar E de novo
@@ -48,9 +51,12 @@ class Hands:
         self.runner = ClipPlayer()
         self.models = Handhelds(game.scene, game.player_cam)
         self.pendulum = Pendulum(self.models.key_pendulum_lengths())
-        self.pivot = PivotAcceleration()
+        self.pivot = SupportAcceleration(limit=14.0, rate=22.0)       # mesma suavização e teto do chaveiro de antes, mas no mundo
         self.paper_support = SupportAcceleration()
-        self.sway = {"R": Sway(0.0, 1.0), "L": Sway(1.7, 0.8)}
+        self.sway = HandSway(game)
+        self._gripper = GripDrive()                # pegada por contato: dos canais `grip` e `press` às juntas dos dedos
+        self._grip_inputs = {}
+        self._press_age = 10.0                     # s desde que o polegar começou a apertar o interruptor (F)
         self.last = {}                          # última pose entregue por lado: (pos, rot, curl, peso)
         self._base_fov = None
         self._clock = 0.0
@@ -67,6 +73,7 @@ class Hands:
         self._euler = {"R": Euler((0.0, 0.0, 0.0)), "L": Euler((0.0, 0.0, 0.0))}
         self._tuck = 0.0
         self._rest = {side: Vector(K.HANG_POS[side]) for side in ("R", "L")}     # palma do braço solto, espaço da câmera
+        self.actions = HandActions(self)         # gestos que pedem o corpo inteiro: pegar baixo, porta, leitura
         self.reset()
 
     # ---- consultas ----
@@ -107,16 +114,17 @@ class Hands:
         self._left_mode = "hold"
         self._look_left = 0.0
         self._click = 0.0
+        self._press_age = 10.0
         self._tuck = 0.0
         self._visual = {"R": None, "L": None}
         self._base_key = None
         self._previous_step = None
-        for sway in self.sway.values():
-            sway.reset()
+        self.sway.reset()
         self.pendulum.reset()
         self.pivot.reset()
         self.paper_support.reset()
         self.models.sheet.reset()
+        self.actions.reset()
         self._hide_everything()
 
     def suspend(self):
@@ -128,6 +136,7 @@ class Hands:
             self.runner.abort(self._fire)
         self._job = self._reading_job = None
         self.runner = ClipPlayer()
+        self.actions.reset()
         self._visual = {"R": None, "L": None}
         self._base_key = None
         self._hide_everything()
@@ -172,12 +181,15 @@ class Hands:
             return True
         job = _Job("lantern" if item == C.ITEM_FLASHLIGHT else "pickup", target, item, on_contact, on_done)
         side = "R" if item == C.ITEM_FLASHLIGHT else "L"
-        reach_s = K.move_time((self._reach_point(target) - self._rest[side]).length)
+
+        def begin():
+            clip, _dip = self.actions.pickup_clip(factory, target, side)       # item baixo: o corpo desce junto (handactions)
+            self._start(clip, job)
         if item == C.ITEM_FLASHLIGHT:
             self._interrupt()
-            self._start(factory(reach_s), job)
+            begin()
         else:
-            self._when_left_free(lambda: self._start(factory(reach_s), job))
+            self._when_left_free(begin)
         return True
 
     # ---- segurar ----
@@ -230,6 +242,7 @@ class Hands:
             return
         self.game.flashlight.toggle()
         self._click = 1.0
+        self._press_age = 0.0
 
     def reload_flashlight(self):
         """R: troca as pilhas com as duas mãos; sem pilha reserva (ou com a carga ainda boa) é um gesto de recusa."""
@@ -332,7 +345,7 @@ class Hands:
             self.runner.abort(self._fire)
 
     def _fire(self, event):
-        handler = getattr(self, f"_on_{event.name}", None)
+        handler = getattr(self, f"_on_{event.name}", None) or self.actions.handler(event.name)
         if handler is not None:
             handler(event.arg)
 
@@ -423,6 +436,9 @@ class Hands:
         self._update_camera_matrix()
         self._track_rest()
         channels = self.runner.update(dt, self._base, self._anchors(), self._fire)
+        self._grip_inputs = {side: (channels[f"{side}.grip"], channels[f"{side}.press"][0]) for side in ("R", "L")}
+        self._press_age += dt
+        self.actions.update(dt)
         self._tick_look_timer(dt)
         yaw_rate, pitch_rate = self._look_rates(dt)
         flashlight = game.flashlight
@@ -431,6 +447,7 @@ class Hands:
         self._click = max(0.0, self._click - CLICK_DECAY * dt)
         self._follow_wall(dt)
         hard = game.player.breathing_hard
+        self.sway.update(dt, self._cam[0], self._visual, {side: channels[f"{side}.pos"] for side in ("R", "L")})
         self._pose_hand("R", channels, dt, bob, yaw_rate, pitch_rate, hard)
         self._pose_hand("L", channels, dt, bob, yaw_rate, pitch_rate, hard)
         self._apply_extras(channels, dt)
@@ -488,14 +505,18 @@ class Hands:
         channels.update({name: number(value) for name, value in K.EXTRAS.items()})
         return channels
 
-    def _reach_point(self, target):
+    def _reach_point(self, target, side=None):
         """Onde a palma pega o item, no espaço da câmera: o ponto do item, limitado ao alcance do braço."""
         reach = Vector(self._world_point(target))
-        if reach.length > K.REACH_LIMIT:
-            reach *= K.REACH_LIMIT / reach.length
+        bent = self.actions.clamp_to_arm(reach, side)    # com o corpo todo no gesto, o limite é o do ombro, não o do olho
+        if bent is not None:
+            return bent
+        limit = K.REACH_LIMIT
+        if reach.length > limit:
+            reach *= limit / reach.length
         if reach.y > K.REACH_DROP:                       # abaixo da linha do olhar, à mesma distância do rosto
             reach.y = K.REACH_DROP
-            flat = max(K.REACH_LIMIT ** 2 - reach.x ** 2 - reach.y ** 2, 0.0) ** 0.5
+            flat = max(limit ** 2 - reach.x ** 2 - reach.y ** 2, 0.0) ** 0.5
             reach.z = -min(flat, -reach.z) if reach.z < 0.0 else -flat
         reach.z = min(reach.z, -0.20)
         return reach
@@ -508,7 +529,7 @@ class Hands:
         if clip.meta.get("rest"):
             spaces["rest"] = tuple(self._rest_at_start)
         if clip.meta.get("grasp") and job.target is not None:
-            spaces["grasp"] = tuple(self._reach_point(job.target))
+            spaces["grasp"] = tuple(self._reach_point(job.target, clip.meta.get("side")))
         return {f"{clip.meta['grasp']}.pos": spaces} if spaces and clip.meta.get("grasp") else None
 
     # ---- mundo -> câmera ----
@@ -541,7 +562,7 @@ class Hands:
         curl = list(channels[f"{side}.curl"])
         weight = channels[f"{side}.w"][0]
         attach = channels[f"{side}.attach"][0]
-        sway_pos, sway_rot = self.sway[side].step(dt, self._clock, bob, yaw_rate, pitch_rate, hard)
+        sway_pos, sway_rot = self.sway.offset(side)
         pos += Vector(sway_pos)
         extra = [math.radians(a) for a in sway_rot]
         if side == "R":
@@ -572,10 +593,32 @@ class Hands:
         if weight > 0.01:
             arm.set_target(pos, rot, min(1.0, weight))
             arm.set_fingers(tuple(min(1.0, max(0.0, c)) for c in curl))
+            set_joints = getattr(arm, "set_finger_joints", None)        # os braços de teste podem não ter
+            if set_joints is not None:
+                set_joints(self._finger_joints(side, curl))
             self._released[side] = False
         elif not self._released[side]:
             arm.release()
             self._released[side] = True
+
+    def _grip_kind(self, side):
+        """O item que a mão `side` segura ou está para pegar (durante o alcance ele ainda não aparece na mão)."""
+        kind = self._visual[side]
+        clip = self.runner.clip
+        if kind is None and clip is not None and clip.meta.get("side") == side and clip.meta.get("world_item"):
+            kind = clip.meta.get("kind")
+        return kind
+
+    def _finger_joints(self, side, curl):
+        """Curls por junta da pegada por contato, ou None (mão livre, ou item sem pegada calculada: valem os cinco curls)."""
+        kind = self._grip_kind(side)
+        inputs = self._grip_inputs.get(side)
+        if kind is None or inputs is None:
+            return None
+        grip, press = inputs
+        if side == "R" and kind == C.ITEM_FLASHLIGHT:
+            press = max(press, press_envelope(self._press_age))
+        return self._gripper.joints(kind, curl, grip, press)
 
     def _place_item(self, kind, hand, attach, dt):
         carried = K.GRIPS[kind].item_of(hand)
@@ -606,7 +649,11 @@ class Hands:
         return blended, (uniform, uniform, uniform)
 
     def _tick_key(self, dt, matrix):
-        accel = self.pivot.update(dt, tuple(matrix.translation))
+        """O pêndulo sente a aceleração do pivô NO MUNDO (a cabeça que sobe e desce com o passo balança o chaveiro, parar de súbito
+        o lança para a frente), projetada nos eixos da câmera. Em espaço de câmera só o movimento da própria mão o excitava."""
+        world = Vector(self.pivot.update(dt, tuple(self._cam[0] @ matrix.translation)))
+        axes = self._cam[0].to_3x3()
+        accel = (world.dot(axes.col[0]), -world.dot(axes.col[2]))
         self.pendulum.step(dt, accel)
         player = self.game.player
         step = int(player.stride_phase // math.pi)

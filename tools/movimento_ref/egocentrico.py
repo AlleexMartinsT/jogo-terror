@@ -33,6 +33,7 @@ CATEGORIAS = {
     "andar": ("andar sem nada nas mãos, 7 pessoas",
               [(c, None, None) for c in ("07_01", "07_06", "08_01", "08_02", "08_03", "16_32", "16_47", "35_01", "35_02",
                                           "38_01", "39_01", "02_01")]),
+    "andar_rapido": ("andar rápido (1,5 a 1,6 m/s, a faixa do jogo a 1,7), 1 pessoa, 3 clipes", [(c, None, None) for c in ("08_01", "08_02", "08_03")]),
     "correr": ("correr sem nada nas mãos", [(c, None, None) for c in ("09_01", "09_09", "09_11")]),
     "mala_leve": ("andar carregando uma mala de 2,5 kg numa mão", [("70_01", None, None), ("70_02", None, None)]),
     "mala_media": ("andar carregando uma mala de 5,7 kg", [("70_10", None, None), ("70_12", None, None)]),
@@ -161,3 +162,76 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------------------------------------------------------
+# Painéis do que o jogador vê (fase 5)
+# ---------------------------------------------------------------------------------------------------------------------------
+COR_REAL = "#2a78d6"
+COR_JOGO = "#eb6834"
+COR_ANTES = "#8a8a86"
+
+
+def angulos(ego):
+    """(azimute, elevação) em graus de pontos (direita, frente, cima) na câmera. NaN para o que está atrás do plano de corte
+    (`PERTO`): a câmera não o desenha, e o ângulo de um ponto ao lado do olho não quer dizer nada."""
+    ego = np.asarray(ego, float)
+    frente = np.where(ego[:, 1] > PERTO, ego[:, 1], np.nan)
+    return np.degrees(np.arctan2(ego[:, 0], frente)), np.degrees(np.arctan2(ego[:, 2], frente))
+
+
+def desenhar_campo(ax, curvas, titulo="", margem=6.0):
+    """Eixos de ângulo (azimute x elevação) com a moldura de 72 x 44 graus. `curvas`: [{rotulo, ego [T,3], cor, estilo, media}]."""
+    from matplotlib.patches import Rectangle
+    meia_h, meia_v = FOV_HORIZONTAL / 2, FOV_VERTICAL / 2
+    ax.add_patch(Rectangle((-meia_h, -meia_v), 2 * meia_h, 2 * meia_v, fill=False, ec="#444", lw=1.4))
+    ax.axhline(0, color="#ccc", lw=0.6)
+    ax.axvline(0, color="#ccc", lw=0.6)
+    for curva in curvas:
+        az, el = angulos(curva["ego"])
+        ax.plot(az, el, color=curva["cor"], ls=curva.get("estilo", "-"), lw=curva.get("largura", 1.2), label=curva["rotulo"], alpha=0.9)
+        if curva.get("media", True) and np.isfinite(az).any():
+            ax.plot([np.nanmean(az)], [np.nanmean(el)], marker="o", color=curva["cor"], ms=5)
+    ax.set_xlim(-meia_h - margem, meia_h + margem)
+    ax.set_ylim(-meia_v - margem, meia_v + margem)
+    ax.set_aspect("equal")
+    ax.set_xlabel("azimute (graus, + direita)")
+    ax.set_ylabel("elevação (graus)")
+    ax.set_title(titulo, fontsize=9)
+    ax.legend(fontsize=7, loc="upper left", framealpha=0.85)
+
+
+def desenhar_plano(ax, caixas, curvas=(), profundidade=0.30, titulo=""):
+    """Plano (direita, cima) da câmera em metros. `caixas`: [{rotulo, media [3], amplitude [3], cor}] desenha o retângulo
+    média +- amplitude/2 (percentis 5 a 95) de cada junta; `curvas`: trajetórias [T,3]. Tracejado: o cone da câmera a
+    `profundidade` m do olho (onde fica a lanterna)."""
+    from matplotlib.patches import Rectangle
+    meia_h = profundidade * np.tan(np.radians(FOV_HORIZONTAL / 2))
+    meia_v = profundidade * np.tan(np.radians(FOV_VERTICAL / 2))
+    ax.add_patch(Rectangle((-meia_h, -meia_v), 2 * meia_h, 2 * meia_v, fill=False, ec="#444", ls="--", lw=1.2))
+    ax.annotate(f"campo a {profundidade * 100:.0f} cm", (-meia_h, meia_v), fontsize=7, color="#444", va="bottom")
+    ax.plot([0], [0], marker="+", color="#444", ms=9)
+    for caixa in caixas:
+        media, amplitude = np.asarray(caixa["media"]), np.asarray(caixa["amplitude"])
+        ax.add_patch(Rectangle((media[0] - amplitude[0] / 2, media[2] - amplitude[2] / 2), max(amplitude[0], 0.004),
+                               max(amplitude[2], 0.004), fc=caixa["cor"], ec=caixa["cor"], alpha=caixa.get("alfa", 0.35), lw=1.0))
+        ax.annotate(caixa["rotulo"], (media[0], media[2] + amplitude[2] / 2), fontsize=7, color=caixa["cor"], ha="center", va="bottom")
+    for curva in curvas:
+        ego = np.asarray(curva["ego"])
+        ax.plot(ego[:, 0], ego[:, 2], color=curva["cor"], lw=curva.get("largura", 1.2), label=curva["rotulo"], alpha=0.9)
+    ax.set_aspect("equal")
+    ax.set_xlabel("direita (m)")
+    ax.set_ylabel("cima (m)")
+    ax.set_title(titulo, fontsize=9)
+    ax.grid(alpha=0.2)
+
+
+def espectro(serie, fps, maximo=6.0):
+    """(frequências, amplitude) do espectro de amplitude (m) de `serie`, sem a média, com janela de Hann."""
+    serie = np.asarray(serie, float)
+    serie = serie - serie.mean()
+    n = max(len(serie), int(fps * 16))
+    amplitude = np.abs(np.fft.rfft(serie * np.hanning(len(serie)), n=n)) * 2.0 / np.hanning(len(serie)).sum()
+    freq = np.fft.rfftfreq(n, 1.0 / fps)
+    dentro = freq <= maximo
+    return freq[dentro], amplitude[dentro]

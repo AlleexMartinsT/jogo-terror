@@ -9,7 +9,9 @@ import math
 from .. import conventions as C
 from .. import gait, layout
 from . import angles, collision
+from .posture import ReachPosture
 
+ASSIST_WISH = 0.5              # fração da velocidade de andar do passo assistido (0,85 m/s: um passo curto, sem pressa)
 STAND_HEIGHT = 1.80
 CROUCH_HEIGHT = 1.45
 PITCH_LIMIT = math.radians(85.0)
@@ -82,6 +84,8 @@ class Player:
         self._sway_clock = 0.0
         self._travelled = 0.0      # metros andados no último tick
         self._dt = 1.0 / 60.0
+        self.reach = ReachPosture()              # a cabeça desce e avança, o tronco inclina: pegar baixo, alcançar (Hands)
+        self._assist = None                      # [dx, dy, metros que faltam, s parado]: o passo até o item que o gesto de pegar pede
         self._refresh_room()
 
     # ---- consultas ----
@@ -146,12 +150,22 @@ class Player:
         """(lateral, vertical) da cabeça em metros em relação ao ponto de repouso, para a câmera e as mãos."""
         return (self._head[0], self._head[1])
 
+    def head_wobble(self):
+        """(inclinação, rolagem) em radianos que a passada e a respiração põem na cabeça além do olhar do jogador."""
+        return (self._head[3], self._head[2])
+
+    @property
+    def reach_lean(self):
+        """Graus de tronco inclinado para alcançar algo (o `Locomotion` soma ao tronco da passada)."""
+        return self.reach.lean
+
     def camera_pose(self):
-        """Posição e rotação (euler XYZ) da câmera: olhos, passada medida, respiração e giros da cabeça."""
+        """Posição e rotação (euler XYZ) da câmera: olhos, passada medida, respiração, giros da cabeça e a postura de alcance."""
         lateral, vertical, roll, pitch, yaw, ahead = self._head
+        ahead += self.reach.ahead
         right_x, right_y = math.cos(self.yaw), math.sin(self.yaw)
         position = (self.x + right_x * lateral - math.sin(self.yaw) * ahead, self.y + right_y * lateral + math.cos(self.yaw) * ahead,
-                    self.z_visual + self.eye + vertical)
+                    self.z_visual + self.eye + vertical - self.reach.depth)
         return position, gait.camera_euler(self.yaw + yaw, self.pitch + pitch, roll)
 
     # ---- comandos ----
@@ -166,15 +180,20 @@ class Player:
         self._was_moving = False
         self._head = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         self._turn_rate = self.turn_lean = 0.0
+        self.reach.reset()
+        self._assist = None
         self._refresh_room()
 
     def reset_body(self):
         """Fôlego cheio e em pé (novo jogo, checkpoint)."""
         self.stamina, self.exhausted, self.crouching = C.STAMINA_MAX, False, False
         self.eye = C.PLAYER_EYE_STAND
+        self.reach.reset()
+        self._assist = None
 
     # ---- quadro a quadro ----
     def update(self, dt, inp):
+        self.reach.step(dt)
         self._look(inp)
         self._crouch(inp)
         self._move(dt, inp)
@@ -237,6 +256,7 @@ class Player:
     def _move(self, dt, inp):
         self.on_stairs = self._on_stairs_now()
         wx, wy, forward = self._wish(inp)
+        wx, wy = self._assisted(wx, wy)
         wish_length = math.hypot(wx, wy)
         target = self._target_speed(inp, wish_length)
         goal_x, goal_y = wx * target, wy * target
@@ -267,12 +287,40 @@ class Player:
         if dt > 0 and moved < math.hypot(self._vx, self._vy) * dt * 0.98:
             self._vx, self._vy = (self.x - old_x) / dt, (self.y - old_y) / dt
         self._travelled = moved
+        self._assist_progress(moved, dt)
         if self.running:
             self.stamina = max(0.0, self.stamina - C.STAMINA_DRAIN * dt)
             if self.stamina <= 0.0:
                 self.exhausted = True
                 self.running = False
         self._dt = dt
+
+    # ---- passo assistido: o corpo anda até o item antes de se curvar (como nos clipes 69_70 a 69_75 da CMU) ----
+    def assist_walk(self, dx, dy, distance):
+        """Anda `distance` m na direção (dx, dy) em passo lento, sem as teclas. Qualquer tecla de andar cancela."""
+        length = math.hypot(dx, dy)
+        self._assist = None if length < 1e-6 or distance <= 1e-3 else [dx / length, dy / length, distance, 0.0]
+
+    @property
+    def assisting(self):
+        return self._assist is not None
+
+    def _assisted(self, wx, wy):
+        if self._assist is None:
+            return wx, wy
+        if math.hypot(wx, wy) > 0.1:                         # o jogador assumiu: o passo assistido acaba
+            self._assist = None
+            return wx, wy
+        return self._assist[0] * ASSIST_WISH, self._assist[1] * ASSIST_WISH
+
+    def _assist_progress(self, moved, dt):
+        if self._assist is None:
+            return
+        self._assist[2] -= moved
+        stalled = moved < 0.2 * ASSIST_WISH * C.SPEED_WALK * dt            # parede ou móvel no caminho
+        self._assist[3] = self._assist[3] + dt if stalled else 0.0
+        if self._assist[2] <= 0.0 or self._assist[3] > 0.3:
+            self._assist = None
 
     def _recover_stamina(self, dt):
         if self.running:

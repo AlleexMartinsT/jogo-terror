@@ -85,27 +85,25 @@ class HandAxes:
 _AXES = {side: HandAxes(side) for side in S.SIDES}
 
 
-def finger_rotations(side, curls, spread=0.0, joint_curls=None):
-    """{osso: Quaternion local} das 15 falanges. Só inclui ossos que se movem (curl ou abertura diferente de zero).
-
-    `joint_curls` (opcional, [5][3]: dedo do polegar ao mindinho, junta da base para a ponta) dá o curl de cada junta
-    em separado, para a flexão em cascata de `FingerCascade`; sem ele as três juntas de um dedo usam o mesmo curl."""
+def finger_quaternions(side, finger, row, spread=0.0):
+    """Rotações locais das três falanges de um dedo (`finger` de `S.FINGERS`), `row` = curl de cada junta (base, meio, ponta)."""
     axes = _AXES[side]
-    out = {}
-    for finger, curl in zip(S.FINGERS, curls[1:]):
-        joints = MAX_JOINT[finger]
-        fan = math.radians(FAN[finger] * spread)
-        bones = S.finger_bones(side, finger)
-        row = joint_curls[S.FINGER_NAMES.index(finger)] if joint_curls is not None else (curl, curl, curl)
-        for index, bone in enumerate(bones):
-            angle = math.radians(joints[index] * _clamp01(row[index]))
-            q = Quaternion(axes.curl, angle)
-            if index == 0 and fan:
-                q = Quaternion(axes.p, -fan if side == "R" else fan) @ q
-            out[bone] = q
-    bones = S.finger_bones(side, "Thumb")
-    row = joint_curls[0] if joint_curls is not None else (curls[0], curls[0], curls[0])
-    for index, bone in enumerate(bones):
+    joints = MAX_JOINT[finger]
+    fan = math.radians(FAN[finger] * spread)
+    quats = []
+    for index in range(3):
+        q = Quaternion(axes.curl, math.radians(joints[index] * _clamp01(row[index])))
+        if index == 0 and fan:
+            q = Quaternion(axes.p, -fan if side == "R" else fan) @ q
+        quats.append(q)
+    return quats
+
+
+def thumb_quaternions(side, row, spread=0.0):
+    """Rotações locais dos três ossos do polegar; `row` = posição de cada osso no caminho relaxado, oposto, fechado (0..1)."""
+    axes = _AXES[side]
+    quats = []
+    for index in range(3):
         about_f, about_curl, about_p = THUMB_CLOSED[index]
         closed = (Quaternion(axes.f, math.radians(about_f)) @ Quaternion(axes.curl, math.radians(about_curl))
                   @ Quaternion(axes.p, math.radians(about_p)))
@@ -116,7 +114,21 @@ def finger_rotations(side, curls, spread=0.0, joint_curls=None):
             q = axes.thumb_opposed[index].slerp(closed, (u - 0.5) / 0.5)
         if index == 0 and spread:
             q = Quaternion(axes.p, math.radians(-THUMB_SPREAD * spread * (1 if side == "R" else -1))) @ q
-        out[bone] = q
+        quats.append(q)
+    return quats
+
+
+def finger_rotations(side, curls, spread=0.0, joint_curls=None):
+    """{osso: Quaternion local} das 15 falanges. Só inclui ossos que se movem (curl ou abertura diferente de zero).
+
+    `joint_curls` (opcional, [5][3]: dedo do polegar ao mindinho, junta da base para a ponta) dá o curl de cada junta
+    em separado, para a flexão em cascata de `FingerCascade`; sem ele as três juntas de um dedo usam o mesmo curl."""
+    out = {}
+    for finger, curl in zip(S.FINGERS, curls[1:]):
+        row = joint_curls[S.FINGER_NAMES.index(finger)] if joint_curls is not None else (curl, curl, curl)
+        out.update(zip(S.finger_bones(side, finger), finger_quaternions(side, finger, row, spread)))
+    row = joint_curls[0] if joint_curls is not None else (curls[0], curls[0], curls[0])
+    out.update(zip(S.finger_bones(side, "Thumb"), thumb_quaternions(side, row, spread)))
     return out
 
 
@@ -139,7 +151,9 @@ class FingerCascade:
         self.joint = [[float(c)] * 3 for c in curls]
 
     def step(self, dt, goal):
-        """Avança `dt` s rumo a `goal` (5 curls). Devolve True se alguma junta mudou."""
+        """Avança `dt` s rumo a `goal` (5 curls, ou [5][3] curls por junta). Devolve True se alguma junta mudou."""
+        if not isinstance(goal[0], (int, float)):
+            return self._step_joints(dt, goal)
         changed = False
         for finger in range(5):
             slow = 1.0 + CASCADE_FINGER_SLOWING * max(0, finger - 1)
@@ -152,4 +166,21 @@ class FingerCascade:
                     self.joint[finger][j] = new if abs(lead - new) > 1e-4 else lead
                     changed = True
                 lead = self.joint[finger][j]
+        return changed
+
+    def _step_joints(self, dt, goal):
+        """Metas por junta (a pegada por contato): cada junta persegue a própria meta com a constante de tempo acumulada da
+        cascata (40, 66 e 92 ms), então a base ainda sai na frente, sem que a ponta seja arrastada para o valor da base."""
+        changed = False
+        for finger in range(5):
+            slow = 1.0 + CASCADE_FINGER_SLOWING * max(0, finger - 1)
+            tau = 0.0
+            for j in range(3):
+                tau += CASCADE_TAU[j] * slow
+                value = self.joint[finger][j]
+                delta = float(goal[finger][j]) - value
+                if abs(delta) > 1e-4:
+                    new = value + delta * (1.0 - math.exp(-dt / tau))
+                    self.joint[finger][j] = new if abs(float(goal[finger][j]) - new) > 1e-4 else float(goal[finger][j])
+                    changed = True
         return changed

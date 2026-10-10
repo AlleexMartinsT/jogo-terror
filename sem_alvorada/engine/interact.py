@@ -215,10 +215,10 @@ class Interact:
             if self._garage_ready(target.ref):
                 game.director.unlock_garage()
             else:
-                game.doors.toggle(target.ref)       # a porta não cede; a dica de interação já diz "Trancada"
+                game.hands.actions.use_door(target.ref)       # a porta não cede (a mão tenta e para); a dica já diz "Trancada"
             return
         hurried = game.player.running or game.player.speed > C.SPEED_WALK * 1.3
-        game.doors.toggle(target.ref, hurried=hurried)
+        game.hands.actions.use_door(target.ref, hurried=hurried)
 
     def _enter_car(self, target):
         if self._garage_open():

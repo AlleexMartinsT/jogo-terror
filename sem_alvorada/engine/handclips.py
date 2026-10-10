@@ -23,6 +23,8 @@ import bpy  # noqa: F401 - `mathutils` só existe depois deste import
 from mathutils import Euler, Matrix, Vector
 
 from .. import conventions as C
+from .. import grasp_data
+from .gripdrive import PRESS_DOWN, PRESS_HOLD, PRESS_UP
 from .handtrack import Clip, Event, Key, QuatTrack, Track, number
 
 SIDE_SIGN = {"R": 1.0, "L": -1.0}
@@ -60,6 +62,8 @@ def move_time(distance):
 
 # Dedos do polegar ao mindinho (valores na escala de `body.fingers.PRESETS`)
 OPEN = (0.35, 0.16, 0.18, 0.22, 0.28)            # mão que alcança: relaxada, o polegar não aponta para fora
+WIDE = (0.10, 0.04, 0.04, 0.05, 0.06)            # abertura máxima antes de uma pegada de força: dedos quase esticados
+WIDE_PINCH = (0.14, 0.06, 0.30, 0.34, 0.38)      # antes de uma pinça: só o polegar e o indicador se abrem, o resto fica dobrado
 RELAX = (0.30, 0.22, 0.28, 0.34, 0.40)
 FLASH_FIST = (0.18, 0.62, 0.68, 0.72, 0.74)       # o polegar fica livre sobre o botão
 FLASH_CLICK = (0.60, 0.62, 0.68, 0.72, 0.74)
@@ -117,23 +121,24 @@ class Grip:
         return hand_matrix @ self.inverse
 
 
-# Garras no referencial do MODELO de cada item (mão direita para a lanterna, esquerda para o resto). A
-# lanterna é um punho em volta do cano vindo da direita e de baixo, polegar sobre o botão e apontando à frente;
-# o chaveiro é pinçado pela cabeça com a mão atrás (a palma fica a ~7 cm da ponta dos dedos); o mapa fica preso
-# pela borda esquerda, com a mão atrás dele; a pilha repousa na palma virada para cima; a folha é segurada
-# pela borda de baixo.
-GRIPS = {
+# Garras no referencial do MODELO de cada item (mão direita para a lanterna, esquerda para o resto). A pose da mão no
+# item sai de `grasp_data` (calculada por contato com a malha: `tools/movimento_ref/cenarios/pegadas.py gerar`); as
+# garras de `LEGACY_GRIPS` são as de antes, o ponto de partida do ajuste e o que vale para um item que ainda não foi ajustado.
+# A lanterna é um punho em volta do cano, polegar sobre o interruptor; o chaveiro é pinçado pela cabeça; o mapa e a folha
+# ficam presos entre o polegar (na frente) e os dedos (atrás); a pilha repousa na palma virada para cima.
+LEGACY_GRIPS = {
     C.ITEM_FLASHLIGHT: Grip((0.025, -0.018, 0.0), (-0.59, -0.81, 0.0), (-0.81, 0.59, 0.0)),
     C.ITEM_KEY: Grip((-0.020, -0.010, 0.065), (0.35, 0.30, -0.89), (0.75, -0.65, 0.0)),
     C.ITEM_MAP: Grip((-0.030, -0.025, -0.035), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
     C.ITEM_BATTERY: Grip((0.0, -0.027, 0.0), (0.0, 0.0, -1.0), (0.0, 1.0, 0.0)),
     C.ITEM_NOTE: Grip((0.0, -0.040, -0.012), (0.0, 0.8, -0.6), (-0.4, 0.0, -0.9)),
 }
+GRIPS = {kind: Grip(*grasp_data.GRIPS[kind]) if kind in grasp_data.GRIPS else grip for kind, grip in LEGACY_GRIPS.items()}
 
 # Giro da mão e da lanterna juntas em torno do cano. Com a lanterna na horizontal a mão a segura de lado, o antebraço
 # vem de baixo e o cotovelo cai (MEDIDO em 77_05: cotovelo a 121 graus, braço a 59 graus da vertical); sem o giro a palma
 # ficava embaixo do cano e o IK jogava o cotovelo para fora, com o braço na horizontal (90 graus) e o punho no limite.
-FLASH_ROLL = -62.0
+FLASH_ROLL = -62.0 - grasp_data.ROLL_SHIFT.get(C.ITEM_FLASHLIGHT, 0.0)       # a mão gira com o ajuste da pegada; o cano gira o contrário
 
 
 def with_roll(aim_deg, roll_deg=FLASH_ROLL):
@@ -172,18 +177,20 @@ def hold_hand(side, kind, mode="hold"):
 def rest_channels(side, kind=None, mode="hold"):
     """Valores de repouso de todos os canais de uma mão: segurando `kind` ou solta, fora do quadro."""
     if kind is None or (side, kind) not in HOLD_ITEM:
-        pos, rot, curl, weight, attach = HANG_POS[side], euler_quaternion(HANG_ROT[side]), RELAX, 0.0, 0.0
+        pos, rot, curl, weight, attach, grip = HANG_POS[side], euler_quaternion(HANG_ROT[side]), RELAX, 0.0, 0.0, 0.0
     else:
-        (pos, rot), curl, weight, attach = hold_hand(side, kind, mode), HOLD_CURL[kind], 1.0, 1.0
+        (pos, rot), curl, weight, attach, grip = hold_hand(side, kind, mode), HOLD_CURL[kind], 1.0, 1.0, 1.0
     return {f"{side}.pos": number(pos), f"{side}.rot": number(rot), f"{side}.curl": number(curl),
-            f"{side}.w": number(weight), f"{side}.attach": number(attach)}
+            f"{side}.w": number(weight), f"{side}.attach": number(attach), f"{side}.grip": number((grip,) * 5),
+            f"{side}.press": number(0.0)}
 
 
 def ready_channels(side):
     """A mão esquerda se prepara enquanto a roda de itens está aberta: o antebraço aparece no canto, sem item."""
     sign = SIDE_SIGN[side]
     return {f"{side}.pos": number((0.27 * sign, -0.27, -0.24)), f"{side}.rot": number(euler_quaternion((-12.0, 10.0 * sign, 12.0 * sign))),
-            f"{side}.curl": number(RELAX), f"{side}.w": number(0.55), f"{side}.attach": number(0.0)}
+            f"{side}.curl": number(RELAX), f"{side}.w": number(0.55), f"{side}.attach": number(0.0),
+            f"{side}.grip": number((0.0,) * 5), f"{side}.press": number(0.0)}
 
 
 # Do referencial do modelo na mão para o do item de mesa (o objeto `Item_*`), para o item aparecer na mão
@@ -259,6 +266,22 @@ class Path:
         self._add(f"{self.side}.w", t, value, stop)
         return self
 
+    def closure(self, t, value, stop=False):
+        """Fechamento dos dedos no item (`gripdrive`): 0 = curl livre, 1 = fechado por contato. Um número vale para os cinco."""
+        values = value if isinstance(value, (tuple, list)) else (value,) * 5
+        self._add(f"{self.side}.grip", t, values, stop)
+        return self
+
+    def press(self, t, value, stop=False):
+        """Quanto o polegar afundou o interruptor da lanterna (0 a 1)."""
+        self._add(f"{self.side}.press", t, value, stop)
+        return self
+
+    def press_switch(self, t_touch):
+        """O polegar aperta o interruptor com o toque (a luz muda) em `t_touch`: desce, segura e sobe (`gripdrive.press_envelope`)."""
+        return (self.press(t_touch - PRESS_DOWN, 0.0, stop=True).press(t_touch, 1.0, stop=True)
+                .press(t_touch + PRESS_HOLD, 1.0, stop=True).press(t_touch + PRESS_HOLD + PRESS_UP, 0.0, stop=True))
+
     def attach(self, t, value, stop=False):
         self._add(f"{self.side}.attach", t, value, stop)
         return self
@@ -300,17 +323,26 @@ NOMINAL_RETURN = 0.60      # distância típica (m) da pose de mostrar até a m�
 REACH_DEFAULT = move_time(0.65)      # alcance típico: da mão solta ao item sobre uma mesa, 0,65 m
 
 
+APERTURE_PEAK = 0.68       # abertura máxima da mão, fração do alcance: 60 a 75% nos alcances reais (Jeannerod; ver docs/MAOS.md)
+CONTACT_CLOSURE = 0.55     # fração do fechamento já feita quando a palma chega: a ponta dos dedos já está perto do item
+GRIP_END = 0.30            # s depois do contato: os dedos fecharam por inteiro, junto com o item que chega à palma
+
+
 def reach(path, reach_s, grasp, grasp_rot, aperture, closed):
     """O alcance: da mão solta (âncora viva "rest") ao ponto de pegar (âncora viva "grasp"), em linha reta e com perfil
-    de jerk mínimo. Os dedos abrem durante o caminho (abertura máxima aos 60%, como nos alcances reais) e só fecham
-    ao chegar. O peso do IK sobe nos primeiros 30%, quando a mão ainda está abaixo do quadro."""
+    de jerk mínimo. Os dedos abrem durante o caminho, com a abertura máxima em `APERTURE_PEAK` do gesto, e fecham daí em
+    diante: ao chegar já estão `CONTACT_CLOSURE` do caminho até o item, e terminam de fechar depois do contato. O peso do IK
+    sobe nos primeiros 30%, quando a mão ainda está abaixo do quadro. Os curls guiam a mão livre e a pegada sem dados; com os
+    dados de `grasp_data` o canal `grip` leva os dedos do curl de abertura à pose fechada por contato."""
     path.rest(0.0, HANG_ROT[path.side], RELAX, w=0.0)
     path.weight(0.30 * reach_s, 1.0)
-    path.curl(0.60 * reach_s, aperture)
+    path.curl(APERTURE_PEAK * reach_s, aperture)
     path.hand(reach_s, grasp, grasp_rot, aperture, stop=True, space="grasp")
     path.curl(reach_s + 0.02, aperture, stop=True)
     path.curl(reach_s + 0.02 + CLOSE_TIME, closed, stop=True)
     path.hand(reach_s + GRASP_DWELL, grasp, grasp_rot, stop=True, space="grasp")      # a pinça acaba antes de levantar
+    path.closure(0.0, 0.0, stop=True).closure(APERTURE_PEAK * reach_s, 0.0, stop=True)
+    path.closure(reach_s, CONTACT_CLOSURE).closure(reach_s + 0.06 + GRIP_END, 1.0, stop=True)
 
 
 EXIT_FACTOR = 0.75         # ESTIMADO: a mão que só sai do quadro, sem alvo a acertar, leva 3/4 do tempo de um alcance
@@ -344,11 +376,12 @@ def lantern_first(reach_s=REACH_DEFAULT):
     click_at = at_chest - 0.04
     leave = click_at + 0.38
     arrive = leave + move_time(math.dist(chest, hold))
-    reach(path, reach_s, (0.0, 0.018, 0.0), (GRASP_PITCH, 0.0, -4.0), OPEN, FLASH_GRAB)
+    reach(path, reach_s, (0.0, 0.018, 0.0), (GRASP_PITCH, 0.0, -4.0), WIDE, FLASH_GRAB)
     path.item(at_chest, chest, chest_rot, FLASH_FIST, stop=True)
     path.curl(click_at - 0.10, FLASH_FIST)
     path.curl(click_at, FLASH_CLICK, stop=True)
     path.curl(click_at + 0.13, FLASH_FIST, stop=True)
+    path.press_switch(click_at)
     path.item(leave, chest, chest_rot, stop=True)
     path.item(arrive, hold, hold_rot, FLASH_FIST, stop=True)
     path.attach(contact, 0.0, stop=True).attach(contact + GLIDE, 1.0, stop=True)
@@ -371,7 +404,7 @@ def battery_pickup(reach_s=REACH_DEFAULT):
     show, show_rot = (-0.100, -0.050, -0.335), (-14.0, -8.0, 4.0)
     at_show = lift + move_time(math.dist(GRASP_NOMINAL, show))
     look = at_show + 0.25                                  # ESTIMADO: o tempo de olhar a pilha na palma
-    reach(path, reach_s, (0.0, 0.016, 0.0), (GRASP_PITCH, 2.0, 4.0), OPEN, CUP)
+    reach(path, reach_s, (0.0, 0.016, 0.0), (GRASP_PITCH, 2.0, 4.0), WIDE, CUP)
     path.item(at_show, show, show_rot, CUP, stop=True)           # no caminho a mão gira meio giro: palma de lado
     path.item(look, show, show_rot, CUP, stop=True)
     end = withdraw(path, look)
@@ -393,7 +426,7 @@ def key_pickup(reach_s=REACH_DEFAULT):
     hang = HOLD_ITEM[("L", C.ITEM_KEY)][0]
     flick, swing = (-0.150, -0.020, -0.390), (-0.236, -0.030, -0.385)
     at_hang = lift + move_time(math.dist(GRASP_NOMINAL, hang))
-    reach(path, reach_s, (0.0, 0.015, 0.0), (GRASP_PITCH, 2.0, 4.0), OPEN, PINCH)
+    reach(path, reach_s, (0.0, 0.015, 0.0), (GRASP_PITCH, 2.0, 4.0), WIDE_PINCH, PINCH)
     path.item(at_hang, hang, (0.0, 0.0, 0.0), PINCH, stop=True)
     # o puxão que faz o chaveiro balançar: um meio ciclo de punho de ~4 Hz, sem parar nas pontas
     path.item(at_hang + 0.12, flick, (0.0, 0.0, 0.0), PINCH)
@@ -423,7 +456,7 @@ def map_pickup(reach_s=REACH_DEFAULT):
     shown, shown_rot = HOLD_ITEM[("L", C.ITEM_MAP)]
     at_held = lift + move_time(math.dist(GRASP_NOMINAL, held))
     at_shown = at_held + move_time(math.dist(held, shown))
-    reach(path, reach_s, (0.0, 0.016, 0.0), (GRASP_PITCH, 2.0, 4.0), OPEN, PINCH)
+    reach(path, reach_s, (0.0, 0.016, 0.0), (GRASP_PITCH, 2.0, 4.0), WIDE_PINCH, PINCH)
     path.item(at_held, held, held_rot, PINCH, stop=True)
     path.item(at_shown, shown, shown_rot, PINCH, stop=True)
     first = at_held - 0.25                      # a primeira dobra abre ainda subindo
@@ -450,7 +483,7 @@ def note_pickup(reach_s=REACH_DEFAULT):
     lift = reach_s + GRASP_DWELL
     face, face_rot = FACE_ITEM[C.ITEM_NOTE]
     at_face = lift + move_time(math.dist(GRASP_NOMINAL, face))
-    reach(path, reach_s, (0.0, 0.012, 0.0), (GRASP_PITCH, 2.0, 4.0), OPEN, HOLD_SHEET)
+    reach(path, reach_s, (0.0, 0.012, 0.0), (GRASP_PITCH, 2.0, 4.0), WIDE_PINCH, HOLD_SHEET)
     path.item(at_face, face, face_rot, HOLD_SHEET, stop=True)
     path.attach(contact, 0.0, stop=True).attach(contact + GLIDE, 1.0, stop=True)
     events = [ev(0.04, "sound", "hand_reach"), ev(contact, "contact", essential=True),
@@ -639,6 +672,7 @@ def swap(left_start, left_end):
     right.item(t_back, tilted, tilted_rot, FLASH_FIST, stop=True)
     right.item(t_hold, hold, hold_rot, FLASH_FIST, stop=True)
     right.curl(click - 0.12, FLASH_FIST).curl(click, FLASH_CLICK, stop=True).curl(click + 0.09, FLASH_FIST)
+    right.press_switch(click)
     right.extra("cap", 0.0, 0.0, stop=True).extra("cap", cap_open[0], 0.0, stop=True).extra("cap", cap_open[1], 105.0, stop=True)
     right.extra("cap", cap_close[0], 105.0, stop=True).extra("cap", cap_close[1], 0.0, stop=True)
     if from_palm:

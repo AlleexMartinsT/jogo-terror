@@ -52,6 +52,7 @@ class ArmControl:
         self._goal_curls = list(F.RELAXED_CURLS)
         self._goal_spread = F.RELAXED_SPREAD
         self._cascade = F.FingerCascade(F.RELAXED_CURLS)
+        self._goal_joints = None         # [5][3] curls por junta (pegada por contato); None: valem os cinco curls
         self._finger_q = {}
         self._finger_dirty = True
         self._held = []                  # [(obj, offset 4x4, estado salvo)]
@@ -81,6 +82,12 @@ class ArmControl:
         self._goal_spread += (max(-1.0, min(1.0, float(spread))) - self._goal_spread) * blend
         self._finger_dirty = True
 
+    def set_finger_joints(self, joints):
+        """Curls de cada junta ([5][3]: polegar ao mindinho, da base à ponta), que mandam nos cinco curls de `set_fingers` até
+        serem trocados por None. É o que a pegada por contato (`grasp`) entrega: cada junta no ângulo em que a falange toca."""
+        self._goal_joints = None if joints is None else [[_clamp01(float(v)) for v in row] for row in joints]
+        self._finger_dirty = True
+
     def release(self, blend=1.0):
         """Volta à pose solta: o peso do alvo cai `blend` do caminho até 0 e os dedos relaxam na mesma fração."""
         blend = _clamp01(float(blend))
@@ -88,6 +95,7 @@ class ArmControl:
         if self._weight < 1e-4:
             self._weight = 0.0
             self._target = None
+            self._goal_joints = None
         self.set_fingers(F.RELAXED_CURLS, F.RELAXED_SPREAD, blend)
 
     def hold(self, obj, offset=None):
@@ -130,6 +138,11 @@ class ArmControl:
         point = self._palm_world if self._palm_world is not None else self._rig._palm_from_rest(self.side)
         return (point.x, point.y, point.z)
 
+    def shoulder_world_position(self):
+        """(x, y, z) da junta do ombro no mundo, da última pose calculada; None antes da primeira."""
+        point = self._rig.shoulder_world(self.side)
+        return None if point is None else (point.x, point.y, point.z)
+
     # ------------------------------------------------------------------ interno
     @property
     def _has_target(self):
@@ -137,7 +150,7 @@ class ArmControl:
 
     def _advance_fingers(self, dt):
         """Aproxima os dedos mostrados do alvo (em cascata, base -> ponta); devolve os quaternions locais quando algo mudou."""
-        changed = self._cascade.step(dt, self._goal_curls)
+        changed = self._cascade.step(dt, self._goal_joints if self._goal_joints is not None else self._goal_curls)
         for i in range(5):
             self._curls[i] = self._cascade.joint[i][0]
         step = 1.0 - math.exp(-HAND_BLEND_RATE * dt)
@@ -256,6 +269,7 @@ class BodyRig:
             arm._swivel = 0.0
             arm._curls[:] = F.RELAXED_CURLS
             arm._goal_curls[:] = F.RELAXED_CURLS
+            arm._goal_joints = None
             arm._cascade.reset(F.RELAXED_CURLS)
             arm._spread = arm._goal_spread = F.RELAXED_SPREAD
             arm._finger_q = {}
@@ -320,6 +334,18 @@ class BodyRig:
         """Onde ficam os olhos (x, y, z) na pose `pose`, relativos ao ponto de `place(x, y, z, yaw)` e aos eixos do corpo
         (+Y para onde ele olha). Serve para pôr a câmera de uma cutscene exatamente nos olhos do corpo."""
         return eye_in_pose(pose)
+
+    def shoulder_world(self, side):
+        """Junta do ombro `side` no mundo (Vector) da última pose calculada; None antes da primeira."""
+        solution = self._solution
+        if solution is None:
+            return None
+        return self._root + Matrix.Rotation(self._yaw, 3, "Z") @ solution.head[S.BONE_INDEX[f"UpperArm.{side}"]]
+
+    @property
+    def trunk_yaw(self):
+        """Guinada do corpo (rad): atrás da câmera quando o mouse gira, pela lei de `Locomotion._follow_yaw`."""
+        return self._yaw
 
     def _finish(self, dt, frame):
         frame.body_from_world = Matrix.Rotation(-frame.yaw, 3, "Z")

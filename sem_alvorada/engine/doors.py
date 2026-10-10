@@ -320,6 +320,7 @@ class Door:
     wait: float = 0.0             # segundos até a folha sair (a maçaneta gira antes)
     turn: float = 0.0             # 0..1: maçaneta girada, lingueta recolhida
     turn_hold: float = 0.0        # segundos que a maçaneta ainda fica girada
+    handle_wait: float = 0.0      # segundos até a maçaneta começar a girar (a mão ainda está chegando: `toggle(delay=...)`)
     rested_since: Optional[float] = None      # None: nunca mexida (ou zerada), a ferrugem é máxima
     slam: bool = False
     mass: float = 25.0            # kg
@@ -445,7 +446,7 @@ class DoorManager:
             return
         door.target = door.openness = min(max(fraction, 0.0), 1.0)
         self._halt(door)
-        door.turn = door.turn_hold = 0.0
+        door.turn = door.turn_hold = door.handle_wait = 0.0
         door.rested_since = self.game.clock
         self._later = [entry for entry in self._later if entry[1] != door_id]
         door.refresh_segment()
@@ -458,21 +459,24 @@ class DoorManager:
             door.rested_since = None
         self._last_creak = None
 
-    def toggle(self, door_id, hurried=False):
-        """Alterna a porta pelo jogador. Devolve 'opened' | 'closed' | 'slammed' | 'locked'."""
+    def toggle(self, door_id, hurried=False, delay=0.0):
+        """Alterna a porta pelo jogador. Devolve 'opened' | 'closed' | 'slammed' | 'locked'.
+
+        `delay` (s) é o tempo que a mão leva para chegar à maçaneta e fechar os dedos nela (`HandActions`): a maçaneta só gira
+        e a folha só sai depois dele, e os sons esperam junto. A duração do movimento da folha não muda."""
         door = self.doors[door_id]
         mid = self.center(door_id)
         if self.state.is_locked(door.lock):
-            self.game.sound("door_locked", mid, 0.9)
+            self._play(door, delay, "door_locked", mid, 0.9)
             self.game.make_noise("flash_click", mid, C.NOISE_PLAYER["flash_click"])
-            self._rattle(door)
+            self._rattle(door, delay)
             return "locked"
         if door.wait > 0.0:         # a maçaneta ainda está girando: um segundo [E] não desfaz o que começou
             return "opened" if door.target > NEAR_OPEN else "closed"
         door.pace = self._pace(hurried)
         if door.target > NEAR_OPEN:
-            return self._begin_closing(door, mid, hurried)
-        self._begin_opening(door, mid, C.NOISE_PLAYER, "player")
+            return self._begin_closing(door, mid, hurried, delay)
+        self._begin_opening(door, mid, C.NOISE_PLAYER, "player", delay)
         return "opened"
 
     def open_door(self, door_id, by="entity"):
@@ -486,15 +490,16 @@ class DoorManager:
         return True
 
     # ---- início dos movimentos ----
-    def _begin_opening(self, door, mid, noise_table, source):
+    def _begin_opening(self, door, mid, noise_table, source, delay=0.0):
         from_rest = not door.moving and door.openness < 0.02
-        lead = HANDLE_LEAD if from_rest else 0.0
+        handle = HANDLE_LEAD if from_rest else 0.0
+        lead = handle + delay
         creak = self._roll_creak(door, source)
         slow = door.pace in ("devagar", "agachado")
         self.game.make_noise("door_open", mid, noise_table["door_open"], source=source, opening=door.id)
-        if lead:
-            self._pull_handle(door, lead + HANDLE_HOLD)
-            self.game.sound("door_handle", mid, 0.7 if source == "player" else 0.5)
+        if handle:
+            self._pull_handle(door, handle + HANDLE_HOLD, wait=delay)
+            self._play(door, delay, "door_handle", mid, 0.7 if source == "player" else 0.5)
         self._play(door, lead, "door_open_soft" if slow else "door_open", mid, 0.25 + 0.75 * noise_table["door_open"])
         if creak is not None:
             loud = noise_table["door_creak"]
@@ -502,29 +507,38 @@ class DoorManager:
             self._play(door, lead, creak, mid, 0.25 + 0.75 * loud)
         self._retarget(door, 1.0, lead=lead)
 
-    def _begin_closing(self, door, mid, hurried):
+    def _begin_closing(self, door, mid, hurried, delay=0.0):
         creak = self._roll_creak(door, "player")
         if hurried:
             self.game.make_noise("door_slam", mid, C.NOISE_PLAYER["door_slam"], opening=door.id)
             result = "slammed"
         else:
-            self.game.make_noise("door_close", mid, C.NOISE_PLAYER["door_close"], sound="door_close", opening=door.id)
+            self._noise_then_sound(door, delay, "door_close", mid, C.NOISE_PLAYER["door_close"], "door_close")
             result = "closed"
         if creak is not None:
-            self.game.make_noise("door_creak", mid, C.NOISE_PLAYER["door_creak"], sound=creak, opening=door.id)
+            self._noise_then_sound(door, delay, "door_creak", mid, C.NOISE_PLAYER["door_creak"], creak)
         door.slam = hurried
-        self._retarget(door, 0.0, lead=0.0)
+        self._retarget(door, 0.0, lead=delay)
         if hurried:         # o estrondo da receita vem SLAM_SOUND_LEAD s depois do início: tem de cair no impacto
             arrival = door.glide.seconds if door.glide is not None else 0.0
-            self._play(door, max(0.0, arrival - SLAM_SOUND_LEAD), "door_slam", mid, 1.0)
+            self._play(door, delay + max(0.0, arrival - SLAM_SOUND_LEAD), "door_slam", mid, 1.0)
         return result
 
-    def _rattle(self, door):
+    def _noise_then_sound(self, door, delay, kind, mid, loudness, sound):
+        """O ruído que a entidade ouve sai já; o som que o jogador ouve espera a mão chegar (como `make_noise(sound=...)`)."""
+        if delay <= 0.0:
+            self.game.make_noise(kind, mid, loudness, sound=sound, opening=door.id)
+            return
+        self.game.make_noise(kind, mid, loudness, opening=door.id)
+        self._play(door, delay, sound, mid, 0.25 + 0.75 * max(0.0, min(1.0, loudness)))
+
+    def _rattle(self, door, delay=0.0):
         """Porta trancada: a folha sacode um fio na moldura. Nada de maçaneta girando."""
         if door.moving or door.openness > 0.0:
             return
         period, amplitude, bounces = RATTLE_BOUNCE
         door.settle = Rattle(period, amplitude, bounces)
+        door.wait = delay
 
     def _retarget(self, door, goal, lead, seconds=None):
         """Novo destino: parte do estado atual (posição, velocidade, aceleração) para o repouso em `goal`."""
@@ -597,8 +611,9 @@ class DoorManager:
         door.velocity = door.accel = 0.0
         door.slam = False
 
-    def _pull_handle(self, door, hold):
+    def _pull_handle(self, door, hold, wait=0.0):
         door.turn_hold = max(door.turn_hold, hold)
+        door.handle_wait = wait
 
     def _pace(self, hurried):
         if hurried:
@@ -737,6 +752,9 @@ class DoorManager:
         self._write(door)
 
     def _step_handle(self, door, dt):
+        if door.handle_wait > 0.0:          # a mão ainda não chegou à maçaneta
+            door.handle_wait = max(0.0, door.handle_wait - dt)
+            return
         goal = 1.0 if door.turn_hold > 0.0 else 0.0
         door.turn_hold = max(0.0, door.turn_hold - dt)
         if door.turn != goal:

@@ -2,6 +2,7 @@
 
     LIBGL_ALWAYS_SOFTWARE=1 python tools/prints_andando.py andar --out out/f5/andar
         [--sem-lanterna] [--quadros 12] [--passo 0.1] [--res 640x360] [--samples 4] [--aquecimento 1.5]
+        [--modelo antes|depois] [--esteira] [--item-esquerda KEY|MAP|BATTERY] [--olhar -45]
 
 O jogador anda numa pista livre da casa (`grava.achar_pista`, 8 m). O fundo do estúdio é preso à câmera para
 acompanhar a caminhada (o de `prints_maos.studio` fica parado no mundo). `--aquecimento` deixa o corpo chegar
@@ -58,6 +59,12 @@ def main():
     parser.add_argument("--res", default="640x360")
     parser.add_argument("--samples", type=int, default=4)
     parser.add_argument("--colunas", type=int, default=4)
+    parser.add_argument("--modelo", choices=("antes", "depois"), default="depois",
+                        help="antes = a mola simples da fase 4 (cenarios/maos_andando.SwayAntigo)")
+    parser.add_argument("--esteira", action="store_true",
+                        help="a pista tem 8 m: devolve o jogador ao começo antes de chegar ao fim, sem tocar na velocidade nem na passada")
+    parser.add_argument("--item-esquerda", choices=("KEY", "MAP", "BATTERY"), default=None)
+    parser.add_argument("--olhar", type=float, default=PITCH_INICIAL, help="inclinação do olhar em graus (negativo = para baixo)")
     args = parser.parse_args()
     tamanho = tuple(int(v) for v in args.res.lower().split("x"))
     os.makedirs(args.out, exist_ok=True)
@@ -66,21 +73,39 @@ def main():
     cena = bpy.context.scene
     jogo.state.flags.add(FLAG_BLACKOUT)
     jogo.lights.set_power(False)
-    maos.give(jogo, flashlight=not args.sem_lanterna, on=True)
+    esquerda = {"KEY": C.ITEM_KEY, "MAP": C.ITEM_MAP, "BATTERY": C.ITEM_BATTERY}.get(args.item_esquerda)
+    maos.give(jogo, flashlight=not args.sem_lanterna, key=esquerda == C.ITEM_KEY, map_=esquerda == C.ITEM_MAP,
+              batteries=1 if esquerda == C.ITEM_BATTERY else 0, on=True)
     if not args.sem_lanterna:
         jogo.hands.equip(C.ITEM_FLASHLIGHT)
+    if esquerda is not None:
+        jogo.hands.equip(esquerda)
+    if args.modelo == "antes":
+        from tools.movimento_ref.cenarios.maos_andando import SwayAntigo
+        jogo.hands.sway = SwayAntigo(jogo)
     for _ in range(int(0.8 / DT)):
         jogo.tick(DT, InputState())
-    jogo.player.pitch = math.radians(PITCH_INICIAL)
+    jogo.player.pitch = math.radians(args.olhar)
     cena.camera = jogo.player_cam
     maos.studio(cena, jogo)
     prender_estudio_a_camera(jogo.player_cam)
 
-    for _ in range(int(args.aquecimento / DT)):
+    inicio = (jogo.player.x, jogo.player.y)
+    direcao = (-math.sin(jogo.player.yaw), math.cos(jogo.player.yaw))
+
+    def passo_do_jogo():
         jogo.tick(DT, entrada_do_modo(args.modo))
+        if args.esteira:
+            andado = (jogo.player.x - inicio[0]) * direcao[0] + (jogo.player.y - inicio[1]) * direcao[1]
+            if andado > 4.0:
+                jogo.player.x -= direcao[0] * 3.5
+                jogo.player.y -= direcao[1] * 3.5
+
+    for _ in range(int(args.aquecimento / DT)):
+        passo_do_jogo()
     quadros, legendas, relogio = [], [], 0.0
     while len(quadros) < args.quadros:
-        jogo.tick(DT, entrada_do_modo(args.modo))
+        passo_do_jogo()
         relogio += DT
         if relogio + 1e-6 >= (len(quadros) + 1) * args.passo:
             caminho = os.path.join(args.out, f"raw_{args.modo}_{len(quadros):02d}.png")
