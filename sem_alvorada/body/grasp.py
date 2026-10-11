@@ -176,8 +176,56 @@ class ItemShape:
         if not points:
             return 1.0
         if self.sheet:
-            return min(side * self.signed_distance(p) for p in points)
+            return min(self._sheet_side(p, side) for p in points)
         return min(self.signed_distance(p) for p in points)
+
+    def _sheet_side(self, point, side):
+        """Distância ao lado `side` da folha; fora da folha (nenhum lado a atravessar) vale a distância à borda."""
+        location, normal, _index, distance = self.tree.find_nearest(point)
+        if location is None:
+            return 1.0
+        offset = point - location
+        along = offset.dot(normal)
+        return side * along if (offset - normal * along).length < 2e-3 else distance
+
+
+class CylinderShape:
+    """Cilindro finito com o eixo em X no referencial do item (a pilha D): a malha da pilha tem a ponta aberta e a normal
+    não diz com segurança o que é dentro, então o contato dela usa a forma analítica. `matrix` leva um ponto do mundo (ou do
+    referencial do chamador) ao do item; None = já está nele."""
+    sheet = False
+
+    def __init__(self, radius, length, matrix=None):
+        self.radius, self.half, self.matrix = radius, length / 2.0, matrix
+
+    def signed_distance(self, point):
+        x, y, z = point if self.matrix is None else self.matrix @ point
+        radial, axial = math.hypot(y, z) - self.radius, abs(x) - self.half
+        if radial <= 0.0 and axial <= 0.0:
+            return max(radial, axial)
+        return math.hypot(max(radial, 0.0), max(axial, 0.0))
+
+    def clearance(self, points, side=1.0):
+        return min((self.signed_distance(p) for p in points), default=1.0)
+
+
+class BoxShape:
+    """Caixa de cantos arredondados centrada na origem do item (a cabeça do chaveiro): a malha do chaveiro tem as normais
+    misturadas (argolas, lâmina, pelúcia), então a cabeça, que é o que a pinça toca, vira uma forma analítica.
+    Ignora os relevos de até 1,5 mm do miolo cromado e das almofadas de borracha."""
+    sheet = False
+
+    def __init__(self, half, radius, matrix=None):
+        self.half, self.radius, self.matrix = Vector(half), radius, matrix
+
+    def signed_distance(self, point):
+        p = point if self.matrix is None else self.matrix @ point
+        q = Vector((abs(p[0]), abs(p[1]), abs(p[2]))) - (self.half - Vector((self.radius,) * 3))
+        outside = Vector((max(q.x, 0.0), max(q.y, 0.0), max(q.z, 0.0))).length
+        return outside + min(max(q.x, q.y, q.z), 0.0) - self.radius
+
+    def clearance(self, points, side=1.0):
+        return min((self.signed_distance(p) for p in points), default=1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -329,17 +377,19 @@ def matrix_from_grip(position, fingers, palm):
 
 
 def fit_grip(kind, side, start_matrix, shape, role, skin, goal_shape=None, rounds=9, move=0.012, turn=18.0, scan=None,
-             press_shape=None, extra=None, candidates=3):
+             press_shape=None, extra=None, candidates=3, achieved=None):
     """Mexe a mão em volta de `start_matrix` (no referencial do item) até a palma encostar sem entrar e os dedos fecharem
     com contato. Busca por coordenadas, seis parâmetros, passo que encolhe; um prior pequeno segura a mão perto do ponto de
     partida. `scan` = (eixo, graus...) gira antes a mão em torno de um eixo que passa pela origem do item (o cano da
     lanterna): os `candidates` melhores giros seguem para o ajuste fino e vence o de menor custo. `extra(matriz)` soma uma
-    penalidade de fora (o braço precisa alcançar a mão: `pegadas.verificador_de_braco`).
+    penalidade de fora (o braço precisa alcançar a mão: `pegadas.verificador_de_braco`); `achieved(matriz)` devolve a mão
+    que o IK de fato entrega para a pedida, e é contra ela que os dedos fecham.
     Devolve (matriz, Grasp, custo, giro do scan em graus)."""
     kinematics = HandKinematics(side, skin)
     palm_side = -1.0 if role.sheet else 1.0
 
     def evaluate(matrix, final=False):
+        matrix = matrix if achieved is None else achieved(matrix)
         clearance = shape.clearance(kinematics.palm_points(kinematics.to_item(matrix)), palm_side)
         total = 0.0
         if clearance < 0.0:
@@ -353,8 +403,6 @@ def fit_grip(kind, side, start_matrix, shape, role, skin, goal_shape=None, round
                 total += (pen_mm / 1000.0) ** 2 * 8000.0
             if wanted and (stopped is None or finger == "Thumb"):
                 total += (gap_mm / 1000.0) ** 2 * (2000.0 if finger == "Thumb" else 1200.0)
-        if extra is not None:
-            total += extra(matrix)
         return total, grasp
 
     def local(origin):
@@ -366,7 +414,10 @@ def fit_grip(kind, side, start_matrix, shape, role, skin, goal_shape=None, round
             return matrix
 
         def cost(params):
-            value, grasp = evaluate(build(params))
+            matrix = build(params)
+            value, grasp = evaluate(matrix)
+            if extra is not None:
+                value += extra(matrix)
             return value + 60.0 * sum(v * v for v in params[:3]) + 1.5e-5 * sum(v * v for v in params[3:]), grasp
 
         params, steps = [0.0] * 6, [move] * 3 + [turn] * 3
@@ -384,18 +435,43 @@ def fit_grip(kind, side, start_matrix, shape, role, skin, goal_shape=None, round
                 steps = [v * 0.5 for v in steps]
         matrix = build(params)
         value, grasp = evaluate(matrix, final=True)
+        if extra is not None:
+            value += extra(matrix)
         return matrix, grasp, value + 60.0 * sum(v * v for v in params[:3]) + 1.5e-5 * sum(v * v for v in params[3:])
 
     if scan is None:
         return (*local(start_matrix), 0.0)
-    axis, *angles = scan
-    ranked = sorted(((evaluate(Matrix.Rotation(math.radians(a), 4, axis) @ start_matrix)[0], a) for a in angles))
+    if scan[0] == "starts":                  # ("starts", matriz, matriz...): várias partidas completas (orientação e posição)
+        starts = [(m, 0.0) for m in scan[1:]]
+    else:
+        axis, *angles = scan
+        starts = [(Matrix.Rotation(math.radians(a), 4, axis) @ start_matrix, float(a)) for a in angles]
+    ranked = sorted(((evaluate(m)[0] + (0.0 if extra is None else extra(m)), i) for i, (m, _a) in enumerate(starts)))
     best = None
-    for _score, degrees in ranked[:candidates]:
-        matrix, grasp, value = local(Matrix.Rotation(math.radians(degrees), 4, axis) @ start_matrix)
+    for _score, i in ranked[:candidates]:
+        matrix, grasp, value = local(starts[i][0])
         if best is None or value < best[2]:
-            best = (matrix, grasp, value, float(degrees))
+            best = (matrix, grasp, value, starts[i][1])
     return best
+
+
+def cube_rotations():
+    """As 24 rotações que levam os eixos a eles mesmos (matrizes 4x4): as orientações de partida de uma mão numa folha."""
+    seen, out = [], []
+    for ax in range(3):
+        for ay in range(3):
+            if ax == ay:
+                continue
+            for sx in (1, -1):
+                for sy in (1, -1):
+                    x = Vector((0, 0, 0)); x[ax] = sx
+                    y = Vector((0, 0, 0)); y[ay] = sy
+                    m = Matrix((x, y, x.cross(y))).transposed()
+                    key = tuple(round(v) for row in m for v in row)
+                    if key not in seen:
+                        seen.append(key)
+                        out.append(m.to_4x4())
+    return out
 
 
 # ---------------------------------------------------------------------------

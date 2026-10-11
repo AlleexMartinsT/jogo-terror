@@ -15,7 +15,7 @@ import importlib
 from .base import Alinhamento, Cenario, Preparado, Real  # noqa: F401
 
 REGISTRO = {}
-MODULOS = ("exemplo", "locomocao", "maos", "objetos")
+MODULOS = ("exemplo", "locomocao", "maos", "objetos", "interacoes")
 _carregado = False
 avisos = []
 

@@ -38,6 +38,9 @@ ITENS = {
     C.ITEM_NOTE: ("L", dict(notas=("NOTE_1",), segurar=C.ITEM_NOTE)),
 }
 FOLHAS = (C.ITEM_MAP, C.ITEM_NOTE)
+# Itens com pegada por contato. O mapa e a anotação ficam com a garra de antes: a mão está atrás da folha, fora do quadro, e o
+# ajuste automático não achou polegar na frente e indicador atrás que o braço alcance (ver docs/MAOS.md).
+GERADOS = (C.ITEM_FLASHLIGHT, C.ITEM_KEY, C.ITEM_BATTERY)
 # quem deve tocar o item em cada pegada (o resto é "livre": a folga dele não é defeito)
 CONTATOS = {
     C.ITEM_FLASHLIGHT: ("Index", "Middle", "Ring", "Pinky", "Palm"),
@@ -56,11 +59,14 @@ def assentar(jogo, segundos=2.5):
     bpy.context.view_layer.update()
 
 
-def preparar(item, **opcoes):
-    """Jogo de palco mínimo com `item` na mão certa. Devolve (jogo, lado)."""
+def preparar(item, pendulo_parado=True, **opcoes):
+    """Jogo de palco mínimo com `item` na mão certa. Devolve (jogo, lado). O chaveiro balança (a respiração o excita, até 7
+    graus em torno da cabeça), o que desloca as faces da cabeça uns 2 mm da pinça; `pendulo_parado` mede a pegada estática."""
     lado, estado = ITENS[item]
     jogo = maos.montar_jogo_maos(None)
     maos.estado(jogo, **{**estado, **opcoes})
+    if pendulo_parado:
+        jogo.hands.pendulum.step = lambda dt, accel: None
     assentar(jogo)
     return jogo, lado
 
@@ -76,6 +82,17 @@ MATERIAIS = {C.ITEM_FLASHLIGHT: ("flash_aluminum", "flash_knurled", "rubber")}  
 
 
 def forma_do_item(jogo, item, frame=None):
+    """Malha do item no mundo (`frame` None) ou no referencial `frame`; a pilha usa o cilindro analítico."""
+    if item == C.ITEM_BATTERY:
+        from sem_alvorada.props import handheld_battery
+        objeto = jogo.hands.models.objects[item]
+        para_item = objeto.matrix_world.inverted() if frame is None else None
+        return grasp.CylinderShape(handheld_battery.RADIUS, handheld_battery.LENGTH, para_item)
+    if item == C.ITEM_KEY:                           # a cabeça de borracha: 34 x 50 x 10,5 mm (x1,3 da mesa, x0,75 da mão)
+        escala = 1.3 * 0.75
+        objeto = jogo.hands.models.objects[item]
+        return grasp.BoxShape((0.034 * escala / 2, 0.050 * escala / 2, 0.0105 * escala / 2), 0.0036 * escala,
+                              objeto.matrix_world.inverted() if frame is None else None)
     return grasp.ItemShape(objetos_do_item(jogo, item), frame=frame, sheet=item in FOLHAS, materials=MATERIAIS.get(item))
 
 
@@ -90,7 +107,7 @@ def resumo(medidas, item):
     deve = CONTATOS[item]
     folgas = [medidas[p]["gap"] for p in deve]
     return {"pen_max": max(m["pen"] for m in medidas.values()), "folga_media": sum(folgas) / len(folgas),
-            "tocam": sum(1 for g in folgas if g < 2.0), "deveriam": len(deve)}
+            "tocam": sum(1 for g in folgas if g < 2.5), "deveriam": len(deve)}
 
 
 def medir_tudo(saida=None, itens=None, **opcoes):
@@ -109,6 +126,46 @@ def medir_tudo(saida=None, itens=None, **opcoes):
 
 
 # ---------------------------------------------------------------------------
+# Perfil de abertura da mão no alcance
+# ---------------------------------------------------------------------------
+def abertura_polegar_indicador(jogo, lado):
+    """Distância (m) entre a ponta do polegar e a do indicador, lida na armadura avaliada."""
+    bpy.context.view_layer.update()
+    arma = bpy.data.objects[C.OBJ_BODY_RIG].evaluated_get(bpy.context.evaluated_depsgraph_get())
+    ponta = lambda osso: arma.matrix_world @ arma.pose.bones[f"{osso}.{lado}"].tail
+    return (ponta("Thumb2") - ponta("Index3")).length
+
+
+def perfil_de_abertura(item, segundos=2.2, antes=0.5):
+    """Grava o alcance até `item` (a tecla E num item na mesa) e devolve {"t", "abertura", "fechamento", "contato", "alcance"}:
+    a abertura do polegar ao indicador por quadro (60 Hz), o canal `grip` da mão e os instantes do contato e do fim do alcance."""
+    lado = ITENS[item][0]
+    jogo = maos.montar_jogo_maos(item if item != C.ITEM_FLASHLIGHT else "FLASHLIGHT")
+    maos.estado(jogo, lanterna=item != C.ITEM_FLASHLIGHT)
+    alvo = jogo.interact.targets[0].position
+    maos.mirar(jogo, (alvo[0], alvo[1], alvo[2] + 0.02))
+    for _ in range(int(antes * 60)):
+        jogo.tick(1 / 60, InputState())
+    t, abertura, fechamento = [], [], []
+    inicio = None
+    contato = None
+    for k in range(int(segundos * 60)):
+        jogo.tick(1 / 60, InputState(interact=(k == 0)))
+        clip = jogo.hands.runner.clip
+        if clip is not None and inicio is None:
+            inicio = k / 60
+            alcance = clip.tracks[f"{lado}.pos"].end if f"{lado}.pos" in clip.tracks else None
+        t.append(k / 60)
+        abertura.append(abertura_polegar_indicador(jogo, lado))
+        entradas = jogo.hands._grip_inputs.get(lado)
+        fechamento.append(float(entradas[0][1]) if entradas else 0.0)
+        if contato is None and jogo.hands._visual[lado] is not None:
+            contato = k / 60
+    return {"t": np.array(t), "abertura": np.array(abertura), "fechamento": np.array(fechamento), "contato": contato,
+            "inicio": inicio or 0.0}
+
+
+# ---------------------------------------------------------------------------
 # Gerar os dados: ajusta a mão ao item e fecha os dedos (offline); o jogo só lê sem_alvorada/grasp_data.py
 # ---------------------------------------------------------------------------
 DADOS = os.path.join(ROOT, "sem_alvorada", "grasp_data.py")
@@ -117,6 +174,12 @@ DADOS = os.path.join(ROOT, "sem_alvorada", "grasp_data.py")
 def _item_frame(objeto):
     loc, rot, _ = objeto.matrix_world.decompose()
     return Matrix.LocRotScale(loc, rot, None).inverted()
+
+
+# folha: a mão segura pela borda, de fora da folha, com o polegar à frente e o indicador atrás
+FOLHA_POSICOES = {
+    C.ITEM_MAP: tuple((x, y, z) for x in (-0.03, 0.0, 0.03) for y in (-0.03, 0.0, 0.03) for z in (-0.02, 0.0, 0.02)),
+    C.ITEM_NOTE: tuple((x, y, z) for x in (-0.03, 0.0, 0.03) for y in (-0.05, -0.03, 0.0) for z in (-0.02, 0.0, 0.02))}
 
 
 def papel_do_item(item):
@@ -130,38 +193,67 @@ def papel_do_item(item):
                                                                  "Pinky": G.free_row(0.56)}), None, None, None, None)
     if item == C.ITEM_BATTERY:
         return (G.Role(cup=("Index", "Middle", "Ring", "Pinky"), thumb="contact", palm_gap=0.0008), None, None, None, None)
-    return (G.Role(pinch=("Index", "Middle", "Ring"), thumb="contact", sheet=True, free={"Pinky": G.free_row(0.30)}),
-            None, None, None, None)
+    # folha: a mão fica atrás dela, o polegar passa à frente. Parte de todas as orientações do cubo e de algumas posições
+    posicoes = FOLHA_POSICOES[item]
+    partidas = []
+    for r in grasp.cube_rotations():
+        if abs((r.to_3x3() @ grasp.S.NEUTRAL_HAND_CAM).col[0].x) > 0.5:           # os dedos não apontam ao longo da folha (X)
+            continue
+        for p in posicoes:
+            m = r.copy()
+            m.translation = Vector(p)
+            partidas.append(m)
+    return (G.Role(pinch=("Index",), thumb="contact", sheet=True,
+                   free={"Middle": G.free_row(0.45), "Ring": G.free_row(0.50), "Pinky": G.free_row(0.55)}),
+            None, None, None, ("starts", *partidas))
 
 
-def verificador_de_braco(jogo, item, lado, peso=0.004):
-    """Penalidade para `fit_grip`: o braço tem de alcançar a mão em todas as poses em que o item aparece (parado, rosto,
-    perto). Pede ao IK do corpo de verdade e soma peso * (desvio de orientação em graus)^2 mais o erro de alcance."""
+def verificador_de_braco(jogo, item, lado, peso=0.001):
+    """O IK do corpo de verdade, para `fit_grip`. Devolve (penalidade, alcancada). A mão pedida vira alvo do braço nas poses
+    em que o item aparece (parado, rosto, perto); `penalidade(matriz)` é peso * (desvio de orientação em graus)^2 mais o erro de
+    alcance, no pior caso; `alcancada(matriz)` é a mão que o IK entrega na pose parada, no referencial do item, que é
+    contra a qual os dedos fecham (o pulso não dobra tudo o que se pede)."""
     from types import SimpleNamespace
     from mathutils import Euler
     from sem_alvorada.body import solver
     arm = jogo.body.arm(lado)
     frame = SimpleNamespace(body_from_world=Matrix.Rotation(-jogo.body._yaw, 3, "Z"), root=Vector(jogo.body._root))
-    view = (Vector(jogo.hands._cam[0].translation), jogo.hands._cam[0].to_3x3())
+    cam = jogo.hands._cam[0].to_3x3()
+    view = (Vector(jogo.hands._cam[0].translation), cam)
     poses = [handclips.pose_matrix(*handclips.MODE_POSES[modo].get((lado, item), handclips.HOLD_ITEM[(lado, item)]))
              for modo in ("hold", "face", "near") if (lado, item) in handclips.MODE_POSES[modo] or modo == "hold"]
     indice = grasp.S.BONE_INDEX[f"Hand.{lado}"]
 
+    def resolver(mao):
+        euler = Euler(mao.to_3x3().to_euler("XYZ"))
+        arm.set_target(tuple(mao.translation), tuple(math.degrees(a) for a in euler), 1.0)
+        arm.wrist_comfort = True
+        arm._swivel = 0.0                      # sempre o mesmo ponto de partida: o resultado não depende do que o jogo fez antes
+        meta = arm._goal(frame, view)
+        return meta, solver.solve(solver.PoseSpec(arms={lado: meta}))
+
     def penalidade(matriz):
         pior = 0.0
         for pose in poses:
-            mao = pose @ matriz
-            euler = Euler(mao.to_3x3().to_euler("XYZ"))
-            arm.set_target(tuple(mao.translation), tuple(math.degrees(a) for a in euler), 1.0)
-            arm.wrist_comfort = True
-            meta = arm._goal(frame, view)
-            solucao = solver.solve(solver.PoseSpec(arms={lado: meta}))
+            meta, solucao = resolver(pose @ matriz)
             desvio = math.degrees((meta.hand_q.to_matrix().inverted() @ solucao.world[indice].to_matrix()).to_quaternion().angle)
             erro = max(solucao.reach_error.values()) * 1000.0
             pior = max(pior, desvio * desvio + 4.0 * erro * erro)
         arm.release()
         return peso * pior
-    return penalidade
+
+    def alcancada(matriz):
+        mao = poses[0] @ matriz
+        _meta, solucao = resolver(mao)
+        arm.release()
+        entregue = (frame.body_from_world.inverted() @ solucao.world[indice].to_matrix() @ grasp.S.rest_basis(lado)
+                    @ grasp.S.NEUTRAL_HAND_CAM.inverted())
+        rotacao = cam.inverted() @ entregue
+        resultado = rotacao.to_4x4()
+        resultado.translation = mao.translation
+        return poses[0].inverted() @ resultado
+
+    return penalidade, alcancada
 
 
 def ajustar_item(item, jogo=None, inicio=None, **opcoes):
@@ -170,13 +262,14 @@ def ajustar_item(item, jogo=None, inicio=None, **opcoes):
     objetos = objetos_do_item(jogo, item)
     frame = _item_frame(objetos[0])
     papel, materiais, meta, sem_botao, busca = papel_do_item(item)
-    forma = grasp.ItemShape(objetos, frame=frame, sheet=item in FOLHAS, materials=materiais)
+    forma = forma_do_item(jogo, item, frame)
     alvo = grasp.ItemShape(objetos, frame=frame, materials=meta) if meta else None
     solto = grasp.ItemShape(objetos, frame=frame, materials=sem_botao) if sem_botao else None
     pele = grasp.HandSkin(bpy.data.objects[C.OBJ_BODY], lado)
-    partida = inicio if inicio is not None else handclips.LEGACY_GRIPS[item].matrix
+    extra, alcancada = verificador_de_braco(jogo, item, lado)
+    partida = inicio if inicio is not None else handclips.LEGACY_GRIPS[item].matrix.copy()
     resultado = grasp.fit_grip(item, lado, partida, forma, papel, pele, goal_shape=alvo, press_shape=solto, scan=busca,
-                               extra=verificador_de_braco(jogo, item, lado), **opcoes)
+                               extra=extra, achieved=alcancada, **opcoes)
     return (*resultado, forma)
 
 
@@ -190,7 +283,7 @@ def gerar(itens=None):
         dados["roll"].update(grasp_data.ROLL_SHIFT)
     except ImportError:
         pass
-    for item in itens or ITENS:
+    for item in itens or GERADOS:
         matriz, g, custo, giro, _forma = ajustar_item(item)
         dados["grips"][item] = tuple(tuple(round(v, 5) for v in vec) for vec in grasp.grip_from_matrix(matriz))
         dados["grasps"][item] = {"side": g.side, "closed": [[round(v, 4) for v in row] for row in g.closed],

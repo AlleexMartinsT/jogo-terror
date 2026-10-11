@@ -30,13 +30,14 @@ import math
 # --- a mola do antebraço (ESTIMADO: 3 a 5 Hz e 0,4 a 0,7 de amortecimento, docs/FASE5.md) ---------------------------------
 # O limite superior real é mais alto: ombro e antebraço têm ressonâncias de 6 a 12 Hz em vibração de mão e braço (ISO 5349),
 # mas são ressonâncias do tecido com a mão APERTADA numa ferramenta. Aqui a mão apoia um objeto leve num cotovelo dobrado e a
-# faixa pedida é a do controle postural do braço. O ponto de partida é o extremo macio (3 Hz): os 2 Hz do passo ficam abaixo da
-# ressonância (razão 0,67), o suficiente para o passo e a partida aparecerem em centímetros e não em milímetros.
+# faixa pedida é a do controle postural do braço. 3 Hz foi o primeiro valor e não serve: com a lanterna na mão a ressonância cai a
+# 2,7 Hz, perto dos 2,06 Hz do passo, e a mão passava a se mexer MAIS que a cabeça no mundo (transmissibilidade absoluta 1,5), o
+# contrário do controle que o braço faz (docs/FASE5.md). Com 3,8 Hz a razão do passo é 0,6 e a mão se move de 0,5 a 0,8 do que o
+# ombro sobe e desce em relação a ele (`relative_transmissibility`), em centímetros e não em milímetros.
 FREQUENCY_HZ = {"walk": 3.8, "run": 4.4, "crouch": 4.0}        # corre mais rígido: o cotovelo fecha (~90 graus) e o braço trava
 DAMPING_RATIO = {"walk": 0.45, "run": 0.60, "crouch": 0.55}
 EFFECTIVE_ARM_MASS = 1.5                      # kg: antebraço e mão que a mola move (ESTIMADO: 1,3 a 1,8 kg num adulto)
 ITEM_MASS = {"flashlight": 0.30, "battery": 0.045, "key": 0.030, "map": 0.050, "note": 0.005}     # kg, ESTIMADO
-SUBSTEP = 1.0 / 240.0
 TELEPORT = 1.0                                # m: um ombro que anda mais que isto num quadro foi posto em outro lugar
 
 # --- a parte lenta sai: a pose do gesto já a tem ---------------------------------------------------------------------------
@@ -44,6 +45,7 @@ TELEPORT = 1.0                                # m: um ombro que anda mais que is
 # câmera (a lanterna fica no quadro). O filtro passa-alta separa o que muda em menos de ~1 s (balanço do passo, giro de mouse
 # rápido) do que é postura. 1,2 s corta em 0,13 Hz; o passo (1 Hz) passa com 99% da amplitude.
 ANCHOR_HIGHPASS_S = 1.2
+CHEST_JUMP = math.radians(20.0)                # o peito girou mais que isto em um quadro em relação à câmera: não é mouse (6 graus a 360 graus/s), é teletransporte
 ANCHOR_JUMP = 0.25                             # m: o ombro mudou mais que isto de um quadro para o outro na câmera: corpo ou câmera foram postos em outro lugar
 ANCHOR_LIMIT = (0.070, 0.050, 0.060)           # m (x, y, z): teto suave do deslocamento do apoio; o medido fica abaixo de 4 cm
 # O ombro do corpo do jogo contra o real, na MESMA velocidade (08_01 a 08_03, 1,5 a 1,6 m/s; o jogo anda a 1,7): amplitude pico a pico
@@ -51,7 +53,7 @@ ANCHOR_LIMIT = (0.070, 0.050, 0.060)           # m (x, y, z): teto suave do desl
 # (n = 3 clipes, MEDIDO nos dois lados) fica como ganho do apoio, para a mão seguir o ombro REAL e não o excesso do corpo na frente e
 # atrás; (x, y, z) = (lado, cima, frente). A mediana dos 12 clipes de andar (0,010, 0,0275, 0,0196) é menor porque mistura passos
 # lentos de 1,2 a 1,4 m/s, onde o ombro balança menos. Na vertical o antebraço ainda compensa uma parte (ESTIMADO: 15%, quem anda com
-# algo que olha ou que ilumina o chão segura-o mais firme em relação à cabeça): 0,95 * 0,85.
+# algo que ilumina o chão segura-o mais firme em relação à cabeça): 0,95 do medido vezes 0,85 de compensação, 0,80.
 ANCHOR_GAIN = (1.0, 0.80, 0.75)
 # O tronco gira sobre os quadris mais devagar que a cabeça ao virar o mouse (atraso MEDIDO de 0,07 a 0,17 s, `Locomotion._follow_yaw`:
 # 1/(6,5 + 9 g) s, g = ganho da passada) e, andando, o peito torce 5 a 10 graus a cada passada. Um ponto do ombro quase não sai do
@@ -67,12 +69,14 @@ LEVER_SHARE = 0.6
 # ~0,1 a 0,2 m/s andando e g * t_voo / 2 = 0,5 m/s correndo (voo de 0,10 s a 4 m/s, 35% do ciclo medido).
 HEEL_KICK = {"walk": 0.10, "run": 0.45, "crouch": 0.03}      # m/s
 HEEL_KICK_FORWARD = 0.30                                      # fração do impulso na direção da marcha (a mão segue em frente)
+HEEL_KICK_S = 0.040                                           # s: o transiente do calcanhar dura 30 a 50 ms (chega à cabeça em < 10 ms e some na carne)
 
 # --- diferença entre andar e correr (MEDIDO no ombro, ESTIMADO na mão) -----------------------------------------------------
 # CMU, mediana de 12 clipes de andar e 3 de correr (maos_ego_ref.json), ombro direito em (direita, frente, cima): andando
 # (+0,24, -0,11, -0,25), correndo (+0,20, -0,14, -0,20): 4 cm para dentro, 3 cm para trás, 5 cm para cima. A mão livre sobe 19 cm
-# (o cotovelo fecha de 20 para ~90 graus). Uma mão que carrega, com o cotovelo já dobrado, acompanha o ombro e metade do
-# fechamento a mais: o subir de 0,05 m é o do ombro (MEDIDO) e o resto é a parte ESTIMADA, pequena de propósito.
+# (o cotovelo fecha de 20 para ~90 graus). Uma mão que carrega, com o cotovelo já dobrado, acompanha o ombro (MEDIDO: 5 cm para
+# cima, 3 para trás, 2 a 4 para dentro); os 4,5 cm de subida, 2,5 de recuo e 1,5 para dentro são esses números, um pouco menores
+# porque o jogo já inclina o tronco (ESTIMADO).
 RUN_OFFSET = (-0.015, 0.045, 0.025)           # (x para dentro do lado direito, y cima, z atrás), m, no regime de corrida
 MODE_FOLLOW_S = 0.25                          # s: o cotovelo leva este tempo para fechar ao começar a correr
 
@@ -150,6 +154,21 @@ def carry_over(old_axes, new_axes, vector):
     return to_camera(new_axes, from_camera(old_axes, vector))
 
 
+def advance_spring(position, speed, excitation, omega, zeta, dt):
+    """Um passo EXATO de x'' + 2 zeta w x' + w^2 x = -excitation com a excitação constante no passo (zeta < 1): estável em qualquer
+    `dt` e sem o erro de fase de uma integração por passos (a 60 Hz, w = 24 rad/s, Euler erra uns 8% o pico do impulso)."""
+    zeta = min(zeta, 0.999)
+    rest = -excitation / (omega * omega)                  # onde a mola assentaria com a excitação parada
+    offset = position - rest
+    damped = omega * math.sqrt(1.0 - zeta * zeta)
+    decay = math.exp(-zeta * omega * dt)
+    cosine, sine = math.cos(damped * dt), math.sin(damped * dt)
+    coefficient = (speed + zeta * omega * offset) / damped
+    new_offset = decay * (offset * cosine + coefficient * sine)
+    new_speed = decay * (speed * cosine - (omega * omega * offset + zeta * omega * speed) / damped * sine)
+    return rest + new_offset, new_speed
+
+
 class HighPass:
     """Passa-alta de primeira ordem: devolve o sinal menos a sua média lenta (constante de tempo `tau`)."""
 
@@ -159,11 +178,15 @@ class HighPass:
 
     def reset(self):
         self.slow = None
+        self.age = 0.0
 
     def step(self, dt, value):
+        """Logo depois de um `reset` a média lenta ainda não sabe nada do sinal: começa com uma constante de tempo curta (0,15 s) e a
+        alarga até `tau` em ~2 s, para um quadro mau no começo (corpo e câmera ainda não se alinharam) não ficar 3 s na saída."""
         if self.slow is None:
             self.slow = list(value)
-        mix = 1.0 - math.exp(-dt / self.tau)
+        self.age += dt
+        mix = 1.0 - math.exp(-dt / min(self.tau, 0.15 + 0.5 * self.age))
         self.slow = [s + (v - s) * mix for s, v in zip(self.slow, value)]
         return tuple(v - s for v, s in zip(value, self.slow))
 
@@ -191,9 +214,11 @@ class CarryHand:
         self._axes = None
         self._camera_before = None
         self._relative_before = None
+        self._chest_before = None
         self._shoulder = None
         self._shoulder_speed = None
         self._shoulder_accel = [0.0, 0.0, 0.0]
+        self._kicks = []
         self.fatigue = 0.0
 
     # ---- quadro a quadro ----
@@ -209,14 +234,16 @@ class CarryHand:
         if previous is not None:        # a extensão é um vetor do mundo: gira junto com os eixos da câmera ao virar o mouse
             self.extension = list(carry_over(previous, camera_axes, self.extension))
             self.speed = list(carry_over(previous, camera_axes, self.speed))
-        excitation = to_camera(camera_axes, acceleration)
-        omega, zeta = natural_frequency(weights, item_mass), damping_ratio(weights)
-        steps = max(1, int(math.ceil(dt / SUBSTEP)))
-        h = dt / steps
-        for _ in range(steps):
+        excitation = list(to_camera(camera_axes, acceleration))
+        for kick in self._kicks:                  # o toque do calcanhar, espalhado em HEEL_KICK_S: velocidade / duração = aceleração
+            portion = min(dt, kick[0])
             for i in range(3):
-                self.speed[i] += (-omega * omega * self.extension[i] - 2.0 * zeta * omega * self.speed[i] - excitation[i]) * h
-                self.extension[i] += self.speed[i] * h
+                excitation[i] += kick[1][i] * portion / dt
+            kick[0] -= portion
+        self._kicks = [kick for kick in self._kicks if kick[0] > 1e-9]
+        omega, zeta = natural_frequency(weights, item_mass), damping_ratio(weights)
+        for i in range(3):
+            self.extension[i], self.speed[i] = advance_spring(self.extension[i], self.speed[i], excitation[i], omega, zeta, dt)
         # o corpo se atualiza DEPOIS das mãos no quadro: o ombro que se lê é o do quadro anterior e a câmera de então é a certa para ele
         reference_position, reference_axes = self._camera_before or (camera_position, camera_axes)
         self._camera_before = (camera_position, camera_axes)
@@ -226,6 +253,9 @@ class CarryHand:
             self.chest_filter.reset()
         self._relative_before = relative
         slow_out = self.anchor_filter.step(dt, relative)
+        if self._chest_before is not None and abs(chest_yaw - self._chest_before) > CHEST_JUMP:
+            self.chest_filter.reset()
+        self._chest_before = chest_yaw
         chest_dynamic = self.chest_filter.step(dt, (chest_yaw,))[0]
         if hand_position is not None and chest_dynamic != 0.0:
             slow_out = tuple(a + b for a, b in zip(slow_out, lever_shift(chest_dynamic, hand_position, relative)))
@@ -266,9 +296,11 @@ class CarryHand:
         return tuple(a + e + m for a, e, m in zip(self.anchor, self.extension, self.mode_offset))
 
     def heel_strike(self, strength, forward=HEEL_KICK_FORWARD):
-        """Toque do calcanhar: a mão continua descendo (e um pouco para a frente) com `strength` m/s."""
-        self.speed[1] -= strength
-        self.speed[2] -= strength * forward
+        """Toque do calcanhar: a mão continua descendo (e um pouco para a frente) com `strength` m/s, que chegam em `HEEL_KICK_S`."""
+        if strength <= 0.0:
+            return
+        # excitação = -aceleração do apoio; uma velocidade `strength` para baixo (-y) e para a frente (-z) é um apoio que sobe e recua
+        self._kicks.append([HEEL_KICK_S, (0.0, strength / HEEL_KICK_S, strength * forward / HEEL_KICK_S)])
 
     # ---- rotação do punho ----
     def rotation(self, clock, head_pitch, head_roll, weights, breath_phase, breath_mix, fatigue):

@@ -55,18 +55,28 @@ def drive(hand, seconds, shoulder_of_t, weights=WALK, mass=0.0, follow_camera=Tr
 # --------------------------------------------------------------------------
 # A mola contra a lei
 # --------------------------------------------------------------------------
+def estimator_gain(frequency, dt=DT, tau=0.010):
+    """Ganho de amplitude da aceleração que a mão estima (segunda diferença a 60 Hz e filtro de 10 ms) numa senoide de `frequency` Hz.
+    DERIVADO: a segunda diferença vale (2 sen(pi f dt) / (2 pi f dt))^2 e o filtro de um polo mix / |1 - (1 - mix) e^(-j 2 pi f dt)|."""
+    x = math.pi * frequency * dt
+    second_difference = (math.sin(x) / x) ** 2
+    mix = 1.0 - math.exp(-dt / tau)
+    one_pole = mix / abs(1.0 - (1.0 - mix) * complex(math.cos(2 * x), -math.sin(2 * x)))
+    return second_difference * one_pole
+
+
 def test_vertical_bob_matches_the_transmissibility_law():
-    """Um ombro que sobe e desce senoidalmente move a mão em relação a ele na razão r^2 / raiz((1 - r^2)^2 + (2 zeta r)^2)."""
+    """Um ombro que sobe e desce senoidalmente move a mão em relação a ele na razão r^2 / raiz((1 - r^2)^2 + (2 zeta r)^2), vezes o
+    ganho da estimativa de aceleração a 60 Hz (de 1,0 a 1 Hz a ~0,95 a 4,5 Hz)."""
     amplitude = 0.02
     for frequency in (1.0, 2.06, 3.0, 4.5):
         hand = H.CarryHand(1.0)
         natural = H.natural_frequency(WALK, 0.0)
         zeta = H.damping_ratio(WALK)
         extension = drive(hand, 8.0, lambda t: (0.0, 0.0, amplitude * math.sin(math.tau * frequency * t)), follow_camera=True)
-        # a câmera acompanha o ombro: a coordenada "cima" da câmera é o eixo y do mundo? aqui os eixos são os do mundo (z cima)
         measured = np.ptp(extension[int(4.0 / DT):, 2]) / 2.0
-        expected = amplitude * H.relative_transmissibility(frequency, natural / math.tau, zeta)
-        perto(measured / expected, 1.0, 0.04, f"razão simulada/lei a {frequency} Hz")
+        expected = amplitude * H.relative_transmissibility(frequency, natural / math.tau, zeta) * estimator_gain(frequency)
+        perto(measured / expected, 1.0, 0.02, f"razão simulada/lei a {frequency} Hz")
 
 
 def test_constant_velocity_leaves_no_lag():
@@ -108,20 +118,26 @@ def test_stop_continues_forward_then_settles():
 
 
 def test_heel_strike_impulse_response():
-    """O impulso do calcanhar `v0` dá extensão máxima (v0 / wd) exp(-zeta w tp) sen(wd tp), tp = atan(wd / (zeta w)) / wd."""
+    """O toque do calcanhar `v0` (espalhado em `HEEL_KICK_S`) dá o mesmo pico que uma integração fina independente da mola com a
+    força retangular, e vale ~ v0 / w para um pulso curto."""
     for weights, strength in ((WALK, H.HEEL_KICK["walk"]), (RUN, H.HEEL_KICK["run"])):
+        natural, zeta = H.natural_frequency(weights, 0.0), H.damping_ratio(weights)
+        # referência independente: x'' = -2 zeta w x' - w^2 x - e(t), e = v0 / T em [0, T], passo de 0,1 ms
+        x = v = 0.0
+        h, low = 1e-4, 0.0
+        for k in range(int(1.0 / h)):
+            e = strength / H.HEEL_KICK_S if k * h < H.HEEL_KICK_S else 0.0
+            v += (-2 * zeta * natural * v - natural ** 2 * x - e) * h
+            x += v * h
+            low = min(low, x)
         hand = H.CarryHand(1.0)
         hand.heel_strike(strength, forward=0.0)
-        natural, zeta = H.natural_frequency(weights, 0.0), H.damping_ratio(weights)
-        damped = natural * math.sqrt(1.0 - zeta ** 2)
-        peak_time = math.atan2(damped, zeta * natural) / damped
-        expected = strength / damped * math.exp(-zeta * natural * peak_time) * math.sin(damped * peak_time)
-        # a câmera e o ombro parados, só o impulso: a mão desce (y, nos eixos da câmera) e volta
-        low = 0.0
+        peak = 0.0
         for _ in range(int(1.0 / DT)):
             hand.step(DT, IDENTITY, (0.0, 0.0, 0.0), (0.2, -0.2, 0.05), weights)
-            low = min(low, hand.extension[1])
-        perto(-low / expected, 1.0, 0.05, "pico do impulso do calcanhar")
+            peak = min(peak, hand.extension[1])
+        perto(peak / low, 1.0, 0.04, "pico do toque do calcanhar contra a integração fina")
+        assert 0.4 < -low / (strength / natural) < 0.7, "um pulso de 40 ms com amortecimento de 0,45 a 0,6 vale metade de um impulso: pico de 0,5 v0 / w"
     assert 0.002 < H.HEEL_KICK["walk"] / H.natural_frequency(WALK, 0.0) < 0.012, "andando o toque é de milímetros"
     assert 0.010 < H.HEEL_KICK["run"] / H.natural_frequency(RUN, 0.0) < 0.030, "correndo, de poucos centímetros"
 
@@ -229,11 +245,8 @@ def game_and_cases():
 
 def case(name, variant="depois", item=None):
     def record():
-        from tools.movimento_ref.cenarios import maos_andando as M
         M_, game = game_and_cases()
-        if item is not None:
-            game = memo(("jogo", item), lambda: M_.preparar_jogo(palco=True, item_esquerda=item))
-        return M_.gravar_caso(game, name, variant)
+        return M_.gravar_caso(game, name, variant, item_esquerda=item)
     return memo(("caso", name, variant, item), record)
 
 
@@ -378,7 +391,8 @@ def test_key_pendulum_swings_with_the_world_acceleration_of_the_pivot():
     accel[2:] = (palm[2:] - 2 * palm[1:-1] + palm[:-2]) * 3600.0
     lateral = np.einsum("ti,ti->t", accel, axes[:, :, 0])
     forward = -np.einsum("ti,ti->t", accel, axes[:, :, 2])
-    length = 0.154
+    _, game = game_and_cases()
+    length = game.hands.pendulum.lengths[1]                  # no palco não há o modelo do chaveiro: o comprimento é o padrão de 0,11 m
     omega0 = math.sqrt(9.81 / length)
     series = {}
     for index, drive_axis in enumerate((lateral, forward)):

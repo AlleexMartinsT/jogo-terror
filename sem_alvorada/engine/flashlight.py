@@ -223,6 +223,9 @@ class Flashlight:
             longest = 0.16 + 0.24 * (1.0 if level < C.BATTERY_CRITICAL else 0.0)
             self.burst(self.rng.uniform(0.06, longest))
             self.game.sound("flash_flicker", None, 0.5)
+            notice = getattr(self.game.hands, "notice_flicker", None)
+            if notice is not None:
+                notice()                              # a mão esquerda pode bater no cano (uma vez por rajada)
         return 1.0
 
     def _follow_camera(self, dt, cam_yaw, cam_pitch):

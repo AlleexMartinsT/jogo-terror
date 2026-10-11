@@ -135,10 +135,11 @@ LEGACY_GRIPS = {
 }
 GRIPS = {kind: Grip(*grasp_data.GRIPS[kind]) if kind in grasp_data.GRIPS else grip for kind, grip in LEGACY_GRIPS.items()}
 
-# Giro da mão e da lanterna juntas em torno do cano. Com a lanterna na horizontal a mão a segura de lado, o antebraço
-# vem de baixo e o cotovelo cai (MEDIDO em 77_05: cotovelo a 121 graus, braço a 59 graus da vertical); sem o giro a palma
-# ficava embaixo do cano e o IK jogava o cotovelo para fora, com o braço na horizontal (90 graus) e o punho no limite.
-FLASH_ROLL = -62.0 - grasp_data.ROLL_SHIFT.get(C.ITEM_FLASHLIGHT, 0.0)       # a mão gira com o ajuste da pegada; o cano gira o contrário
+# Giro da lanterna em torno do cano. A mão a segura de lado, e o giro decide a flexão do pulso: com a mão do jeito que o ajuste
+# por contato a põe no cano (`grasp_data`), o giro de 60 graus deixa o pulso em 15 graus de flexão (era 57, quase no limite),
+# o cotovelo em 106 graus e o braço a 59 graus da vertical (MEDIDO em 77_05: cotovelo a 119 e braço a 42; o jogo tem de manter a
+# lanterna no quadro, o que sobe o punho). Achado por `tools/movimento_ref/cenarios/pegadas.py postura`.
+FLASH_ROLL = 60.0
 
 
 def with_roll(aim_deg, roll_deg=FLASH_ROLL):
@@ -151,7 +152,7 @@ def with_roll(aim_deg, roll_deg=FLASH_ROLL):
 
 # Item parado na mão (pose do item no espaço da câmera): (posição, rotação)
 HOLD_ITEM = {
-    ("R", C.ITEM_FLASHLIGHT): ((0.150, -0.100, -0.300), with_roll((8.0, 6.0, -8.0))),
+    ("R", C.ITEM_FLASHLIGHT): ((0.135, -0.095, -0.300), with_roll((8.0, 6.0, -6.0))),
     ("L", C.ITEM_KEY): ((-0.205, -0.015, -0.385), (0.0, 0.0, 0.0)),
     ("L", C.ITEM_MAP): ((-0.290, -0.115, -0.44), (-28.0, 14.0, 6.0)),
     ("L", C.ITEM_BATTERY): ((-0.130, -0.060, -0.33), (-6.0, 0.0, 0.0)),
@@ -162,10 +163,17 @@ HOLD_CURL = {C.ITEM_FLASHLIGHT: FLASH_FIST, C.ITEM_KEY: PINCH, C.ITEM_MAP: PINCH
 EXTRAS = {"x.cap": 0.0, "x.fold1": 0.0, "x.fold2": 0.0, "x.zoom": 0.0}
 
 
-FACE_ITEM = {C.ITEM_NOTE: ((-0.040, -0.100, -0.300), (-4.0, 0.0, 0.0))}      # a folha diante do rosto
-NEAR_ITEM = {C.ITEM_MAP: ((-0.130, -0.030, -0.300), (-6.0, 6.0, 2.0))}        # o mapa aproximado do rosto
+# Leitura (fase 5): o papel a 38 cm do olho (a distância de leitura com o material na mão é de 35 a 40 cm), com o meio um pouco
+# abaixo da linha do olhar e o topo inclinado 12 graus para longe; a mão da lanterna vem ao canto de baixo à direita, o polegar
+# na borda, e a luz aponta para a folha (`READ_LANTERN`).
+FACE_ITEM = {C.ITEM_NOTE: ((-0.012, -0.125, -0.385), (-12.0, 0.0, 2.0))}      # a folha diante do rosto
+NEAR_ITEM = {C.ITEM_MAP: ((-0.120, -0.060, -0.360), (-10.0, 6.0, 2.0))}        # o mapa aproximado do rosto
+READ_LANTERN = {"face": ((0.088, -0.118, -0.345), with_roll((8.0, 16.0, -8.0))),
+                "near": ((0.150, -0.135, -0.340), with_roll((10.0, 22.0, -8.0)))}
 MODE_POSES = {"hold": HOLD_ITEM, "face": {("L", k): v for k, v in FACE_ITEM.items()},
               "near": {("L", k): v for k, v in NEAR_ITEM.items()}}
+for _mode, _pose in READ_LANTERN.items():
+    MODE_POSES[_mode][("R", C.ITEM_FLASHLIGHT)] = _pose
 
 
 def hold_hand(side, kind, mode="hold"):
@@ -365,6 +373,9 @@ def withdraw(path, t0, seconds=None):
 FLICKER_BURSTS = ((0.22, 0.13), (0.52, 0.11), (0.78, 0.10))
 
 
+LANTERN_GRASP_ROT = (GRASP_PITCH, 0.0, -4.0)       # orientação da mão ao pegar a lanterna na mesa (Euler XYZ, graus)
+
+
 def lantern_first(reach_s=REACH_DEFAULT):
     """Estende a mão, pega a lanterna desligada, traz ao peito, o polegar clica, a luz pisca e a mão assume."""
     path = Path("R", C.ITEM_FLASHLIGHT)
@@ -376,7 +387,7 @@ def lantern_first(reach_s=REACH_DEFAULT):
     click_at = at_chest - 0.04
     leave = click_at + 0.38
     arrive = leave + move_time(math.dist(chest, hold))
-    reach(path, reach_s, (0.0, 0.018, 0.0), (GRASP_PITCH, 0.0, -4.0), WIDE, FLASH_GRAB)
+    reach(path, reach_s, (0.0, 0.018, 0.0), LANTERN_GRASP_ROT, WIDE, FLASH_GRAB)
     path.item(at_chest, chest, chest_rot, FLASH_FIST, stop=True)
     path.curl(click_at - 0.10, FLASH_FIST)
     path.curl(click_at, FLASH_CLICK, stop=True)
@@ -721,3 +732,42 @@ def refuse():
     events = [ev(0.22, "sound", "cloth_rustle_3")]
     return Clip("refuse", 0.66, right.tracks(), events, interruptible=True,
                 meta={"side": "R", "kind": C.ITEM_FLASHLIGHT})
+
+
+# ---------------------------------------------------------------------------
+# Batida na lanterna (esquerda livre): a pilha fraca faz a luz piscar e a mão bate na lateral do cano
+# ---------------------------------------------------------------------------
+TAP_FLAT = (0.20, 0.04, 0.04, 0.05, 0.07)          # a mão aberta e reta, o polegar junto
+TAP_POINT = 0.08                                  # m do punho da lanterna rumo à lente: onde a palma bate
+TAP_JOLT = 0.007                                  # m: o quanto o golpe empurra a lanterna na mão direita
+
+
+def palm_tap():
+    """A esquerda sobe da mão solta, bate com a palma na lateral do cano e volta; a direita sente o golpe (7 mm para o lado e
+    2 graus). Dura ~1,3 s porque o braço parte de baixo do quadro (ESTIMADO: não há medida de batida em lanterna)."""
+    hold, hold_rot = HOLD_ITEM[("R", C.ITEM_FLASHLIGHT)]
+    lantern = pose_matrix(hold, hold_rot)
+    spot = lantern @ Vector((0.0, 0.0, -TAP_POINT))
+    outward = lantern.to_3x3() @ Vector((-1.0, 0.0, 0.0))                     # do cano para a esquerda
+    hit = tuple(spot + outward * 0.034)                                      # 19 mm de cano e 12 de pele da palma
+    pre = tuple(spot + outward * 0.12 + Vector((-0.02, -0.11, 0.02)))
+    rebound = tuple(spot + outward * 0.075 + Vector((0.0, -0.02, 0.0)))
+    barrel = lantern.to_3x3() @ Vector((0.0, 0.0, -1.0))
+    rot = hand_rotation((barrel.x, barrel.y + 0.2, barrel.z), (1.0, 0.0, 0.0))
+    left, right = Path("L", C.ITEM_BATTERY), Path("R", C.ITEM_FLASHLIGHT)
+    rise = EXIT_FACTOR * move_time(math.dist(HANG_POS["L"], pre))
+    t_hit = rise + 0.13
+    left.rest(0.0, HANG_ROT["L"], RELAX, w=0.0)
+    left.weight(0.25 * rise, 1.0)
+    left.curl(0.60 * rise, TAP_FLAT)
+    left.hand(rise, pre, rot, TAP_FLAT, stop=True)
+    left.hand(t_hit, hit, rot, TAP_FLAT)                                      # a batida passa direto: a mão não para no cano
+    left.hand(t_hit + 0.09, rebound, rot, TAP_FLAT, stop=True)
+    end = withdraw(left, t_hit + 0.16)
+    right.item(0.0, hold, hold_rot, stop=True)
+    right.item(t_hit - 0.03, hold, hold_rot)
+    right.item(t_hit + 0.02, (hold[0] + TAP_JOLT, hold[1] - 0.004, hold[2]), with_roll((8.0, 4.0, -6.0)))
+    right.item(t_hit + 0.22, hold, hold_rot, stop=True)
+    events = [ev(0.05, "sound", "cloth_rustle_2"), ev(t_hit, "sound", "thud_1"), ev(t_hit, "tap_hit")]
+    return Clip("palm_tap", end, merge(left, right), events, interruptible=True,
+                meta={"side": "L", "kind": None, "grasp": "L", "world_item": False, "rest": True})

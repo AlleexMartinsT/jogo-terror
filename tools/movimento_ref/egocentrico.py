@@ -9,7 +9,12 @@ câmera: (direita, frente, cima) em metros, com a escala do Daniel (braço de 0,
     medida = egocentrico.medir(mov, "d")          # média, amplitude, frequência, fração dentro do campo de visão
 
 `python -m tools.movimento_ref.egocentrico` mede os clipes de `CATEGORIAS` e grava
-`assets/referencia/maos_ego_ref.json`, que os testes usam sem baixar nada.
+`assets/referencia/maos_ego_ref.json`, que os testes usam sem baixar nada. `andar_rapido` (08_01 a 08_03, 1,5 a 1,6 m/s) é a referência
+do jogo a 1,7 m/s; a mediana dos 12 clipes de `andar` mistura passos lentos, onde o braço balança menos.
+
+Painéis do que o jogador vê (matplotlib, importado só ao desenhar): `angulos` (azimute e elevação de um ponto na câmera), `desenhar_campo`
+(a moldura de 72 x 44 graus com trajetórias), `desenhar_plano` (o plano direita x cima em metros, com o cone da câmera a uma profundidade
+e retângulos média +- amplitude/2 por junta) e `espectro`. A montagem real contra jogo está em `cenarios/maos_andando.py`.
 """
 import json
 import os

@@ -299,8 +299,13 @@ def montar_jogo_maos(item=None, no_chao=False):
     from sem_alvorada.engine import builder
     from sem_alvorada.engine.game import Game
     from sem_alvorada.engine.inputstate import InputState
+    from sem_alvorada.engine import handactions
     from sem_alvorada.props import flashlight as props_flashlight
 
+    # Estes cenários medem o BRAÇO (a lei do alcance, o perfil de velocidade da mão contra o quadril). Com a postura de alcance
+    # o corpo desce junto e a mão anda menos em relação ao quadril, que é o certo mas não é o que a lei mede: a postura e o
+    # passo têm o cenário e o teste deles (cenarios/interacoes.py, tests/test_maos_interacao.py).
+    handactions.ENABLED = False
     scene = build_module.fresh_scene()
     ctx = BuildContext(scene, verbose=False)
     ctx.stage = "body"

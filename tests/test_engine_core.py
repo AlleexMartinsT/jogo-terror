@@ -532,8 +532,9 @@ def test_notes_pause_the_world_and_are_read_once():
     clock = game.clock
     game.state.flashlight_on, game.state.has_flashlight = True, True
     battery = game.state.battery
+    y_before = game.player.y        # (pegar a nota agora começa com um passo até ela: a posição de antes do leitor é a que vale)
     run_for(game, 3.0, InputState(move_y=1.0))
-    assert game.clock == clock and game.state.battery == battery and game.player.y < note[2] - 1.2, "o mundo não pausou"
+    assert game.clock == clock and game.state.battery == battery and game.player.y == y_before, "o mundo não pausou"
     step(game, InputState(interact=True))
     assert game.phase == "play" and "NOTE_2" in game.state.notes_read
     assert game.checkpoint is not None

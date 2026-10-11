@@ -11,6 +11,7 @@ from .. import gait, layout
 from . import angles, collision
 from .posture import ReachPosture
 
+ASSIST_BRAKE = 0.55            # s, ESTIMADO: a freada do passo lento (C.STOP_TIME é de 0,65 s a partir da corrida)
 ASSIST_WISH = 0.5              # fração da velocidade de andar do passo assistido (0,85 m/s: um passo curto, sem pressa)
 STAND_HEIGHT = 1.80
 CROUCH_HEIGHT = 1.45
@@ -205,6 +206,14 @@ class Player:
         self._update_head(dt)
         self._refresh_room()
 
+    def hold_still(self, dt):
+        """Parado e de olho num papel (leitor aberto): só a postura de alcance e a respiração seguem (o resto do `update` não)."""
+        self.reach.step(dt)
+        self.speed = 0.0
+        self._vx = self._vy = 0.0
+        self._breathe(dt)
+        self._update_head(dt)
+
     def _lean_into_turn(self, dt, inp):
         rate = -inp.look_dx / dt if dt > 1e-6 else 0.0
         self._turn_rate += (rate - self._turn_rate) * (1.0 - math.exp(-dt / TURN_RATE_SMOOTH))
@@ -311,6 +320,9 @@ class Player:
         if math.hypot(wx, wy) > 0.1:                         # o jogador assumiu: o passo assistido acaba
             self._assist = None
             return wx, wy
+        if self._assist[2] <= 0.5 * math.hypot(self._vx, self._vy) * ASSIST_BRAKE:       # o que falta é a freada
+            self._assist = None
+            return 0.0, 0.0
         return self._assist[0] * ASSIST_WISH, self._assist[1] * ASSIST_WISH
 
     def _assist_progress(self, moved, dt):

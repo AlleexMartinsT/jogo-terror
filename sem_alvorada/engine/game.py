@@ -381,6 +381,13 @@ class Game:
             self.phase = "play"
             self.hands.end_read()
             self.sound("paper_rustle", None, 0.6)
+            return
+        # lendo, o jogador respira: o peito sobe, a câmera e as mãos (e o papel) vão junto, como na vida
+        player = self.player
+        player.hold_still(dt)
+        bob = player.bob_offset()
+        self.hands.update(dt, bob)          # (a lanterna e a pilha não: o mundo está pausado, a carga não gasta)
+        self.body.update(dt, player, bob)
 
     def _tick_paused(self, dt, inp):
         if inp.cancel:

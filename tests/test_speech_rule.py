@@ -46,7 +46,7 @@ def take(game, ref):
     """Pega o item `ref` pelo caminho normal (interact -> mãos -> coleta) e espera as mãos terminarem."""
     target = next(t for t in game.interact.targets if t.ref == ref)
     game.interact.use(target)
-    for _ in range(int(4.0 / fk.DT)):
+    for _ in range(int(6.0 / fk.DT)):          # o gesto de pegar baixo leva ~3,3 s (o corpo desce e sobe); 4 s não sobrava com a cena de apagão no meio
         if ref in game.state.collected and not game.hands.busy:
             return
         step(game)

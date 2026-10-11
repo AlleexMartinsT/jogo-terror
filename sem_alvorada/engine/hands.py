@@ -10,6 +10,7 @@ Sem `BodyRig` (NullBody) os itens aparecem flutuando nas posições da câmera; 
 alvo da mão. O contrato com o resto do jogo está em `docs/FASE3.md`.
 """
 import math
+import random
 
 import bpy  # noqa: F401 - `mathutils` só existe depois deste import
 from mathutils import Euler, Matrix, Quaternion, Vector
@@ -20,8 +21,9 @@ from . import handclips as K
 from .handheld import GRAVITY, Handhelds, Pendulum, PivotAcceleration, SupportAcceleration
 from .handsway import HandSway
 from .handtrack import ClipPlayer, number
-from .handactions import HandActions
+from .handactions import HandActions, with_reading_hand
 from .gripdrive import GripDrive, press_envelope
+from .lanternaim import LanternAim, TapScheduler
 
 FOV_ZOOM = 0.17                  # quanto o campo de visão fecha quando o rosto "se aproxima" de uma nota na parede
 MAP_LOOK_SECONDS = 1.6           # o mapa fica diante do rosto este tempo, se o jogador não apertar E de novo
@@ -51,12 +53,16 @@ class Hands:
         self.runner = ClipPlayer()
         self.models = Handhelds(game.scene, game.player_cam)
         self.pendulum = Pendulum(self.models.key_pendulum_lengths())
-        self.pivot = SupportAcceleration(limit=14.0, rate=22.0)       # mesma suavização e teto do chaveiro de antes, mas no mundo
+        self.pivot = SupportAcceleration(limit=14.0, rate=14.0)       # mesma suavização e teto do chaveiro de antes, mas no mundo
         self.paper_support = SupportAcceleration()
         self.sway = HandSway(game)
         self._gripper = GripDrive()                # pegada por contato: dos canais `grip` e `press` às juntas dos dedos
         self._grip_inputs = {}
         self._press_age = 10.0                     # s desde que o polegar começou a apertar o interruptor (F)
+        self.aim = LanternAim()                    # elevação parcial do braço, giro do cano para ler (lanternaim)
+        self._taps = TapScheduler(random.Random(11))
+        self._lantern_reading = False
+        self._lantern_delta = (Vector((0.0, 0.0, 0.0)), (0.0, 0.0, 0.0))
         self.last = {}                          # última pose entregue por lado: (pos, rot, curl, peso)
         self._base_fov = None
         self._clock = 0.0
@@ -115,6 +121,9 @@ class Hands:
         self._look_left = 0.0
         self._click = 0.0
         self._press_age = 10.0
+        self.aim.reset()
+        self._taps.reset()
+        self._lantern_reading = False
         self._tuck = 0.0
         self._visual = {"R": None, "L": None}
         self._base_key = None
@@ -285,14 +294,19 @@ class Hands:
             job.origin = "held" if self._persist_left == C.ITEM_NOTE else "pocket"
             if job.origin == "held":
                 self._interrupt()
-                self._start(K.note_raise(False), job)
+                self._start(with_reading_hand(K.note_raise(False), "face"), job)
             else:
-                self._when_left_free(lambda: self._start(K.note_raise(True), job))
+                self._when_left_free(lambda: self._start(with_reading_hand(K.note_raise(True), "face"), job))
             return True
         job.origin = "wall" if self._is_wall_note(target) else "floor"
         factory = K.note_wall if job.origin == "wall" else K.note_pickup
-        reach_s = K.move_time((self._reach_point(target) - self._rest["L"]).length)
-        self._when_left_free(lambda: self._start(factory(reach_s), job))
+
+        def begin():
+            clip, _dip = self.actions.pickup_clip(factory, target, "L")      # nota baixa: o corpo desce; longe: o passo (handactions)
+            if job.origin == "floor":
+                with_reading_hand(clip, "face")
+            self._start(clip, job)
+        self._when_left_free(begin)
         return True
 
     def end_read(self):
@@ -316,7 +330,7 @@ class Hands:
             return False
         if self._persist_left == C.ITEM_MAP:
             self._interrupt()
-            self._start(K.map_near(), _Job("look", origin="near"))
+            self._start(with_reading_hand(K.map_near(), "near", 0.5), _Job("look", origin="near"))
             return True
         note = self.last_note
         if self._persist_left == C.ITEM_NOTE and note is not None:
@@ -438,6 +452,8 @@ class Hands:
         channels = self.runner.update(dt, self._base, self._anchors(), self._fire)
         self._grip_inputs = {side: (channels[f"{side}.grip"], channels[f"{side}.press"][0]) for side in ("R", "L")}
         self._press_age += dt
+        self._lantern_delta = self._lantern_offsets(dt, channels)
+        self._maybe_tap()
         self.actions.update(dt)
         self._tick_look_timer(dt)
         yaw_rate, pitch_rate = self._look_rates(dt)
@@ -496,7 +512,7 @@ class Hands:
         if key != self._base_key:
             self._base_key = key
             self.runner.rebase()
-        channels = {**K.rest_channels("R", self._visual["R"]), **K.rest_channels("L", left, mode)}
+        channels = {**K.rest_channels("R", self._visual["R"], mode), **K.rest_channels("L", left, mode)}      # lendo, a direita também vem ao papel
         for side in ("R", "L"):
             if channels[f"{side}.w"][0] == 0.0:
                 channels[f"{side}.pos"] = tuple(self._rest[side])       # solta: a mão fica onde o braço pende
@@ -570,6 +586,9 @@ class Hands:
             extra[0] += pitch * 1.4
             extra[1] += yaw * 1.4
             pos.y -= 0.006 * self._click
+            delta_pos, delta_rot = self._lantern_delta
+            pos += delta_pos
+            extra = [a + b for a, b in zip(extra, delta_rot)]
             curl[0] = min(1.0, curl[0] + 0.32 * self._click)
         pos += Vector((0.0, -0.05, 0.07)) * self._tuck
         extra[0] -= math.radians(22.0) * self._tuck
@@ -600,6 +619,34 @@ class Hands:
         elif not self._released[side]:
             arm.release()
             self._released[side] = True
+
+    # ---- lanterna: elevação do braço, leitura e batida (lanternaim) ----
+    def set_lantern_reading(self, reading):
+        """As interações de leitura avisam que o jogador lê de perto: o cano da lanterna gira para fora da superfície."""
+        self._lantern_reading = bool(reading)
+
+    def notice_flicker(self):
+        """A luz acabou de piscar por mau contato (`Flashlight`): a esquerda pode bater no cano, uma vez por rajada."""
+        self._taps.noticed(self._clock)
+
+    def _lantern_offsets(self, dt, channels):
+        """(deslocamento, giro) a somar à mão direita: a elevação parcial do olhar e o giro do cano ao ler."""
+        clip = self.runner.clip
+        steady = clip is None or clip.name == "palm_tap"
+        engaged = 1.0 if (steady and channels["R.w"][0] > 0.5 and channels["R.attach"][0] > 0.99 and self._visual["R"] is not None) else 0.0
+        reading = 1.0 if (self._lantern_reading or self._reading_job is not None or self._left_mode in ("face", "near")) else 0.0
+        point = self.game.body.arm("R").shoulder_world_position() if hasattr(self.game.body.arm("R"), "shoulder_world_position") else None
+        shoulder = self._cam[1] @ Vector(point) if point is not None else None
+        return self.aim.update(dt, self.game.player.pitch, reading, engaged, channels["R.pos"], shoulder)
+
+    def _maybe_tap(self):
+        if not self._taps.ready(self._clock):
+            return
+        free = (self._persist_left is None and self._visual["L"] is None and self._reading_job is None and not self.busy
+                and not self.runner.active and not getattr(self.game.inventory, "wheel_open", False)
+                and self._visual["R"] == C.ITEM_FLASHLIGHT and self.game.state.flashlight_on)
+        if free:
+            self._start(K.palm_tap(), _Job("tap"))
 
     def _grip_kind(self, side):
         """O item que a mão `side` segura ou está para pegar (durante o alcance ele ainda não aparece na mão)."""

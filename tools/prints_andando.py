@@ -26,14 +26,20 @@ from sem_alvorada.engine.state import FLAG_BLACKOUT  # noqa: E402
 from tools import prints_maos as maos  # noqa: E402
 from tools.movimento_ref import grava  # noqa: E402
 
-DT = 1.0 / 30.0
-MODOS = ("andar", "correr", "agachar", "parado")
+DT = 1.0 / 60.0               # o passo do jogo é o de jogar (60 Hz); os quadros saem a cada `--passo` segundos
+MODOS = ("andar", "correr", "agachar", "parado", "parando", "arrancando", "escada")
 PITCH_INICIAL = -6.0
 
 
-def entrada_do_modo(modo):
+def entrada_do_modo(modo, t=0.0, parar_em=None, arrancar_em=None):
+    """`parando` anda até `parar_em` s e solta o teclado; `arrancando` fica parado até `arrancar_em` s e anda. `t` conta desde o começo."""
     entrada = InputState()
-    if modo != "parado":
+    anda = modo not in ("parado",)
+    if modo == "parando" and parar_em is not None and t >= parar_em:
+        anda = False
+    if modo == "arrancando" and arrancar_em is not None and t < arrancar_em:
+        anda = False
+    if anda:
         entrada.move_y = 1.0
     entrada.run = modo == "correr"
     entrada.crouch = modo == "agachar"
@@ -64,6 +70,9 @@ def main():
     parser.add_argument("--esteira", action="store_true",
                         help="a pista tem 8 m: devolve o jogador ao começo antes de chegar ao fim, sem tocar na velocidade nem na passada")
     parser.add_argument("--item-esquerda", choices=("KEY", "MAP", "BATTERY"), default=None)
+    parser.add_argument("--casa", action="store_true", help="a casa escura, só a lanterna ilumina (sem o fundo do estúdio)")
+    parser.add_argument("--parar-em", type=float, default=None, help="modo parando: segundo em que o jogador solta o teclado")
+    parser.add_argument("--arrancar-em", type=float, default=None, help="modo arrancando: segundo em que o jogador começa a andar")
     parser.add_argument("--olhar", type=float, default=PITCH_INICIAL, help="inclinação do olhar em graus (negativo = para baixo)")
     args = parser.parse_args()
     tamanho = tuple(int(v) for v in args.res.lower().split("x"))
@@ -87,14 +96,27 @@ def main():
         jogo.tick(DT, InputState())
     jogo.player.pitch = math.radians(args.olhar)
     cena.camera = jogo.player_cam
-    maos.studio(cena, jogo)
-    prender_estudio_a_camera(jogo.player_cam)
+    if args.modo == "escada":
+        args.casa = True
+        jogo.place_player(5.6, 1.2, 0.0, 0.0)
+        jogo.player.pitch = math.radians(args.olhar)
+    if not args.casa:
+        maos.studio(cena, jogo)
+        prender_estudio_a_camera(jogo.player_cam)
 
-    inicio = (jogo.player.x, jogo.player.y)
     direcao = (-math.sin(jogo.player.yaw), math.cos(jogo.player.yaw))
+    if args.esteira:           # o começo da pista vê um brilho forte (o fundo do corredor): a esteira roda mais adiante, a 2,6 m do começo
+        jogo.place_player(jogo.player.x + direcao[0] * 2.6, jogo.player.y + direcao[1] * 2.6, jogo.player.z, jogo.player.yaw)
+        jogo.player.pitch = math.radians(args.olhar)
+        for _ in range(int(0.5 / DT)):
+            jogo.tick(DT, InputState())
+    inicio = (jogo.player.x, jogo.player.y)
+
+    relogio_do_modo = [0.0]
 
     def passo_do_jogo():
-        jogo.tick(DT, entrada_do_modo(args.modo))
+        jogo.tick(DT, entrada_do_modo(args.modo, relogio_do_modo[0], args.parar_em, args.arrancar_em))
+        relogio_do_modo[0] += DT
         if args.esteira:
             andado = (jogo.player.x - inicio[0]) * direcao[0] + (jogo.player.y - inicio[1]) * direcao[1]
             if andado > 4.0:
@@ -111,9 +133,12 @@ def main():
             caminho = os.path.join(args.out, f"raw_{args.modo}_{len(quadros):02d}.png")
             quadros.append(maos.render_frame(cena, jogo, caminho, tamanho, args.samples))
             legendas.append(f"{args.modo} t={relogio:.2f}s fase={jogo.player.stride_phase / math.pi:.2f}")
-    folha = os.path.join(args.out, f"folha_{args.modo}.png")
-    maos.contact_sheet(quadros, legendas, args.colunas, folha)
-    print(f"[andando] {folha}: {len(quadros)} quadros")
+    if len(quadros) <= 24:
+        folha = os.path.join(args.out, f"folha_{args.modo}.png")
+        maos.contact_sheet(quadros, legendas, args.colunas, folha)
+        print(f"[andando] {folha}: {len(quadros)} quadros")
+    else:
+        print(f"[andando] {args.out}: {len(quadros)} quadros")
 
 
 if __name__ == "__main__":

@@ -13,19 +13,20 @@ import math
 from dataclasses import dataclass
 
 EYE_STAND = 1.65
-DEPTH_MAX = 0.83             # m, MEDIDO: o mergulho mais fundo do olho nos clipes (0,85 m) na escala do Daniel
+DEPTH_MAX = 0.90             # m: o mergulho mais fundo do olho nos clipes é de 0,85 m (MEDIDO, escala do Daniel); um objeto rente ao
+                             # chão (a mão a 3 cm, não a 10 a 17 cm como nos clipes) pede um pouco mais, ESTIMADO
 SHOULDER_DOWN = 0.25         # m, MEDIDO (maos_ego_ref.json): o ombro fica 25 cm abaixo do olho
 SHOULDER_BACK = 0.11         # m, MEDIDO: e 11 cm atrás
 SHOULDER_SIDE = 0.24         # m, MEDIDO: e 24 cm ao lado
 COMFORT_REACH = 0.56         # m, DERIVADO: 85% do alcance do ombro à palma (braço de 0,60 m mais 0,06 m de palma)
 EYE_ABOVE_HAND = 0.60        # m, MEDIDO: mediana do olho acima da mão que pega no fundo do gesto (0,55 a 0,78 em 10 clipes)
-LUNGE_MAX = 0.25             # m, ESTIMADO: quanto o corpo ainda avança além da técnica (um passo que o jogo não dá)
-LUNGE_LEAN = 80.0            # graus de tronco por metro de avanço extra, ESTIMADO
+LUNGE_MAX = 0.30             # m, ESTIMADO: quanto o corpo ainda avança além da técnica (um passo que o jogo não dá)
+LUNGE_LEAN = 35.0            # graus de tronco por metro de avanço extra, ESTIMADO (o avanço de quem agacha vem dos joelhos, não do tronco)
 # Cada pessoa escolhe um ponto entre dois extremos, e o que muda ao longo do caminho é o ângulo do tronco: agachar (tronco a
 # 24 a 45 graus, joelho a 87 a 137, o quadril cai 0,70 m) e se curvar de pernas retas (tronco a 100 graus, joelho a 7 a 24, o
 # quadril cai 0,05 a 0,10 m). Os dois a 0,75 a 0,85 m de profundidade. Por metro de profundidade:
 STOOP = {"ahead": 0.35, "lean": 130.0}        # MEDIDO em 69_73 e 69_74 (0,5 m de avanço porque o objeto estava longe: aqui 0,35)
-SQUAT = {"ahead": 0.15, "lean": 50.0}         # MEDIDO em 69_70, 69_71 e 69_75 (tronco a 40 graus em 0,8 m)
+SQUAT = {"ahead": 0.25, "lean": 50.0}         # MEDIDO em 69_70, 69_71 e 69_75 (tronco a 40 graus em 0,8 m)
 LEAN_CAP = 115.0             # graus: o mais fundo medido (26_11, 116) tem a cabeça pendente; com avanço extra o tronco passa de 105
 LEAN_MAX = 105.0             # graus: acima disso o tronco passaria da horizontal (o mais fundo medido é 116 com a cabeça pendente)
 SQUAT_NEAR, SQUAT_FAR = 0.30, 0.80           # m de distância horizontal: até a primeira agacha, a partir da segunda se curva
@@ -67,10 +68,11 @@ def technique_mix(horizontal):
     return max(0.0, min(1.0, (SQUAT_FAR - horizontal) / (SQUAT_FAR - SQUAT_NEAR)))
 
 
-def dip_for_depth(depth, horizontal, wall_distance=None):
-    """A postura de profundidade `depth` (m) para um alvo a `horizontal` m de distância."""
+def dip_for_depth(depth, horizontal, wall_distance=None, below=0.0):
+    """A postura de profundidade `depth` (m) para um alvo a `horizontal` m de distância e `below` m abaixo do olho. Quanto mais
+    perto do chão, mais agacha: se curvar de pernas retas não chega a um objeto rente ao piso (o ombro fica alto demais)."""
     depth = max(0.0, min(DEPTH_MAX, depth))
-    mix = technique_mix(horizontal)
+    mix = max(technique_mix(horizontal), min(1.0, max(0.0, (below - 1.2) / 0.3)))
     ahead = depth * (STOOP["ahead"] + (SQUAT["ahead"] - STOOP["ahead"]) * mix)
     lean = min(LEAN_MAX, depth * (STOOP["lean"] + (SQUAT["lean"] - STOOP["lean"]) * mix))
     if wall_distance is not None:
@@ -96,7 +98,7 @@ def _reaches(dip, forward, lateral, below, shoulder):
     return math.sqrt(gap_forward ** 2 + gap_side ** 2 + gap_down ** 2) <= COMFORT_REACH
 
 
-def dip_to_reach(forward, lateral, below, side, wall_distance=None):
+def dip_to_reach(forward, lateral, below, side, wall_distance=None, depth_limit=DEPTH_MAX):
     """A menor postura que põe o ponto do alvo ao alcance confortável do braço.
 
     `forward`, `lateral` e `below` são a distância horizontal à frente do olho, o deslocamento para a direita e quanto o alvo
@@ -105,10 +107,10 @@ def dip_to_reach(forward, lateral, below, side, wall_distance=None):
     acima da mão que pega); se mesmo assim não chega, o corpo avança mais um pouco (`LUNGE_MAX`), e o que faltar é o
     `REACH_LIMIT` do `Hands` (a mão para onde o braço chega)."""
     shoulder = SHOULDER_SIDE * side
-    cap = min(DEPTH_MAX, max(0.0, below - EYE_ABOVE_HAND))
+    cap = min(DEPTH_MAX, depth_limit, max(0.0, below - EYE_ABOVE_HAND))
     dip = NONE
     for i in range(int(cap / 0.01) + 1):
-        dip = dip_for_depth(i * 0.01, forward, wall_distance)
+        dip = dip_for_depth(i * 0.01, forward, wall_distance, below)
         if _reaches(dip, forward, lateral, below, shoulder):
             return dip
     room = LUNGE_MAX if wall_distance is None else max(0.0, min(LUNGE_MAX, wall_distance - AHEAD_WALL_MARGIN - dip.ahead))

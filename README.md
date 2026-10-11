@@ -153,6 +153,7 @@ python tests/test_speech_rule.py         # o personagem só fala nos casos previ
 python tests/test_movimento_ref.py       # infraestrutura de comparação de movimento: métricas, gravador, câmeras
 python tests/test_locomocao.py           # passada, cabeça, escada, parar e agachar contra a CMU (--rapido pula a escada)
 python tests/test_maos_movimento.py      # duração e perfil dos gestos, lâmpada, chaveiro, dedos
+python tests/test_maos_andando.py        # a mão que carrega ao andar: mola presa ao ombro, partida, parada, giro, deriva (fase 5)
 python tests/test_objetos_fisica.py      # portas, carro, portão, relógio, cortina, luz contra o modelo físico
 python tests/test_objetos_3d.py          # as mesmas poses vistas de câmeras diferentes (precisa de out/integration/full.blend)
 python tests/test_doors.py               # curva das portas, ranger e reação da entidade

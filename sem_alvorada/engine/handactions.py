@@ -12,6 +12,7 @@ maçaneta). O que fica aqui:
 Nada aqui conhece o `Interact`: quem chama passa o alvo e o lado da mão.
 """
 import math
+import os
 from dataclasses import dataclass
 
 from mathutils import Matrix, Quaternion, Vector
@@ -23,14 +24,17 @@ from . import handclips as K
 from . import posture as P
 from .handtrack import Clip, Event, Key, QuatTrack, Track, min_jerk
 
+# Chave de comparação (antes e depois dos painéis e do sim_playthrough): SA_MAOS_INTERACAO=0 desliga a postura de alcance, o passo
+# assistido e o gesto de porta, e o jogo volta ao comportamento da fase 4.
+ENABLED = os.environ.get("SA_MAOS_INTERACAO", "1") != "0"
 HAND_LAG = 0.25                # fração da descida em que a mão começa a sair (o tronco vai primeiro). ESTIMADO: nos clipes
                                # da CMU a mão só passa de 10% da distância depois do tronco já ter descido uns 20%
 RISE_AFTER_CLOSE = 0.0         # s depois do contato que o corpo começa a subir (o dedo já fechou, a mão levanta o item)
-STAND_DISTANCE = 0.50          # m, ESTIMADO: distância horizontal do olho ao item em que a pessoa para para se curvar. Nos clipes
+STAND_DISTANCE = 0.35          # m, ESTIMADO: distância horizontal do olho ao item em que a pessoa para para se curvar. Nos clipes
                                # 69_70 a 69_75 o olho acaba sobre o objeto, 0,0 a 0,25 m dele; o ombro fica uns 0,2 m atrás
-STEP_TRIGGER = 0.70            # m: além disto o corpo anda até o item
+STEP_TRIGGER = 0.45            # m: além disto o corpo anda até o item
 STEP_MAX = 0.70                # m: o passo não passa disto (mais longe, o braço e o `REACH_LIMIT` resolvem o resto)
-EYE_FLOOR = 0.80               # m: a câmera não desce abaixo disto (o olho de um agachado fundo mede 1,26 m no mocap; 0,8 é
+EYE_FLOOR = 0.75               # m: a câmera não desce abaixo disto (o olho de um agachado fundo mede 1,26 m no mocap; 0,8 é
                                # o limite de antes de entrar no chão com a malha do corpo)
 ARM_REACH = 0.62               # m: ombro até o centro da palma com o braço quase esticado (braço de 0,60 m + 0,06 m de palma, menos a folga do IK)
 
@@ -49,12 +53,30 @@ def shifted(clip, delay):
     return Clip(clip.name, clip.duration + delay, tracks, events, clip.interruptible, dict(clip.meta))
 
 
+def with_reading_hand(clip, mode, seconds=0.8):
+    """O clipe de levar o papel ao rosto, com a mão da lanterna indo ao lugar de ler (`handclips.READ_LANTERN`) nos últimos
+    `seconds`. Tem de estar no clipe e não na base: com o leitor aberto (fase "reading") o jogo não atualiza as mãos, e a que não
+    chegou ao papel antes disso ficaria onde estava."""
+    hold_pos, hold_rot = K.HOLD_ITEM[("R", C.ITEM_FLASHLIGHT)]
+    pos, rot = K.READ_LANTERN[mode]
+    path = K.Path("R", C.ITEM_FLASHLIGHT)
+    path.item(0.0, hold_pos, hold_rot, K.FLASH_FIST, stop=True)
+    start = max(0.0, clip.duration - seconds)
+    if start > 0.02:
+        path.item(start, hold_pos, hold_rot, K.FLASH_FIST, stop=True)
+    path.item(clip.duration, pos, rot, K.FLASH_FIST, stop=True)
+    clip.tracks.update(path.tracks())
+    return clip
+
+
 class HandActions:
     def __init__(self, hands):
         self.hands = hands
         self.game = hands.game
         self.dip = P.NONE
         self.dip_clip = None            # o clipe que está usando a postura (quem o termina manda o corpo subir)
+        self.last_door_info = None      # o que o último `plan_door` mediu (testes e painéis)
+        self._cooldown = 0.0            # s depois de um gesto de porta sem a mão se preparar de novo
         self._ready = None              # (id da porta, clipe, DoorHand) da mão preparada diante da maçaneta
         self._dwell = 0.0               # s olhando a mesma porta de perto
         self._lost = 0.0
@@ -62,7 +84,7 @@ class HandActions:
     # ---- ciclo de vida ----
     def reset(self):
         self.dip, self.dip_clip = P.NONE, None
-        self._ready, self._dwell, self._lost = None, 0.0, 0.0
+        self._ready, self._dwell, self._lost, self._cooldown = None, 0.0, 0.0, 0.0
         self.game.player.reach.reset()
 
     def update(self, dt):
@@ -86,6 +108,17 @@ class HandActions:
     def _item_point(self, target):
         return Vector(collision.object_position(target.obj) if target.obj is not None else target.position)
 
+    def feasible_step(self, step, direction):
+        """O quanto de `step` (m) o corpo realmente anda na direção `direction` antes de bater num móvel ou parede: o ensaio do
+        passo assistido na mesma colisão do jogador. Item em cima de uma prateleira ou escrivaninha: o passo para na beirada."""
+        if step < 0.02:
+            return 0.0
+        player = self.game.player
+        x, y, z = player.x, player.y, player.z
+        nx, ny, _nz = collision.move_and_slide(player.collision, x, y, z, direction[0] * step, direction[1] * step, C.PLAYER_RADIUS,
+                                               player.height, self.game.doors.segments(player.level))
+        return max(0.0, (nx - x) * direction[0] + (ny - y) * direction[1])
+
     def plan_pickup(self, target, side):
         """Para pegar o item de `target` com a mão `side` ("R"/"L"): (postura, passo em metros, direção do passo).
 
@@ -97,16 +130,15 @@ class HandActions:
         point = self._item_point(target)
         dx, dy, dz = point.x - eye[0], point.y - eye[1], point.z - eye[2]
         horizontal = math.hypot(dx, dy)
+        direction = (dx / horizontal, dy / horizontal) if horizontal > 1e-6 else (forward[0], forward[1])
         step = min(STEP_MAX, horizontal - STAND_DISTANCE) if horizontal > STEP_TRIGGER else 0.0
+        step = self.feasible_step(step, direction)
         left = max(0.0, horizontal - step) / horizontal if horizontal > 1e-6 else 1.0
         ahead = max(0.0, (dx * forward[0] + dy * forward[1]) * left)
         lateral = (dx * right[0] + dy * right[1]) * left
         wall = self.game.collision.ray_distance(eye, (forward[0], forward[1], 0.0), 1.2 + step)
-        dip = P.dip_to_reach(ahead, lateral, -dz, 1.0 if side == "R" else -1.0, wall_distance=max(0.0, wall - step))
         cap = max(0.0, (eye[2] - player.z) - EYE_FLOOR)        # agachado já está perto do chão
-        if dip.depth > cap:
-            dip = P.dip_for_depth(cap, ahead, wall)
-        direction = (dx / horizontal, dy / horizontal) if horizontal > 1e-6 else (forward[0], forward[1])
+        dip = P.dip_to_reach(ahead, lateral, -dz, 1.0 if side == "R" else -1.0, wall_distance=max(0.0, wall - step), depth_limit=cap)
         return dip, step, direction
 
     def start_dip(self, dip, clip):
@@ -118,7 +150,7 @@ class HandActions:
     def pickup_clip(self, factory, target, side):
         """O clipe de pegar `target` com o passo e a postura que ele pede: devolve o clipe e a postura (que já começaram)."""
         hands = self.hands
-        dip, step, direction = self.plan_pickup(target, side)
+        dip, step, direction = self.plan_pickup(target, side) if ENABLED else (P.NONE, 0.0, (0.0, 0.0))
         if not dip.needed and step < 0.02:
             return factory(K.move_time((hands._reach_point(target) - hands._rest[side]).length)), P.NONE
         rest_world = hands._cam[0] @ hands._rest[side] + Vector((direction[0] * step, direction[1] * step, 0.0))
@@ -129,7 +161,7 @@ class HandActions:
         if not dip.needed:
             return clip, P.NONE
         clip = shifted(clip, HAND_LAG * dip.down_s)
-        contact = next(e.t for e in clip.events if e.name == "contact")
+        contact = next((e.t for e in clip.events if e.name in ("contact", "touch")), 0.5 * clip.duration)
         clip.events.append(Event(contact + RISE_AFTER_CLOSE, "rise", None, True))
         clip.events.sort(key=lambda e: e.t)
         clip.meta["posture"] = True
@@ -156,7 +188,9 @@ class HandActions:
         game, hands = self.game, self.hands
         door = game.doors.get(door_id)
         side = self._door_side()
-        if door is None or side is None or door.moving or hurried:       # com pressa não há tempo de esperar a mão
+        if not ENABLED or door is None or side is None or door.moving or hurried:       # com pressa não há tempo de esperar a mão
+            return None
+        if self.shoulder(side) is None:                                  # sem corpo de verdade não há mão para esperar
             return None
         locked = game.state.is_locked(door.lock)
         closing = door.target > D.NEAR_OPEN
@@ -173,15 +207,18 @@ class HandActions:
         dx, dy, dz = grasp.x - eye[0], grasp.y - eye[1], grasp.z - eye[2]
         horizontal = math.hypot(dx, dy)
         pushing = kind == "open" and self._swings_away(door, eye)
+        direction = (dx / horizontal, dy / horizontal) if horizontal > 1e-6 else (forward[0], forward[1])
         step = min(STEP_MAX, horizontal - STAND_DISTANCE) if pushing and not ready and horizontal > STEP_TRIGGER else 0.0
+        step = self.feasible_step(step, direction)
         left = max(0.0, horizontal - step) / horizontal if horizontal > 1e-6 else 1.0
         ahead, lateral = (dx * forward[0] + dy * forward[1]) * left, (dx * right[0] + dy * right[1]) * left
         sign = 1.0 if side == "R" else -1.0
         wall = game.collision.ray_distance(eye, (forward[0], forward[1], 0.0), 1.2 + step)
         dip = P.dip_to_reach(max(0.0, ahead), lateral, -dz, sign, wall_distance=max(0.0, wall - step))
-        if P.reach_gap(dip, max(0.0, ahead), lateral, -dz, sign) > DOOR_REACH_SLACK:
+        gap = P.reach_gap(dip, max(0.0, ahead), lateral, -dz, sign)
+        self.last_door_info = {"horizontal": horizontal, "gap": gap, "step": step, "dip": dip, "below": -dz, "ahead": ahead}
+        if gap > DOOR_REACH_SLACK:
             return None
-        direction = (dx / horizontal, dy / horizontal) if horizontal > 1e-6 else (forward[0], forward[1])
         rest_world = hands._cam[0] @ hands._rest[side] + Vector((direction[0] * step, direction[1] * step, 0.0))
         pre = grasp + normal * PRE_GRASP
         if origin is not None:
@@ -231,7 +268,7 @@ class HandActions:
         clip = Clip(f"door_{plan.kind}", hand.duration, hand.tracks(), events, interruptible=True, meta=meta)
         if plan.step >= 0.02:
             self.game.player.assist_walk(plan.direction[0], plan.direction[1], plan.step)
-        self._ready = None
+        self._ready, self._cooldown = None, PRIME_COOLDOWN
         hands._start(clip, _Job("door", item=None))
         self.start_dip(plan.dip, clip)
 
@@ -245,7 +282,10 @@ class HandActions:
         current = game.interact.current if game.phase == "play" else None
         door_id = current.ref if current is not None and current.kind == "door" else None
         ok = False
-        if door_id is not None and game.player.speed < PRIME_SPEED and not game.player.assisting:
+        self._cooldown = max(0.0, self._cooldown - dt)
+        if door_id is not None and game.player.speed < PRIME_SPEED and not game.player.assisting and self._cooldown <= 0.0 \
+                and game.doors.get(door_id).target <= D.NEAR_OPEN and not game.state.is_locked(game.doors.get(door_id).lock):
+            # a mão só se prepara para abrir uma porta que abre: fechar é decisão do jogador e a trancada se descobre tentando
             plan = self.plan_door(door_id, False, ready=True)
             ok = plan is not None and plan.horizontal <= PRIME_DISTANCE
         if ok:
@@ -289,12 +329,17 @@ class HandActions:
     def handler(self, name):
         return getattr(self, f"_on_{name}", None)
 
+    def shoulder(self, side):
+        """Onde está o ombro de `side` no mundo, ou None sem corpo de verdade (testes com corpo falso, antes da primeira pose)."""
+        getter = getattr(self.game.body.arm(side), "shoulder_world_position", None)
+        return None if getter is None else getter()
+
     def clamp_to_arm(self, point, side):
         """`point` (espaço da câmera) limitado à esfera que o braço alcança a partir do ombro de verdade, enquanto o corpo está
         no gesto de pegar baixo; None quando não há postura em curso (vale o limite de sempre, medido do olho)."""
         if side is None or self.dip_clip is None or self.dip_clip is not self.hands.runner.clip or not self.dip.needed:
             return None
-        shoulder = self.game.body.arm(side).shoulder_world_position()
+        shoulder = self.shoulder(side)
         if shoulder is None:
             return None
         anchor = self.hands._cam[1] @ Vector(shoulder)
@@ -331,6 +376,7 @@ COLD_REACH_MIN = 0.50             # s: ... e não menos que isto (ESTIMADO)
 PRIME_DWELL = 0.30                # s olhando a porta de perto antes de a mão sair sozinha (ESTIMADO)
 PRIME_DISTANCE = 0.95             # m (horizontal, olho até a maçaneta): mais perto que isto, e ao alcance do braço, a mão já se prepara
 PRIME_SPEED = 1.0                 # m/s: andando mais depressa, a pessoa está só passando
+PRIME_COOLDOWN = 1.5              # s depois de um gesto de porta sem a mão se preparar de novo (a porta acabou de abrir)
 PRIME_LOSE = 0.30                 # s sem as condições antes de a mão desistir
 DOOR_REACH_SLACK = 0.06           # m: além do alcance confortável o IK ainda estica o braço, mas não passa disto
 READY_SECONDS = 60.0              # a mão preparada espera por quanto tempo for preciso; quem a tira de lá é `HandActions.update`
@@ -472,7 +518,7 @@ class DoorHand:
             return True
         if t < self.stop_at:
             return False
-        shoulder = self.hands.game.body.arm(self.plan.side).shoulder_world_position()
+        shoulder = self.actions.shoulder(self.plan.side)
         if shoulder is None:
             return False
         world = self.hands._cam[0] @ position
@@ -554,7 +600,10 @@ class DoorHand:
         def fingers(t, anchors):
             return tuple(self.pose(t, anchors)[2])
 
-        weight = Track([Key(0.0, (0.0,), True), Key(0.30 * self.reach, (1.0,)), Key(self.duration - 0.10, (1.0,)),
-                        Key(self.duration, (0.0,), True)])
+        if self.origin is not None:             # a mão já está no ar: o braço já tem peso
+            weight = Track([Key(0.0, (1.0,), True), Key(self.duration - 0.10, (1.0,)), Key(self.duration, (0.0,), True)])
+        else:
+            weight = Track([Key(0.0, (0.0,), True), Key(0.30 * self.reach, (1.0,)), Key(self.duration - 0.10, (1.0,)),
+                            Key(self.duration, (0.0,), True)])
         return {f"{side}.pos": LiveTrack(position, 3), f"{side}.rot": LiveTrack(rotation, 4),
                 f"{side}.curl": LiveTrack(fingers, 5), f"{side}.w": weight}
