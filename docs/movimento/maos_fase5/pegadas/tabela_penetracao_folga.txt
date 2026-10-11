@@ -1,0 +1,37 @@
+penetração máxima e folga mínima da pele, em milímetros (MEDIDO na malha de pele deformada pelo esqueleto)
+item            parte           deve tocar      antes: pen.     antes: folga    depois: pen.    depois: folga 
+lanterna        polegar         livre           9.1             0.0             0.0             0.0           
+lanterna        indicador       sim             0.0             21.2            0.0             0.0           
+lanterna        médio           sim             0.0             12.2            0.0             0.0           
+lanterna        anelar          sim             0.1             0.0             0.0             0.0           
+lanterna        mindinho        sim             11.6            0.0             0.0             0.0           
+lanterna        palma           sim             0.0             8.8             0.0             3.1           
+lanterna        RESUMO          5 partes        11.6            8.5 (média)     0.0             0.6 (média)   
+chave           polegar         sim             0.0             50.9            0.0             2.0           
+chave           indicador       sim             0.0             13.8            0.8             0.0           
+chave           médio           livre           2.2             0.0             0.0             3.0           
+chave           anelar          livre           4.7             0.0             0.0             5.4           
+chave           mindinho        livre           0.0             1.9             0.0             14.8          
+chave           palma           livre           0.0             12.3            0.0             10.8          
+chave           RESUMO          2 partes        4.7             32.3 (média)    0.8             1.0 (média)   
+pilha           polegar         sim             3.8             0.0             0.0             0.7           
+pilha           indicador       sim             0.0             38.3            0.1             0.0           
+pilha           médio           sim             0.0             36.7            0.2             0.0           
+pilha           anelar          livre           0.0             27.7            0.2             0.0           
+pilha           mindinho        livre           0.0             11.8            0.2             0.0           
+pilha           palma           sim             0.0             6.5             0.0             0.5           
+pilha           RESUMO          4 partes        3.8             20.4 (média)    0.2             0.3 (média)   
+mapa            polegar         sim             0.0             49.1            0.0             49.1          
+mapa            indicador       sim             0.0             28.2            0.0             28.2          
+mapa            médio           sim             0.0             27.2            0.0             27.2          
+mapa            anelar          livre           0.0             28.7            0.0             28.7          
+mapa            mindinho        livre           0.0             28.7            0.0             28.7          
+mapa            palma           livre           0.0             9.1             0.0             9.1           
+mapa            RESUMO          3 partes        0.0             34.8 (média)    0.0             34.8 (média)  
+anotação        polegar         sim             0.0             52.8            0.0             52.8          
+anotação        indicador       sim             0.0             48.6            0.0             48.6          
+anotação        médio           sim             0.0             46.0            0.0             46.0          
+anotação        anelar          livre           0.0             37.0            0.0             37.0          
+anotação        mindinho        livre           0.0             19.8            0.0             19.8          
+anotação        palma           livre           0.0             3.8             0.0             3.8           
+anotação        RESUMO          3 partes        0.0             49.1 (média)    0.0             49.1 (média)  

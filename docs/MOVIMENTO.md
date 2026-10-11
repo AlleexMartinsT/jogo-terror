@@ -2,6 +2,8 @@
 
 O pedido da fase 4: levar a movimentação do protagonista e dos objetos aos detalhes mínimos, usando movimento real como referência, comparando lado a lado, com ângulos diferentes mostrando o mesmo movimento, e entregar fotos e vídeos dessa comparação.
 
+As mãos como o jogador as vê (pegadas, mão que anda, porta, leitura, pegar baixo) foram refeitas na fase 5 e estão em [`docs/MAOS.md`](MAOS.md); as folhas de mão desta página são do estado da fase 4.
+
 Tudo que está aqui foi gerado por código do repositório e está em `docs/movimento/` (fotos em JPEG, vídeos em MP4). Para refazer: `python -m tools.movimento_ref.comparar --lista` mostra os cenários e `python -m tools.movimento_ref.publicar` reúne os arquivos finais.
 
 ## O que é "real" aqui

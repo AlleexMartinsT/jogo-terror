@@ -25,6 +25,9 @@ LOCOMOCAO = "out/f4_2/final"
 MAOS = "out/f4_3/final"
 OBJETOS = "out/f4_4/final"
 REFERENCIA = "out/f4_1/final"
+ANDANDO = "out/f5_1/final"
+PEGADAS = "out/f5_2/final"
+INTERACOES = "out/f5_3/final"
 
 
 def _por_cenario(pasta, cenarios, arquivos):
@@ -80,6 +83,42 @@ def plano():
     for clipe in ("07_01", "09_01", "136_09", "26_09"):
         itens.append((f"{REFERENCIA}/retarget_{clipe}.png", "referencia", f"retarget_{clipe}.png"))
     itens.append((f"{REFERENCIA}/referencias_medidas.md", "referencia", "referencias_medidas.md"))
+    return itens + plano_da_fase5()
+
+
+def plano_da_fase5():
+    """As mãos como o jogador as vê (docs/MAOS.md). Cada agente entregou painéis, folhas e vídeos."""
+    itens = []
+    for modo in ("andar", "correr", "agachado"):
+        itens.append((f"{ANDANDO}/painel_ego_{modo}.png", "maos_fase5/andando", f"painel_ego_{modo}.png"))
+    itens += [(f"{ANDANDO}/painel_transientes.png", "maos_fase5/andando", "painel_transientes.png"),
+              (f"{ANDANDO}/tabela_maos_andando.png", "maos_fase5/andando", "tabela_maos_andando.png"),
+              (f"{ANDANDO}/tabela_maos_andando.md", "maos_fase5/andando", "tabela_maos_andando.md")]
+    for modo in ("andar", "correr", "parando", "agachar"):
+        itens += [(f"{ANDANDO}/video_estudio_{modo}.mp4", "maos_fase5/andando", f"video_estudio_{modo}.mp4"),
+                  (f"{ANDANDO}/video_estudio_{modo}_folha.png", "maos_fase5/andando", f"folha_estudio_{modo}.png")]
+    itens += [(f"{ANDANDO}/video_casa_escada.mp4", "maos_fase5/andando", "video_casa_escada.mp4"),
+              (f"{ANDANDO}/video_casa_escada_folha.png", "maos_fase5/andando", "folha_casa_escada.png")]
+
+    for item, arquivo in (("lanterna", "painel_lanterna"), ("chave", "painel_chave"), ("pilha", "painel_pilha"),
+                          ("mapa", "painel_mapa"), ("anotacao", "painel_anotação")):
+        itens.append((f"{PEGADAS}/{arquivo}.png", "maos_fase5/pegadas", f"painel_{item}.png"))
+    itens += [(f"{PEGADAS}/tabela_penetracao_folga.png", "maos_fase5/pegadas", "tabela_penetracao_folga.png"),
+              (f"{PEGADAS}/tabela_penetracao_folga.txt", "maos_fase5/pegadas", "tabela_penetracao_folga.txt"),
+              (f"{PEGADAS}/perfil_de_abertura.png", "maos_fase5/pegadas", "perfil_de_abertura.png"),
+              (f"{PEGADAS}/lanterna_pegar_ligar_olhar.mp4", "maos_fase5/pegadas", "lanterna_pegar_ligar_olhar.mp4"),
+              (f"{PEGADAS}/lanterna_batida.mp4", "maos_fase5/pegadas", "lanterna_batida.mp4")]
+
+    for cena in ("porta_abrir", "porta_abrir_frio", "porta_trancada", "porta_fechar", "ler_nota", "ler_mapa",
+                 "pegar_gaveta", "pegar_chao", "pegar_criado", "pegar_prateleira", "pegar_chave", "pegar_nota_baixa"):
+        itens += [(f"{INTERACOES}/{cena}_folha.png", "maos_fase5/interacoes", f"{cena}_folha.png"),
+                  (f"{INTERACOES}/{cena}_video.mp4", "maos_fase5/interacoes", f"{cena}_video.mp4")]
+    itens += [(f"{INTERACOES}/pegar_baixo_cmu/folha_contato.png", "maos_fase5/interacoes", "pegar_baixo_cmu_folha.png"),
+              (f"{INTERACOES}/pegar_baixo_cmu/video.mp4", "maos_fase5/interacoes", "pegar_baixo_cmu_video.mp4"),
+              (f"{INTERACOES}/pegar_baixo_cmu/tabela.png", "maos_fase5/interacoes", "pegar_baixo_cmu_tabela.png"),
+              (f"{INTERACOES}/curvas_pegar_baixo.png", "maos_fase5/interacoes", "curvas_pegar_baixo.png"),
+              (f"{INTERACOES}/tabela_pegar_baixo.md", "maos_fase5/interacoes", "tabela_pegar_baixo.md"),
+              (f"{INTERACOES}/tabela_porta.md", "maos_fase5/interacoes", "tabela_porta.md")]
     return itens
 
 
