@@ -490,6 +490,70 @@ def figura_perfis(antes, depois, saida):
     plt.close(figura)
 
 
+def gravar_quadros(pasta, largura=480, altura=270, a_cada=5, com_batida=False):
+    """Primeira pessoa (EEVEE): pega a lanterna da mesa, liga, olha para cima e para baixo; com `com_batida` grava só a batida
+    na palma. Um quadro a cada `a_cada` ticks de 1/60 s (12 quadros/s). Os quadros vão para `pasta`/q_0000.png..."""
+    os.makedirs(pasta, exist_ok=True)
+    jogo = maos.montar_jogo_maos("FLASHLIGHT")
+    maos.estado(jogo, lanterna=com_batida, pilhas=0)
+    estudio = Estudio(jogo, largura, altura, motor="eevee")
+    alvo = jogo.interact.targets[0].position
+    maos.mirar(jogo, (alvo[0], alvo[1], alvo[2] + 0.02))
+    base_passo = jogo.player.pitch
+    for _ in range(30):
+        jogo.tick(1 / 60, InputState())
+    if com_batida:
+        jogo.state.battery = 0.15
+        jogo.state.flashlight_on = True
+        roteiro = [(k, {}) for k in range(60 * 4)]
+    else:
+        roteiro = [(0, {"interact": True})] + [(k, {}) for k in range(1, 60 * 7)]
+    quadro = 0
+    for k, entradas in roteiro:
+        if not com_batida and k > 60 * 3:
+            fase = (k - 60 * 3) / 60.0                       # olhar para cima 35 graus em 1,0 s, voltar e descer 25 graus
+            alvo_passo = base_passo + math.radians(35.0) * min(1.0, fase) if fase < 1.6 else \
+                base_passo + math.radians(35.0 - 60.0 * min(1.0, (fase - 1.6) / 1.0))
+            jogo.player.pitch = alvo_passo
+        if com_batida:
+            jogo.state.battery = max(0.08, jogo.state.battery)
+            jogo.state.flashlight_on = True
+        jogo.tick(1 / 60, InputState(**entradas))
+        if k % a_cada == 0:
+            estudio.foto_do_jogador(os.path.join(pasta, f"q_{quadro:04d}.png"))
+            quadro += 1
+    return quadro
+
+
+def compor_video(pasta_antes, pasta_depois, saida, legenda_antes="ANTES (fase 4)", legenda_depois="DEPOIS (fase 5)", fps=12):
+    """MP4 H.264 com [antes | depois] lado a lado, ou só o depois se não houver pasta de antes."""
+    import imageio_ffmpeg
+    import subprocess
+    from PIL import Image, ImageDraw
+    nomes = sorted(f for f in os.listdir(pasta_depois) if f.startswith("q_"))
+    tmp = os.path.join(os.path.dirname(saida), "_quadros_video")
+    os.makedirs(tmp, exist_ok=True)
+    for i, nome in enumerate(nomes):
+        d = Image.open(os.path.join(pasta_depois, nome)).convert("RGB")
+        if pasta_antes and os.path.exists(os.path.join(pasta_antes, nome)):
+            a = Image.open(os.path.join(pasta_antes, nome)).convert("RGB")
+            folha = Image.new("RGB", (a.width * 2, a.height))
+            folha.paste(a, (0, 0))
+            folha.paste(d, (a.width, 0))
+            ImageDraw.Draw(folha).text((8, 6), legenda_antes, fill=(255, 235, 120))
+            ImageDraw.Draw(folha).text((a.width + 8, 6), legenda_depois, fill=(255, 235, 120))
+        else:
+            folha = d
+            ImageDraw.Draw(folha).text((8, 6), legenda_depois, fill=(255, 235, 120))
+        folha.save(os.path.join(tmp, f"f_{i:04d}.png"))
+    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-framerate", str(fps), "-i", os.path.join(tmp, "f_%04d.png"),
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", saida], check=True)
+    for nome in os.listdir(tmp):
+        os.remove(os.path.join(tmp, nome))
+    os.rmdir(tmp)
+    return saida
+
+
 def principal(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
@@ -498,6 +562,11 @@ def principal(argv=None):
     comando, resto = argv[0], argv[1:]
     if comando == "medir":
         medir_tudo(resto[0] if resto else None)
+    elif comando == "quadros":
+        print(gravar_quadros(resto[0], com_batida="--batida" in resto))
+    elif comando == "video":
+        print(compor_video(resto[0] if resto[0] != "-" else None, resto[1], resto[2],
+                           legenda_depois="DEPOIS (fase 5)" if resto[0] != "-" else resto[3] if len(resto) > 3 else "fase 5"))
     elif comando == "perfis":
         gravar_perfis(resto[0])
     elif comando == "paineis":
