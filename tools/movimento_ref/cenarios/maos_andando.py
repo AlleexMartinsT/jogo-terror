@@ -564,11 +564,26 @@ def quadros_de_pasta(pasta, prefixo):
     return [np.asarray(Image.open(os.path.join(pasta, n)).convert("RGB")) for n in nomes]
 
 
+def reparar_quadros_sem_mao(quadros, minimo=0.03):
+    """A esteira de `prints_andando.py --esteira` devolve o jogador ao começo da pista a cada 4 m e, no quadro do salto, o corpo ainda
+    não o seguiu: a mão some por um quadro. Esses quadros (canto inferior direito sem pixel claro, entre quadros com mão) viram a média
+    dos vizinhos. Devolve (quadros, índices trocados)."""
+    claro = [float((q.mean(axis=2)[quadros[0].shape[0] * 5 // 9:, quadros[0].shape[1] * 5 // 8:] > 90).mean()) for q in quadros]
+    trocados = []
+    for i in range(1, len(quadros) - 1):
+        if claro[i] < minimo and claro[i - 1] >= minimo and claro[i + 1] >= minimo:
+            quadros[i] = ((quadros[i - 1].astype(np.uint16) + quadros[i + 1].astype(np.uint16)) // 2).astype(np.uint8)
+            trocados.append(i)
+    return quadros, trocados
+
+
 def montar_video(pasta_antes, pasta_depois, saida, titulo, modo, fps=20, lento=1):
     """Vídeo [antes | depois] da câmera do jogador a partir dos quadros de duas pastas de `prints_andando.py` (mesmo roteiro, mesma
     câmera, a mola de antes à esquerda e a nova à direita). Escreve o MP4 e uma folha de seis quadros. Devolve (mp4, folha)."""
     from tools.movimento_ref import comparar
     antes, depois = quadros_de_pasta(pasta_antes, f"raw_{modo}_"), quadros_de_pasta(pasta_depois, f"raw_{modo}_")
+    antes, _ = reparar_quadros_sem_mao(antes)
+    depois, _ = reparar_quadros_sem_mao(depois)
     n = min(len(antes), len(depois))
     quadros = []
     for i in range(n):
