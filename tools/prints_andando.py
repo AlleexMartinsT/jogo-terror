@@ -115,13 +115,13 @@ def main():
     relogio_do_modo = [0.0]
 
     def passo_do_jogo():
-        jogo.tick(DT, entrada_do_modo(args.modo, relogio_do_modo[0], args.parar_em, args.arrancar_em))
-        relogio_do_modo[0] += DT
-        if args.esteira:
+        if args.esteira:           # antes do tique: depois dele o corpo ficaria 3,5 m para trás da câmera no quadro que se renderiza
             andado = (jogo.player.x - inicio[0]) * direcao[0] + (jogo.player.y - inicio[1]) * direcao[1]
             if andado > 4.0:
                 jogo.player.x -= direcao[0] * 3.5
                 jogo.player.y -= direcao[1] * 3.5
+        jogo.tick(DT, entrada_do_modo(args.modo, relogio_do_modo[0], args.parar_em, args.arrancar_em))
+        relogio_do_modo[0] += DT
 
     for _ in range(int(args.aquecimento / DT)):
         passo_do_jogo()

@@ -157,7 +157,7 @@ def perfil_de_abertura(item, segundos=2.2, antes=0.5):
             alcance = clip.tracks[f"{lado}.pos"].end if f"{lado}.pos" in clip.tracks else None
         t.append(k / 60)
         abertura.append(abertura_polegar_indicador(jogo, lado))
-        entradas = jogo.hands._grip_inputs.get(lado)
+        entradas = getattr(jogo.hands, "_grip_inputs", {}).get(lado)
         fechamento.append(float(entradas[0][1]) if entradas else 0.0)
         if contato is None and jogo.hands._visual[lado] is not None:
             contato = k / 60
@@ -383,6 +383,113 @@ def fotografar(item, pasta, vistas=("direita", "frente", "cima", "tres_quartos")
     return caminhos
 
 
+# ---------------------------------------------------------------------------
+# Painéis finais: antes e depois por item, tabela de penetração e folga, perfil de abertura
+# ---------------------------------------------------------------------------
+NOMES = {C.ITEM_FLASHLIGHT: "lanterna", C.ITEM_KEY: "chave", C.ITEM_BATTERY: "pilha", C.ITEM_MAP: "mapa", C.ITEM_NOTE: "anotação"}
+PARTES_PT = {"Thumb": "polegar", "Index": "indicador", "Middle": "médio", "Ring": "anelar", "Pinky": "mindinho", "Palm": "palma"}
+VISTAS_PAINEL = ("direita", "frente", "cima", "tres_quartos", "jogador")
+
+
+def compor_painel(item, pasta_antes, pasta_depois, saida):
+    """Duas linhas (antes, depois) por cinco câmeras: quatro de estúdio e a do jogador."""
+    from PIL import Image, ImageDraw
+    linhas = []
+    for rotulo, pasta in (("ANTES (fase 4)", pasta_antes), ("DEPOIS (fase 5)", pasta_depois)):
+        quadros = [Image.open(os.path.join(pasta, f"{item.lower()}_{v}.png")).convert("RGB") for v in VISTAS_PAINEL]
+        linhas.append((rotulo, quadros))
+    largura, altura = linhas[0][1][0].size
+    folha = Image.new("RGB", (largura * 5, altura * 2 + 26), (12, 12, 14))
+    desenho = ImageDraw.Draw(folha)
+    for r, (rotulo, quadros) in enumerate(linhas):
+        for c, quadro in enumerate(quadros):
+            folha.paste(quadro, (c * largura, 26 + r * altura))
+            desenho.text((c * largura + 8, 26 + r * altura + 6), f"{rotulo}: {VISTAS_PAINEL[c]}", fill=(255, 235, 120))
+    desenho.text((8, 6), f"{NOMES[item]}: a pele da mão contra a malha do item, quatro câmeras de estúdio e a câmera do jogador (72 x 44 graus)",
+                 fill=(235, 235, 235))
+    folha.save(saida)
+    return saida
+
+
+def tabela_penetracao_e_folga(antes, depois, saida_png, saida_txt):
+    """Tabela por item e por parte da mão: penetração e folga antes e depois (mm). Texto e figura."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    linhas = [("item", "parte", "deve tocar", "antes: pen.", "antes: folga", "depois: pen.", "depois: folga")]
+    for item in ITENS:
+        for parte in grasp.PARTS:
+            a, d = antes[item]["partes"][parte], depois[item]["partes"][parte]
+            toca = "sim" if parte in CONTATOS[item] else "livre"
+            linhas.append((NOMES[item], PARTES_PT[parte], toca, f"{a['pen']:.1f}", f"{a['gap']:.1f}", f"{d['pen']:.1f}", f"{d['gap']:.1f}"))
+        ra, rd = antes[item]["resumo"], depois[item]["resumo"]
+        linhas.append((NOMES[item], "RESUMO", f"{rd['deveriam']} partes", f"{ra['pen_max']:.1f}", f"{ra['folga_media']:.1f} (média)",
+                       f"{rd['pen_max']:.1f}", f"{rd['folga_media']:.1f} (média)"))
+    with open(saida_txt, "w", encoding="utf-8") as arquivo:
+        arquivo.write("penetração máxima e folga mínima da pele, em milímetros (MEDIDO na malha de pele deformada pelo esqueleto)\n")
+        for linha in linhas:
+            arquivo.write("  ".join(f"{c:<14}" for c in linha) + "\n")
+    figura, eixo = plt.subplots(figsize=(11, 0.27 * len(linhas) + 0.8))
+    eixo.axis("off")
+    tabela = eixo.table(cellText=linhas[1:], colLabels=linhas[0], loc="center", cellLoc="center")
+    tabela.auto_set_font_size(False)
+    tabela.set_fontsize(8)
+    tabela.scale(1.0, 1.15)
+    for (linha, coluna), celula in tabela.get_celld().items():
+        if linha > 0 and linhas[linha][1] == "RESUMO":
+            celula.set_facecolor("#e8eef7")
+        if linha > 0 and coluna in (3, 5):
+            try:
+                if float(linhas[linha][coluna].split()[0]) >= 2.0:
+                    celula.set_text_props(color="#b00020")
+            except ValueError:
+                pass
+    eixo.set_title("Pegadas: penetração e folga por dedo, antes e depois (mm, MEDIDO)", fontsize=10)
+    figura.savefig(saida_png, dpi=130, bbox_inches="tight")
+    plt.close(figura)
+
+
+def gravar_perfis(saida):
+    """Perfil de abertura do polegar ao indicador no alcance (o código desta pasta), em JSON."""
+    perfis = {}
+    for item in (C.ITEM_FLASHLIGHT, C.ITEM_KEY, C.ITEM_BATTERY):
+        r = perfil_de_abertura(item)
+        perfis[item] = {"t": [float(v) for v in r["t"]], "abertura": [float(v) for v in r["abertura"]],
+                        "fechamento": [float(v) for v in r["fechamento"]], "contato": r["contato"], "inicio": r["inicio"]}
+    with open(saida, "w", encoding="utf-8") as arquivo:
+        json.dump(perfis, arquivo)
+    return perfis
+
+
+def figura_perfis(antes, depois, saida):
+    """Abertura (cm) contra o tempo normalizado do alcance (0 = começo, 1 = contato), antes e depois, com a faixa de 60 a 75%."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    figura, eixos = plt.subplots(1, 3, figsize=(13, 3.6), sharey=True)
+    for eixo, item in zip(eixos, (C.ITEM_FLASHLIGHT, C.ITEM_KEY, C.ITEM_BATTERY)):
+        for rotulo, dados, cor in (("antes (fase 4)", antes, "#c0504d"), ("depois (fase 5)", depois, "#2f6db5")):
+            p = dados[item]
+            t, a = np.array(p["t"]), np.array(p["abertura"]) * 100.0
+            norma = (t - p["inicio"]) / (p["contato"] - p["inicio"])
+            m = (norma >= -0.05) & (norma <= 1.6)
+            eixo.plot(norma[m], a[m], color=cor, label=rotulo)
+            janela = (norma >= 0) & (norma <= 1.0)
+            pico = np.argmax(np.where(janela, a, -1))
+            eixo.plot([norma[pico]], [a[pico]], "o", color=cor)
+            eixo.annotate(f"{norma[pico] * 100:.0f}%", (norma[pico], a[pico]), textcoords="offset points", xytext=(4, 6), color=cor, fontsize=8)
+        eixo.axvspan(0.60, 0.75, color="#999999", alpha=0.18, label="faixa real: 60 a 75%")
+        eixo.axvline(1.0, color="#444444", lw=0.8, ls=":")
+        eixo.set_title(NOMES[item])
+        eixo.set_xlabel("tempo do alcance (1 = contato)")
+        eixo.grid(alpha=0.25)
+    eixos[0].set_ylabel("polegar a indicador (cm)")
+    eixos[0].legend(fontsize=7, loc="lower left")
+    figura.suptitle("Pré-forma da mão: a abertura chega ao máximo em 60 a 75% do gesto e fecha rumo ao item", fontsize=10)
+    figura.savefig(saida, dpi=130, bbox_inches="tight")
+    plt.close(figura)
+
+
 def principal(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
@@ -391,6 +498,18 @@ def principal(argv=None):
     comando, resto = argv[0], argv[1:]
     if comando == "medir":
         medir_tudo(resto[0] if resto else None)
+    elif comando == "perfis":
+        gravar_perfis(resto[0])
+    elif comando == "paineis":
+        pasta = resto[0]
+        antes = json.load(open(os.path.join(pasta, "antes_pele.json"), encoding="utf-8"))
+        depois = json.load(open(os.path.join(pasta, "depois_pele.json"), encoding="utf-8"))
+        for item in ITENS:
+            print(compor_painel(item, os.path.join(pasta, "fotos_antes"), os.path.join(pasta, "fotos_depois"),
+                                os.path.join(pasta, f"painel_{NOMES[item]}.png")))
+        tabela_penetracao_e_folga(antes, depois, os.path.join(pasta, "tabela_penetracao_folga.png"), os.path.join(pasta, "tabela_penetracao_folga.txt"))
+        figura_perfis(json.load(open(os.path.join(pasta, "perfil_antes.json"))), json.load(open(os.path.join(pasta, "perfil_depois.json"))),
+                      os.path.join(pasta, "perfil_de_abertura.png"))
     elif comando == "gerar":
         gerar(resto or None)
     elif comando == "fotos":

@@ -68,7 +68,9 @@ A tabela inteira (38 linhas com critério mais as sem critério) está em `out/f
 | parado, inclinação do feixe, pico a pico (graus) | 0,3 a 0,6 | 0,45 (e 1,4 de movimento da mão) | 0,3; mão parada a 0,5 mm | ESTIMADO |
 | deriva do feixe, amplitude (graus) | 0,1 a 0,3 | 0 | 0,10 parado, 0,30 esgotado | ESTIMADO |
 
-Fotos e vídeos (câmera do jogador, antes à esquerda e depois à direita): `out/f5_1/final/`.
+Entrega em `out/f5_1/final/`: `tabela_maos_andando.md` e `.png`; `painel_ego_andar.png`, `painel_ego_correr.png` e `painel_ego_agachado.png` (a trajetória da mão no referencial da câmera, o braço livre da CMU contra o do jogo, a palma da lanterna antes e depois, o campo de visão de 72 x 44 graus, as séries no tempo e o espectro); `painel_transientes.png` (partida, parada e giro do mouse); e, para andar, correr, andar e parar, agachado (estúdio) e subir a escada (casa escura), `video_<nome>.mp4` com a folha `video_<nome>_folha.png` (câmera do jogador, antes à esquerda e depois à direita, 20 quadros por segundo). `gravacoes/` guarda os `.npz` de onde tudo sai; `python -m tools.movimento_ref.cenarios.maos_andando medir` os refaz.
+
+Uma advertência sobre as fotos: a mão aparece **maior e mais alta** depois, e isso é de propósito, não é a pegada que mudou (a pegada é do agente 2). Antes a mão afundava 3,3 cm ao andar e 5,3 correndo, e só a ponta aparecia na beirada; agora ela fica onde o gesto a pôs e sobe 4,5 cm ao correr.
 
 Testes: 23 em `tests/test_maos_andando.py`, entre eles a transmissibilidade da mola contra a lei (2% de erro de 1 a 4,5 Hz, com o ganho do estimador de aceleração a 60 Hz), a resposta ao degrau de aceleração e ao toque do calcanhar contra integrações independentes, o ombro e o braço livre contra a CMU, o atraso do tronco, o olhar para baixo sem salto de velocidade e o balanço do chaveiro contra um pêndulo independente excitado pela aceleração da palma (correlação passa de 0,7).
 
@@ -88,5 +90,155 @@ Testes: 23 em `tests/test_maos_andando.py`, entre eles a transmissibilidade da m
 - O tremor de 8 Hz não entra: de 0,02 a 0,05 graus no punho, menos de um pixel a 1280 x 720.
 - O pêndulo do chaveiro continua com 0,08 de amortecimento (fase 4). Andando balança +-24 graus em regime, no alto do razoável (com 0,2 seriam +-15); correndo vai ao limite de 75 graus, e eu não sei se uma chave real faz tanto. Não mudei o amortecimento porque não há medida de chaveiro na mão.
 - A pose e o ângulo da mão que segura (cotovelo, punho, pegada) são do agente 2; esta mão acompanha o que ele escrever, só soma o balanço. A rotação por mouse do feixe também é dele (`Flashlight.offset`); a minha é só a translação do giro do tronco.
-- Vídeos de agachar, parar e escada estão em `out/f5_1/final/`; a casa escura foi feita só andando e na escada.
-- Três testes de `test_maos_movimento` (troca de pilhas, duração do alcance da lanterna, velocidade no meio do alcance) e um de `test_speech_rule` (tempo para pegar a chave) falham com a pegada nova de lanterna do agente 2, e falham do mesmo jeito com o meu modelo desligado; não são desta seção.
+- **Sim do robô (`sim_playthrough`)**: a história completa leva 202 s contra 201,8 s com o modelo desligado (os mesmos objetivos, a menos de 0,6 s); na caçada o robô morreu 14 vezes (e 29 em outra rodada da mesma versão: o número oscila), e os dois `objetivos que falharam: KEY, KEY` da caçada são os mesmos com o modelo ligado e desligado.
+- **Vídeos:** estúdio (andar, correr, andar e parar, agachado) e casa escura (escada). A casa escura andando em linha reta não foi renderizada: o começo do corredor do jogo tem um brilho que estoura o quadro e a esteira de teste (`--esteira`) precisou de outro trecho.
+
+---
+
+## Agente 3: interações (porta, leitura, pegar baixo)
+
+Arquivos novos: `sem_alvorada/engine/posture.py` (a postura de alcance, matemática pura), `sem_alvorada/engine/handactions.py` (pegar baixo, mão na porta, mão preparada, leitura com as duas mãos), `tools/movimento_ref/pegar_baixo.py` (medida do pegar do chão no mocap, gera `assets/referencia/pegar_baixo_ref.json`), `tools/movimento_ref/cenarios/interacoes.py` (sequências, tabelas, cenário `pegar_baixo` do `comparar`), `tests/test_maos_interacao.py` (18 testes). Painéis, vídeos e tabelas em `out/f5_3/final/`.
+
+### O que estava errado
+
+- **Pegar baixo era só o braço.** O alcance parava a 0,52 m do olho e o item subia sozinho até a mão (`GLIDE`, 0,4 s). Uma pilha na gaveta baixa (0,31 m) ou a lanterna no criado-mudo (0,55 m, o primeiro gesto do jogo) ficava a 0,7 a 1,0 m da palma quando os dedos "fechavam". O real é uma curva do corpo todo (olho 0,75 a 0,85 m mais baixo), medida abaixo.
+- **A porta abria sozinha.** A maçaneta virava 0,05 s depois do [E], a folha saía em 0,32 s e nenhuma mão chegava perto dela. O ponto "mão na maçaneta" ficou aberto na fase 4.
+- **Ler era uma mão só.** A folha ficava a 30 cm do olho, em pé, segurada por baixo, e a mão da lanterna parada ao lado, sem ligação com o papel. Com o leitor aberto o jogo congelava tudo, até a respiração.
+
+### Pesquisa
+
+Resultados de busca, não revisão sistemática. A ferramenta de leitura de páginas estava bloqueada neste ambiente (DNS), então o que está abaixo vem dos trechos que a busca devolveu, não dos artigos inteiros: onde só li o resumo, diz.
+
+- **Abrir porta, cinemática do braço e do punho.** Há medidas de braço e punho abrindo portas com maçaneta redonda e alavanca (captura com 10 câmeras, nove voluntários; tese da Strathclyde com 6 câmeras Vicon e capítulo só de porta), de trajetórias e forças em 29 portas e 15 gavetas de casas e de um escritório (Georgia Tech), e de pessoas indo até uma porta e abrindo-a, com e sem copo na mão. Não consegui os números por articulação, só os resumos. Uso: a ordem do gesto (alcançar, pegada, giro, empurrar ou puxar, soltar) e a faixa funcional do antebraço. <https://boneandjoint.org.uk/Article/10.1302/1358-992X.94BSUPP_XXXVI.BORS2011-065>, <https://stax.strath.ac.uk/concern/theses/1n79h434j>, <https://repository.gatech.edu/entities/publication/3bda8452-1c99-48f3-b85e-89d30b3726b1>, <https://archive.measuringbehavior.org/mb2008/individual_papers/Symposium%20Fikkert/Symposium_Fikkert_Egges.pdf>, <https://scholarlycommons.pacific.edu/shs-all/341>.
+- **Quanto o antebraço gira.** A faixa funcional é de 50 graus de pronação a 50 de supinação (Kapandji, citado por um artigo de terapia ocupacional), contra 71 e 81 graus de amplitude total; mexer uma chave de fenda usa em média 77,6 graus; quem tem o antebraço travado compensa com o ombro e o tronco. Nenhuma fonte dá o ângulo de uma maçaneta. <https://sage.cnpereading.com/doi/10.5014/ajot.2023.050238>, <https://pure.ewha.ac.kr/en/publications/limited-forearm-motion-compensated-by-thoracohumeral-kinematics-w/>. Uso: o giro do punho de 42 graus além dos 38 da chegada (80 graus de supinação no total) é ESTIMADO e fica dentro dos 81 de amplitude.
+- **Norma da maçaneta.** A norma pede ferragem que se opere com uma mão, sem pegada firme, pinça ou torção do punho, e força de ativação de no máximo 5 lbf (22,2 N); maçaneta redonda em geral não cumpre (pede torção); a BHMA A156.2 limita o torque a 28 lbf-in nas alavancas. Nenhuma norma dá ângulo de giro. <https://kc.allegion.com/kb/article/are-all-levers-ada-compliant>, <https://idighardware.com/2023/07/accessibility-requirements/>. Uso: a maçaneta do jogo é redonda, então o punho gira de verdade, e a pegada é de torção, não de alavanca.
+- **Abertura da mão ao alcançar.** O pico da velocidade do punho vem em 33 a 40% do movimento e a abertura máxima dos dedos em 60 a 70% (controles de um estudo de reabilitação, 39,5% e 69,7%); dedos fecham depois, até o contato; a pré-forma já aparece a uns 45% do tempo. Nenhum dos estudos usa maçaneta. <https://pmc.ncbi.nlm.nih.gov/articles/PMC8891374/table/T2>, <https://bicr.atr.jp/~kawato/Ppdf/YaopingEBR05r.pdf>. Uso: a mão abre durante o alcance e é aberta a 60%, o mesmo perfil do `handclips.reach`.
+- **Curvar contra agachar.** No levantamento do chão a diferença grande entre as duas técnicas está no joelho; picos sagitais de um modelo de exoesqueleto (agachar contra curvar-se): coluna lombar 57 e 56 graus, quadril 58 e 48, joelho 52 e 16, tornozelo 19 e 12. Cada fase (descer e subir) leva cerca de 2 s em tarefas lentas de laboratório, e a velocidade de levantar a carga fica perto de 0,6 m/s nas duas. A coluna sofre mais ao se curvar (momentos, compressão e cisalhamento maiores). <https://pmc.ncbi.nlm.nih.gov/articles/PMC2651112>, <https://arxiv.org/pdf/1910.01184>, <https://bmcmusculoskeletdisord.biomedcentral.com/counter/pdf/10.1186/1471-2474-10-15>. Uso: só como conferência de ordem de grandeza; os números do jogo vêm do mocap (abaixo), que dá o corpo todo no tempo.
+- **Ler com o material na mão.** A distância de leitura de texto de mão difere da de uma tela fixa (Ergonomics, 1995), e inclinar o papel para o rosto mantém a página toda na mesma distância focal; o ângulo de visada dirige a flexão da cabeça e do pescoço (tablets), e olhar o papel plano na mesa pede flexão de pescoço parecida com a do celular. Não achei estudo de papel segurado com as duas mãos nem a inclinação em graus. <https://stars.library.ucf.edu/scopus1990/1968>, <https://ergoweb.com/?p=29426>, <https://www.sciencedaily.com/releases/2012/01/120125091055.htm>. Uso: 35 a 40 cm (FASE5), o papel inclinado 12 graus (ESTIMADO) e o rosto, não o pescoço, que se aproxima.
+- **Cabeça e olho ao ler andando.** Cabeça e olhos se coordenam de outro jeito lendo do que andando: movimentos de olho disparados pela cabeça são cerca de duas vezes mais lentos ao ler. <https://pmc.ncbi.nlm.nih.gov/articles/PMC10080958/>. Uso: nada direto; foi lido para decidir não mexer o olhar (o que o jogador faz com o mouse é dele).
+
+**O que não existe como medida.** Não há clipe de porta com maçaneta, de mão segurando papel com polegares nas bordas nem de lanterna na mão enquanto lê. O pegar baixo tem 12 clipes. O jogo é comparado, na porta, com a lei de alcance da fase 4 e as ordens de grandeza acima (tudo rotulado). O clipe 81_05 (empurrar objeto pesado) entra só como referência do tempo.
+
+### Medido na CMU: pegar baixo
+
+`python -m tools.movimento_ref.pegar_baixo` (12 clipes: 26_09 a 26_11, 69_70 a 69_75, 143_10, 143_11, 111_17, 111_18; os 115_xx saíram, o olho mergulha neles em 0,3 s, de 3 a 6 vezes mais depressa). Escala do Daniel (olho a 1,65 m). Cada pessoa escolhe um ponto de um contínuo, e o ângulo do tronco é o que muda ao longo dele:
+
+| | agachar (tronco 24 a 45 graus) | curvar de pernas retas (tronco 100 graus) |
+|---|---|---|
+| olho desce (MEDIDO) | 0,78 m (0,60 a 0,85) | 0,78 m (0,74 a 0,83) |
+| joelho dobra (MEDIDO) | 87 graus (51 a 137) | 24 graus (3 a 125) |
+| quadril cai (MEDIDO) | 0,70 m | 0,05 a 0,11 m |
+| olho acima do punho que pega (MEDIDO) | 0,55 a 0,78 m, mediana 0,63 | idem |
+| ombro ao punho no fundo (MEDIDO) | 0,46 a 0,57 m | idem |
+| descida até 90% do fundo, fundo, subida (MEDIDO) | 0,95 s (0,52 a 2,22), 0,35 s, 1,30 s | 1,11 s (0,89 a 1,99), 0,62 s, 0,93 s |
+
+A cabeça fica, ao fim, quase em cima do objeto (o punho fica de 0,26 m atrás a 0,07 m à frente do olho).
+
+### O que mudou
+
+**Pegar baixo** (`posture.py`, `handactions.pickup_clip`, `Player`, `Locomotion`):
+
+1. A geometria decide: onde está o item em relação ao olho (distância horizontal, lado, altura), qual mão, onde está o ombro de verdade (`BodyRig.shoulder_world`). A menor postura (`posture.dip_to_reach`) que põe o item a 0,56 m do ombro (DERIVADO: 85% do alcance de 0,66 m) com a cabeça no máximo 0,90 m mais baixa e, no mínimo, 0,60 m acima da mão (MEDIDO). Se não chega, o corpo ainda avança até 0,30 m (ESTIMADO).
+2. A câmera desce, avança e o tronco se inclina em jerk mínimo (`Player.camera_pose`, `ReachPosture`): a técnica é o ângulo do tronco, que cresce de 50 graus por metro de descida (agachar) a 130 (curvar), e perto agacha, longe se curva. O quadril acompanha sozinho (a cabeça é a câmera; o `Locomotion` já derruba o quadril para pôr o pescoço no ponto), e o joelho dobra pelo IK; a cabeça pende à frente do C7 em 45% da curvatura do tronco (MEDIDO: o vetor C7 a olho gira cerca de 0,7 vezes o ângulo do tronco, dos quais o olhar para baixo dá uns 20 graus). A pelve gira 38% da curvatura, não a coluna (a coluna toda dava as costas arredondadas).
+3. A mão sai 25% da descida depois do tronco (a mão passa de 10% da distância depois de o tronco ter descido uns 20%, nos clipes, ESTIMADO) e o alcance leva `move_time(distância no mundo, da mão solta ao item)`. O corpo sobe quando os dedos fecham (evento `rise`, essencial: um gesto interrompido ou uma cutscene também fazem o corpo subir).
+4. **Passo assistido.** O jogo deixa interagir a 2 m e o braço chega a 0,6 m. Nos clipes de 69_70 a 69_75 a pessoa anda até o objeto antes de se curvar, então, se o item está a mais de 0,45 m do olho, o corpo anda até ele ficar a 0,35 m, no máximo 0,70 m, em passo lento (metade da velocidade de andar, a passada normal do `Player`); o que a colisão não deixa (prateleira, mesa) é ensaiado antes (`feasible_step`) e a postura leva em conta o que sobrou. Qualquer tecla de andar cancela. Não mexi em velocidade, cadência nem altura do olho.
+
+**A mão na porta** (`handactions.DoorHand`, `DoorManager.toggle(delay=...)`, `Interact._use_door`):
+
+1. A mão esquerda (a direita segura a lanterna; sem lanterna, a direita) alcança a maçaneta (cabeça de latão, 0,95 m do piso, a 7 cm da borda), abre os dedos até 60% do alcance, pousa a palma sobre ela, fecha os dedos, gira o antebraço (supinação de 38 para 80 graus), acompanha a maçaneta pelo arco da folha a cada quadro (a posição vem do `DoorManager`: a trilha da mão é calculada ao vivo, `LiveTrack`), solta quando o braço não alcança mais ou aos 60% do movimento da folha (abrir) e volta ao braço em 0,5 s.
+2. A folha espera a mão: `toggle(delay)` atrasa a maçaneta, a folha e os sons pelo tempo de chegar e fechar os dedos. A duração do movimento da folha não mudou (conferida: 0,87 s de 2% a 98% com e sem a mão).
+3. **A mão se prepara sozinha.** Olhando a porta de perto (o centro da folha na mira, a maçaneta a até 0,95 m do olho, andando a menos de 1 m/s) por 0,3 s, a mão sai até 7,5 cm da maçaneta e espera; o [E] só fecha os dedos. Sem isso a folha esperaria 0,7 s a mais em cada abertura. Para fechar e para portas trancadas não se prepara (fechar é decisão do jogador; a trancada se descobre tentando).
+4. Porta trancada: a mão chega, o punho gira 26 graus e para, e sacode 3 vezes em 0,05 s (o mesmo `RATTLE_BOUNCE` da folha); depois solta. Fechar: a mão segue a maçaneta o quanto o braço alcança e solta; a folha termina de fechar sozinha.
+5. Sem gesto (a porta abre como na fase 4): mão esquerda com item na mão, correndo ou com pressa, maçaneta fora do alcance, corpo falso (`NullArm.shoulder_world_position` devolve None). Chave de comparação: `SA_MAOS_INTERACAO=0` desliga o pegar baixo, o passo e a porta.
+
+**Ler** (`handclips.FACE_ITEM`, `NEAR_ITEM`, `READ_LANTERN`, `handactions.with_reading_hand`, `Game._tick_reading`):
+
+1. A folha a 38,8 cm do olho (centro) com o topo inclinado 12 graus (ESTIMADO), o centro 6,7 graus abaixo da linha do olhar (DERIVADO da pose) e a 38,8 cm (FASE5: 35 a 40 cm). A mão da lanterna vem para a borda direita da folha com o polegar solto na margem, e a luz aponta para a página; isso está no clipe de levantar a folha, porque com o leitor aberto o jogo não atualizava as mãos. Para o mapa, a mesma coisa com a direita mais afastada.
+2. Com o leitor aberto o jogo agora atualiza o corpo, as mãos e a respiração (o resto do mundo continua pausado: a pilha não gasta); a folha se mexe com a respiração do punho, 0,20 grau em repouso e 0,55 sem fôlego, do `handsway` do agente 1.
+3. Nota baixa (mesa de centro, 0,44 m): o mesmo pegar baixo e a mesma subida. Nota na parede: o passo até ela, o campo de visão que fecha 17% (FOV_ZOOM, já existia) e o recuo sem salto (conferido em `test_hands`).
+
+### Resultados
+
+#### Pegar baixo: o jogo antes e depois contra a CMU
+
+Cada coluna do jogo é um item de verdade da casa, a partir da distância dita, medida por `python -m tools.movimento_ref.cenarios.interacoes tabela` (`out/f5_3/final/tabela_pegar_baixo.md`, curvas em `curvas_pegar_baixo.png`). As duas primeiras colunas são o MEDIDO nos 12 clipes (mediana e faixa). Tudo na tabela é MEDIDO no jogo ou na CMU; a linha "fase 4" é o jogo antes desta fase, medido do mesmo jeito.
+
+| métrica | CMU curvar (n=7) | CMU agachar (n=5) | gaveta 0,31 m, a 0,45 m | gaveta 0,31 m, a 0,9 m | chão, a 0,55 m | criado-mudo 0,55 m, a 0,9 m | prateleira 0,51 m, a 0,9 m | escrivaninha 0,77 m, a 0,9 m |
+|---|---|---|---|---|---|---|---|---|
+| olho desce (m) | 0.78 (0.48 a 0.83) | 0.78 (0.60 a 0.85) | 0.69 | 0.70 | 0.85 | 0.47 | 0.51 | 0.27 |
+| olho avança (m) | 0.20 (0.11 a 0.55) | 0.17 (0.04 a 0.30) | 0.50 | 0.33 | 0.42 | 0.27 | 0.48 | 0.37 |
+| tronco inclina (graus) | 72.90 (37.20 a 115.90) | 45.40 (23.50 a 102.60) | 59.50 | 60.40 | 54.20 | 51.70 | 76.30 | 40.00 |
+| joelho dobra (graus) | 23.80 (3.10 a 124.90) | 86.80 (51.40 a 137.40) | 107.10 | 84.70 | 121.00 | 55.30 | 41.90 | 48.00 |
+| quadril cai (m) | 0.11 (0.05 a 0.75) | 0.70 (0.14 a 0.72) | 0.41 | 0.43 | 0.61 | 0.25 | 0.12 | 0.12 |
+| descida até 90% (s) | 1.11 (0.89 a 1.99) | 0.95 (0.52 a 2.22) | 0.80 | 0.87 | 0.90 | 0.67 | 0.63 | 0.43 |
+| no fundo (s) | 0.62 (0.34 a 0.84) | 0.35 (0.15 a 0.57) | 0.60 | 0.60 | 0.63 | 0.63 | 0.73 | 0.77 |
+| subida (s) | 0.93 (0.77 a 2.40) | 1.30 (0.53 a 2.10) | 0.73 | 0.73 | 0.83 | 0.57 | 0.60 | 0.43 |
+| palma ao item no contato, fase 4 (m) | - | - | 0.90 | 1.09 | 1.21 | 0.90 | 0.96 | 0.65 |
+| palma ao item no contato, agora (m) | - | - | 0.03 | 0.03 | 0.07 | 0.04 | 0.27 | 0.17 |
+
+- O corpo desce 0,47 a 0,85 m; a CMU, 0,78 m (0,48 a 0,85). O que fica menos fundo (escrivaninha, 0,27 m) é o item que fica a 0,77 m do chão: a chave só pede uma curvatura leve, como a pessoa real faria.
+- A palma chega a 3 a 7 cm do item em quatro dos seis casos (antes: 0,65 a 1,21 m). Prateleira e escrivaninha ficam a 0,27 e 0,17 m: o móvel impede o corpo de avançar o que falta; o item sobe o resto, como na fase 4, só que menos.
+- Duração do gesto do [E] até a mão fechar com o corpo de volta: cerca de 3,3 s contra 2,5 s antes (MEDIDO no jogo, do [E] até o corpo de volta em pé).
+- Painel contra a CMU, clipe 26_09 (`out/f5_3/final/pegar_baixo_cmu/`: `folha_contato.png`, `video.mp4`, `tabela.txt`): 6 de 8 métricas dentro da tolerância. As duas de fora são contra a mediana dos 12 clipes e as duas ficam dentro da faixa deles: o olho avança 0,49 m (mediana 0,22, tolerância 0,25; faixa dos clipes 0,04 a 0,55) e o joelho dobra 137 graus (mediana 66, tolerância 50; faixa 3 a 137). O item está no chão, 0,55 m à frente, e o jogo escolhe o agachado fundo, que a CMU também faz (agachar: 87 graus, 51 a 137).
+
+#### A mão na porta: tempos do [E] em diante
+
+Não há clipe de porta na CMU, então a tabela abaixo é o jogo contra ele mesmo (sem a mão, fase 4) e contra a lei de alcance da fase 4 (`handclips.move_time`, MEDIDO em 199 alcances, não de porta). Tudo é MEDIDO no jogo, quadro a quadro, com `tabela_porta`. Na linha de fechar, o "palma-maçaneta" não vale e foi deixado em branco: a mão solta aos 0,2 s e o que se mediria depois é a distância até uma maçaneta que se afasta com a folha; a maçaneta "gira" aos 1,95 s porque é o trinco assentando no fim do fechar.
+
+| caso | maçaneta gira | folha sai | folha dura (2% a 98%) | gesto da mão dura | palma-maçaneta no giro (cm) | palma-maçaneta no empurrão, máx. (cm) |
+|---|---|---|---|---|---|---|
+| caso | maçaneta gira | folha sai | folha dura (2% a 98%) | gesto da mão dura | palma-maçaneta no giro (cm) | palma-maçaneta no empurrão, máx. (cm) |
+|---|---|---|---|---|---|---|
+| sem a mão (fase 4) | 0.05 | 0.32 | 0.87 | - | - | - |
+| com a mão, preparada olhando a porta 1 s | 0.18 | 0.43 | 0.87 | 1.58 | 8.5 | 7.6 |
+| com a mão, [E] logo ao chegar | 0.77 | 1.03 | 0.87 | 2.17 | 7.7 | 7.3 |
+| porta trancada | - | - | - | 1.77 | - | - |
+| fechar a porta aberta | 1.95 | 0.95 | 0.93 | 2.60 | - | - |
+
+Contra a lei e as ordens de grandeza (a coluna "rótulo" diz de onde vem o valor de referência):
+
+| grandeza | referência | rótulo da referência | jogo antes | jogo agora |
+|---|---|---|---|---|
+| tempo de alcançar e fechar os dedos na maçaneta | `move_time` da fase 4: cerca de 0,6 a 0,75 s para um alcance de 0,3 a 0,5 m | MEDIDO (alcances da CMU, não de porta) | 0 (a porta mexia sem mão) | 0,77 s com o [E] logo ao chegar (MEDIDO no jogo); 0,18 s se a mão já estava pronta |
+| folha começa a mexer depois do [E] | a folha tem de esperar a pegada: sem pegada não há força | ESTIMADO (lógica física, sem número) | 0,32 s | 0,43 s preparada, 1,03 s fria (MEDIDO no jogo) |
+| duração do movimento da folha (2% a 98%) | FASE5 pede o gesto casado com 0,9 a 1,4 s de abertura; a duração da folha é da fase 4 e não foi tocada | contrato | 0,87 s | 0,87 s (MEDIDO; a diferença com e sem a mão é menor que 0,04 s, testada) |
+| abertura dos dedos ao alcançar | pico em 60 a 70% do movimento (33 a 40% para a velocidade do punho) | MEDIDO em estudos de reabilitação (só resumos) | sem mão | 60% (DERIVADO do perfil de `handclips.reach`) |
+| giro do punho na maçaneta redonda | faixa funcional do antebraço: 50 graus de pronação a 50 de supinação (71 a 81 de amplitude total) | MEDIDO em literatura de terapia ocupacional, só o resumo | sem mão | 80 graus de supinação (38 de chegada mais 42 de giro): dentro da amplitude total, acima da faixa funcional; ESTIMADO, não separei o que cabe ao ombro e ao cotovelo |
+| palma ao centro da maçaneta (esfera de 5 cm) | raio 2,5 cm mais a espessura da palma: uns 5 a 7 cm | ESTIMADO | sem mão | 7,7 a 8,5 cm no giro, 7,3 a 7,6 cm no máximo do empurrão (MEDIDO no jogo) |
+| porta trancada: giro e sacudida | a maçaneta trava na ponta do giro; a mão não vence a trava | ESTIMADO | folha chacoalhava sozinha | punho gira 26 graus, sacode 3 vezes em 0,05 s, solta; gesto de 1,77 s (MEDIDO no jogo) |
+
+#### Ler: a folha na mão
+
+| grandeza | referência | rótulo | jogo antes | jogo agora |
+|---|---|---|---|---|
+| distância do centro da folha ao olho | 35 a 40 cm (FASE5) | contrato; resumos de ergonomia de leitura de material na mão, sem número | 30 cm | 38,8 cm (DERIVADO da pose, testado) |
+| inclinação do topo da folha | levemente inclinada; sem número encontrado | ESTIMADO | 0 graus, em pé | 12 graus; o centro fica 6,7 graus abaixo da linha do olhar (DERIVADO da pose) |
+| mão que não segura o papel | polegar na borda da folha | contrato | parada ao lado da lanterna | a mão da lanterna vem à borda direita da folha (testado: está mais perto do lugar de ler que do de segurar, a menos de 5 cm) |
+| respiração com o leitor aberto | a folha acompanha o punho | contrato | tudo congelado | mexe 0,20 grau em repouso e 0,55 sem fôlego (`handsway`, do agente 1); o mundo continua pausado |
+| entrada e saída | sem salto | contrato | n/a | maior passo da mão por quadro abaixo do limite do teste, nota na parede sem salto na saída |
+
+Painéis (primeira e terceira pessoa, vídeos de 10 a 15 quadros por segundo, Workbench): `porta_abrir`, `porta_abrir_frio`, `porta_trancada`, `porta_fechar`, `ler_nota`, `ler_mapa`, `pegar_gaveta`, `pegar_chao`, `pegar_criado`, `pegar_prateleira`, `pegar_chave`, `pegar_nota_baixa` (`_video.mp4` e `_folha.png` de cada um em `out/f5_3/final/`). Na leitura a mão esquerda que segura a folha fica quase toda abaixo do quadro (só um pedaço do polegar aparece na borda inferior esquerda); a direita, a da lanterna, aparece inteira. Vê-se a esquerda melhor no painel de terceira pessoa.
+
+#### Testes e partida simulada
+
+- `tests/test_maos_interacao.py`: 18 testes, passam no Blender 5.0.1 e no 4.2. Varredura no 5.0.1: test_hands (33), test_body, test_engine_core (38), test_inventory (27), test_speech_rule (4), test_cutscenes_player, test_movimento_ref, test_locomocao, test_maos_movimento (22), test_doors (34), test_objetos_fisica, todos verdes.
+- `tests/sim_playthrough.py`, gesto ligado contra desligado (`SA_MAOS_INTERACAO=0`): a história termina em 202,3 s contra 198,4 s (MEDIDO; o robô abre as portas e pega os itens com o gesto, nada travou); na caçada de 5 min simulados as mortes são 14 contra 29; "objetivos que falharam: KEY, KEY" é igual nos dois (já existia na fase 4). A diferença de mortes não é um efeito projetado: o gesto atrasa a abertura das portas e muda por onde o robô cruza a casa; não a uso como medida de nada.
+
+### Decisões
+
+- **Problema: o item voava até a mão. Solução: a postura e o passo, não mais alcance.** Motivo: esticar o braço de 0,52 para 0,7 m não faria sentido no corpo (o cotovelo sai do quadro e o punho quebra); a pessoa real se curva, e a medida dela está no mocap. O custo é a duração do gesto: de 2,5 s para 3,3 s por item baixo. O sim_playthrough da história passou de 198,4 s para 202,3 s (+3,9 s).
+- **Problema: a mão leva 0,7 s para sair debaixo do quadro e a porta respondia em 0,32 s. Solução: a mão se prepara sozinha olhando a porta de perto e a folha espera a mão.** Motivo: sem preparar, a folha sai 0,71 s depois do [E] (medido); preparada, 0,11 s depois do que saía. A duração do movimento da folha não mudou. Quem preferir a porta instantânea: `SA_MAOS_INTERACAO=0`.
+- **Problema: o jogador aperta o [E] a 2 m de um item ou porta e o braço não chega. Solução: o passo assistido para itens (o jogo anda por ele, 0,7 m no máximo, cancelável) e, para portas, só gesto quando a maçaneta está ao alcance.** Motivo: ou o item voa, ou o jogador anda; escolhi a segunda, que é o que as pessoas fazem. É uma decisão de jogo: o jogador se move sem apertar tecla, devagar e por pouco. Para desligar: `handactions.STEP_MAX = 0`.
+- **Problema: ler com as duas mãos, mas a direita segura a lanterna. Solução: a mão da lanterna vem ao papel com o polegar solto na margem e a luz na página; a folha fica na esquerda.** Motivo: não dá para largar a lanterna no escuro. Os dedos são os de antes até a pegada por contato do agente 2 cobrir folha e mapa.
+
+### O que ficou de fora
+
+- **A batida de porta.** Com pressa (correndo ou mais de 1,3 vezes o passo) a porta fecha ou abre como na fase 4, sem mão: esperar 0,6 s a mão contradiz a pressa. A mão que se retira e o corpo que recua ao bater não foram feitos.
+- **Porta com item na mão esquerda** (chave, mapa, pilha, nota): sem gesto, para não guardar e tirar o item a cada porta. Guardar e voltar custa 0,6 s a mais por porta; a mão direita não serve, tem a lanterna.
+- **Maçaneta fora do alcance** (mais de 0,62 m do ombro com 0,30 m de inclinação e, nas portas que empurram, o passo de 0,7 m): sem gesto. Quem aperta o [E] a 2 m de uma porta vê o que via antes.
+- **Item longe demais** mesmo depois do passo (prateleira atrás de um móvel): a mão para onde o braço chega e o item sobe o resto (a pilha da prateleira infantil e a chave da escrivaninha ficam a 0,2 a 0,4 m da palma no contato, ver tabela). Era pior antes (0,9 a 1,0 m).
+- **Fechar a porta**: a mão acompanha a maçaneta por cerca de 0,2 s, não pelo arco todo, porque a maçaneta de uma porta aberta a 90 graus se afasta 1,2 m do corpo parado. Uma pessoa real daria um passo com ela.
+- **O rosto que se aproxima ao ler** só existe na nota da parede (passo mais zoom). Nas outras o papel já está a 38 cm.
+- **A pegada de porta e papel**: curvas de dedo fixas (esfera: 0,52 a 0,68; folha: as de antes). Quando o agente 2 entregar a pegada por contato, a maçaneta (esfera de 5 cm) é o primeiro caso novo.
+- **Painel lado a lado com o 81_05 (empurrar) e com o 15_06 (alcançar)**: não fiz. Só o pegar baixo tem painel contra a CMU (26_09). Para a porta e a leitura não há clipe: os painéis são do jogo, de primeira e terceira pessoa.
+- **EEVEE**: os vídeos e folhas da casa são Workbench (EEVEE leva minutos por quadro na casa); não há quadros EEVEE desta fase.

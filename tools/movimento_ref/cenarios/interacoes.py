@@ -393,6 +393,10 @@ def _ler(saida, modo, **kw):
             return InputState(interact=True)
         return None
     titulo = "Ler a anotação com as duas mãos" if modo == "nota" else "Olhar o mapa de perto"
+    # a 90 graus e 2,3 m a câmera de fora cai dentro da parede do corredor: perto e em três quartos mostra as mãos e a folha
+    kw.setdefault("azimutes", (40.0, -40.0))
+    kw.setdefault("distancia", 1.3)
+    kw.setdefault("altura", 1.25)
     return gravar_sequencia(jogo, entrada, 5.2 if modo == "nota" else 4.0, saida, f"ler_{modo}", titulo, estado_em=lambda j: f"fase: {j.phase}", **kw)
 
 
