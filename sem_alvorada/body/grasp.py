@@ -41,7 +41,7 @@ PINCH_TARGET = {"Index": (0.55, 0.62, 0.50), "Middle": (0.58, 0.64, 0.52), "Ring
 CUP_TARGET = {"Index": (0.50, 0.58, 0.44), "Middle": (0.54, 0.60, 0.46), "Ring": (0.56, 0.62, 0.48), "Pinky": (0.58, 0.64, 0.50)}
 PREFORM = (0.10, 0.12, 0.10)         # dedo quase esticado: de onde a mão parte para fechar
 THUMB_PREFORM = (0.30, 0.25, 0.25)
-SKIN_POINTS = {"Hand": 100000, "Finger": 100000, "Thumb": 100000}      # todos os vértices: com amostra rala o dedo "entrava" onde nenhum ponto olhava
+SKIN_POINTS = {"Hand": 100000, "Finger": 100000, "Thumb": 100000}      # todos os vértices: numa amostra rala o dedo entrava onde nenhum ponto olhava
 
 
 @dataclass

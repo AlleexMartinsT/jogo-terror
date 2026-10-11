@@ -154,7 +154,6 @@ def perfil_de_abertura(item, segundos=2.2, antes=0.5):
         clip = jogo.hands.runner.clip
         if clip is not None and inicio is None:
             inicio = k / 60
-            alcance = clip.tracks[f"{lado}.pos"].end if f"{lado}.pos" in clip.tracks else None
         t.append(k / 60)
         abertura.append(abertura_polegar_indicador(jogo, lado))
         entradas = getattr(jogo.hands, "_grip_inputs", {}).get(lado)

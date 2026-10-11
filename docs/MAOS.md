@@ -242,3 +242,139 @@ Painéis (primeira e terceira pessoa, vídeos de 10 a 15 quadros por segundo, Wo
 - **A pegada de porta e papel**: curvas de dedo fixas (esfera: 0,52 a 0,68; folha: as de antes). Quando o agente 2 entregar a pegada por contato, a maçaneta (esfera de 5 cm) é o primeiro caso novo.
 - **Painel lado a lado com o 81_05 (empurrar) e com o 15_06 (alcançar)**: não fiz. Só o pegar baixo tem painel contra a CMU (26_09). Para a porta e a leitura não há clipe: os painéis são do jogo, de primeira e terceira pessoa.
 - **EEVEE**: os vídeos e folhas da casa são Workbench (EEVEE leva minutos por quadro na casa); não há quadros EEVEE desta fase.
+
+
+---
+
+## Agente 2: lanterna e pegadas
+
+Arquivos novos: `sem_alvorada/body/grasp.py` (fechamento dos dedos por contato, ajuste da mão no item, medida na pele), `sem_alvorada/grasp_data.py` (o resultado, gerado), `sem_alvorada/engine/gripdrive.py` (dos canais de um clipe às juntas), `sem_alvorada/engine/lanternaim.py` (elevação do braço, giro do cano para ler, quando bater), `tools/movimento_ref/cenarios/pegadas.py` (medida, gerador, fotos, painéis), `tests/test_pegadas.py` (14 testes). Alterados de forma aditiva: `body/fingers.py` (rotações de um dedo à parte, cascata com metas por junta), `body/rig.py` e `engine/fallbacks.py` (`set_finger_joints`), `engine/handclips.py` (garras e pose da lanterna, canais `grip` e `press`, pré-forma, `palm_tap`), `engine/hands.py` (ganchos), `engine/flashlight.py` (avisa a piscada). Painéis e tabelas em `out/f5_2/final/`.
+
+### O que estava errado
+
+Medido na malha de pele já deformada pelo esqueleto (a do corpo no jogo) contra a malha do item, em milímetros. Penetração é o quanto o ponto mais fundo da pele entra no item; folga é a menor distância à superfície.
+
+- **Lanterna**: o mindinho entrava 11,6 mm no cano e o polegar 9,1 mm; o indicador ficava a 21,2 mm e o médio a 12,2 mm do cano; a palma a 8,8 mm. Só 2 das 5 partes que deviam tocar tocavam.
+- **Pilha na palma**: o polegar entrava 3,8 mm; indicador, médio, anelar e mindinho flutuavam a 38, 37, 28 e 12 mm.
+- **Chave**: o polegar a 51 mm da cabeça, o indicador a 14 mm, o médio e o anelar atravessavam 2,2 e 4,7 mm. Não havia pinça.
+- **Mapa e anotação**: nenhum dedo toca a folha (20 a 53 mm), e o polegar, que devia estar na frente, não está.
+- **A mão da lanterna**: o punho dobrava 57 a 61 graus nos gestos (o limite do solver é 72) porque o cano rolava 62 graus em torno do eixo para a palma ficar sob ele.
+- **A mão abria quase nada ao alcançar**: o curl ia de relaxado a "aberto" (indicador de 0,22 a 0,16) e ficava parado até o contato, sem pico e sem fechar antes de tocar.
+- **O polegar do interruptor**: um empurrão de 0,32 no curl que decaía exponencialmente, sem curso nem tempo de interruptor.
+
+### Pesquisa
+
+Resultados de busca, não revisão sistemática. A ferramenta de leitura de páginas estava bloqueada neste ambiente (DNS), então o que está abaixo vem dos trechos que a busca devolveu, não dos artigos inteiros; onde só li o resumo, diz.
+
+- **Flexão dos dedos numa pegada de cilindro** (tomografia, 10 homens, cilindros de 10, 60 e 120 mm): no de 60 mm o indicador flexiona MCP 39,7, PIP 48,0 e DIP 35,2 graus, o médio 46,3, 48,1 e 34,5. Cilindro mais fino pede mais flexão, e a PIP passa a ser a maior (no de 10 mm a PIP é maior que MCP e DIP, no de 120 não há diferença). A razão DIP/PIP é menor no cilindro fino. Li só o resumo e uma linha da tabela (o texto da tabela veio truncado). Shimawaki et al. 2019: <https://onlinelibrary.wiley.com/doi/10.1155/2019/2839648> e <https://pmc.ncbi.nlm.nih.gov/articles/PMC6339738>
+- **Modelo de pegada por contato**: um modelo cinemático da mão que "enrola" os dedos no cilindro previu os ângulos com 2,8 +- 12,2 graus de erro médio (bom para MCP e PIP, pior para DIP). Buchholz e Armstrong: <https://deepblue.lib.umich.edu/items/86e3c0b4-2785-43b5-b962-bb890894c683>. O contato na pegada de força é discreto (pontas dos dedos e cabeças dos metacarpos), não contínuo: <https://pure.psu.edu/en/publications/is-power-grasping-contact-continuous-or-discrete/>
+- **Pré-forma**: a abertura máxima vem em cerca de 60% do gesto (dois estudos), 2/3 (outro) ou depois de 75% (revisão e um estudo de 2024), e cresce linearmente com o tamanho do objeto, com uma margem de segurança acima dele. As fontes não concordam num número, daí a faixa de 60 a 75%. Resumos apenas: <https://link.springer.com/doi/10.1007/BF00240965>, <https://eprints.soton.ac.uk/272553/1/HillISB2011.pdf>, <https://link.springer.com/article/10.1007/s00426-024-01947-8>, <https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2012.00332/pdf>
+- **Punho**: as tarefas do dia a dia cabem em 60 graus de extensão, 54 de flexão, 40 de desvio ulnar e 17 de radial, e a maioria cabe em 70% disso (40 graus de flexão e de extensão) (40 adultos, 1991): <https://mayoclinic.elsevierpure.com/en/publications/functional-ranges-of-motion-of-the-wrist-joint/>. Punho neutro (reto) é a recomendação geral de ergonomia, sem número neste conjunto.
+- **Pinça**: com o indicador fundido na PIP a 40 a 50 graus a pinça polegar-indicador fica mais natural (o vão de pinça cai 10 a 14%): <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3827381/> e o grupo de trabalhos de pinça que a busca devolveu (<https://pmc.ncbi.nlm.nih.gov/articles/PMC4330130>). Não achei ângulos de pinça de referência.
+- **Bater na lanterna que pisca**: o mau contato da pilha é a causa comum de uma lanterna que pisca ou apaga, e bater ou sacudir a reassenta por um instante (fabricantes mandam limpar os contatos; fóruns descrevem a batida). Sem medida de quando, quantas vezes nem de que jeito. <https://help.fenix-store.com/en-US/why-does-the-ld30r-happen-to-flicker-340412>, <https://www.candlepowerforums.com/threads/flickering-flashlights.184666/post-2292792>
+- **Tempo de reação visual simples**: 200 a 250 ms (190 a 220 ms em estudantes, 300 ms em testes com teclado de notebook): <https://www.dovepress.com/evaluation-of-simple-visual-reaction-time-of-different-colored-light-s-peer-reviewed-fulltext-article-OPTO>
+- **Pegada de lanterna**: o que está em `docs/FASE5.md` (patente Streamlight, técnicas de busca). Não achei estudo que meça cotovelo ou punho. **Tempo de um dedo sobre uma tecla** (dwell): a busca não devolveu um número, só que a distribuição é normal; usei 80 a 150 ms de memória, ESTIMADO.
+
+### Como o fechamento por contato funciona
+
+`HandSkin` leva os vértices de pele de cada osso da mão (a malha do corpo no repouso) junto com as falanges; `HandKinematics` faz a cinemática com as mesmas rotações do esqueleto (`fingers.finger_quaternions`), e uma conferência contra a armadura avaliada deu 0,2 a 0,4 mm de erro. Cada dedo parte de uma pré-forma quase esticada e fecha rumo ao padrão de uma pegada de força (MCP 0,70, PIP 0,82 e DIP 0,66 do curso, 57, 82 e 44 graus no indicador: o padrão de Shimawaki com 20% a mais de flexão por o cano ser mais fino, ESTIMADO). As três juntas avançam juntas, na proporção do padrão. A falange que toca a malha trava a junta que a move e as de trás dela; as da frente continuam até tocar (o dedo se enrola no cano). O contato sai de bisseção (14 passos), então a folga final é de centésimos de milímetro e nenhuma falange entra. O polegar da lanterna paira a 3 mm do botão (busca por coordenadas em 3 ângulos, sem atravessar o cano), e o polegar apertado cede 1 mm no botão (curso ESTIMADO, a borracha cede).
+
+`fit_grip` ajusta onde a mão fica no item (6 graus de liberdade, mais uma busca de giro em torno do cano) para a palma encostar sem entrar (folga alvo 3 mm na lanterna, 0,8 na pilha) e os dedos fecharem com contato, e fecha os dedos contra a mão que o IK do corpo de fato entrega naquela pose (o pulso não dobra tudo o que se pede). Isso roda uma vez, offline (`python -m tools.movimento_ref.cenarios.pegadas gerar`, 70 s), e grava `grasp_data.py`: o jogo só lê números. O chaveiro e a pilha, cujas malhas têm normais misturadas ou pontas abertas (o sinal de "dentro" não vale), usam a forma analítica da parte que a mão toca (caixa arredondada da cabeça, cilindro da pilha); a lanterna usa a malha (alumínio, moleta e borracha; o refletor, o vidro e o latão são internos).
+
+No jogo, cada mão tem um canal `grip` (cinco valores, 0 a 1: quanto cada dedo já se fechou NO item) e, na direita, `press` (o interruptor). A pose dos dedos é a mistura, junta por junta, do curl livre com a pose fechada por contato. A cascata (`FingerCascade`) passou a aceitar uma meta por junta, com 40, 66 e 92 ms de constante acumulada: a base sai na frente e a ponta chega depois (conferido em teste).
+
+### Tabela: pele contra a malha do item (MEDIDO, mm)
+
+Penetração máxima / folga mínima de cada parte da mão, no repouso. "Deve tocar" é o que a pegada pede; "livre" é o que fica solto de propósito. Tabela completa em `out/f5_2/final/tabela_penetracao_folga.png` e `.txt`.
+
+| Item | Parte | Deve tocar | Antes: penetra / folga | Depois: penetra / folga |
+|---|---|---|---|---|
+| lanterna | polegar | livre (paira) | 9,1 / 0,0 | 0,0 / 0,0 |
+| lanterna | indicador | sim | 0,0 / 21,2 | 0,0 / 0,0 |
+| lanterna | médio | sim | 0,0 / 12,2 | 0,0 / 0,0 |
+| lanterna | anelar | sim | 0,1 / 0,0 | 0,0 / 0,0 |
+| lanterna | mindinho | sim | 11,6 / 0,0 | 0,0 / 0,0 |
+| lanterna | palma | sim | 0,0 / 8,8 | 0,0 / 3,1 |
+| pilha | polegar | sim | 3,8 / 0,0 | 0,0 / 0,7 |
+| pilha | indicador | sim | 0,0 / 38,3 | 0,1 / 0,0 |
+| pilha | médio | sim | 0,0 / 36,7 | 0,2 / 0,0 |
+| pilha | anelar, mindinho | livre | 0,0 / 27,7 e 11,8 | 0,2 / 0,0 |
+| pilha | palma | sim | 0,0 / 6,5 | 0,0 / 0,5 |
+| chave | polegar | sim | 0,0 / 50,9 | 0,0 / 2,0 |
+| chave | indicador | sim | 0,0 / 13,8 | 0,8 / 0,0 |
+| chave | médio, anelar | livre | 2,2 e 4,7 / 0,0 | 0,0 / 3,0 e 5,4 |
+| chave | mindinho | livre | 0,0 / 1,9 | 0,0 / 14,8 |
+| mapa e anotação | polegar, dedos | sim | 0,0 / 20 a 53 | sem mudança (ver o que ficou de fora) |
+
+Resumo (penetração máxima; folga média das partes que devem tocar): lanterna 11,6 mm e 8,5 mm antes, 0,008 mm e 0,6 mm depois; pilha 3,8 e 20,4 antes, 0,2 e 0,3 depois; chave 4,7 e 32,3 antes, 0,8 e 1,0 depois. Tocam (folga menor que 2,5 mm): lanterna 2 de 5 antes e 4 de 5 depois (a palma fica a 3,1 mm de propósito: a palma de verdade cede), pilha 1 de 4 e 4 de 4, chave 0 de 2 e 2 de 2.
+
+Duas ressalvas de método. O chaveiro balança (a respiração o excita, até 7 graus em torno da cabeça) e isso desloca as faces da cabeça uns 2 mm da pinça; a tabela é com o pêndulo parado (a medida com ele solto deu 2,1 mm de penetração no indicador e 4,3 de folga no polegar). E o contato da pele é a folga de uma malha rígida contra outra: a polpa de um dedo real cede cerca de 1 mm, que não está no modelo.
+
+### Postura de segurar a lanterna
+
+| Medida | CMU 77_05 | Antes | Depois | Origem |
+|---|---|---|---|---|
+| flexão do punho parado (graus) | sem medida (neutro: 0 a 20) | 57 a 60 | 13 | MEDIDO no jogo |
+| flexão do cotovelo (graus, 0 = esticado) | 119 | 107 | 110 | MEDIDO (CMU e jogo) |
+| braço a quantos graus da vertical | 42 | 58 | 56 | MEDIDO |
+| punho acima do ombro / comprimento do braço | -0,27 | +0,09 | +0,09 | MEDIDO |
+| flexão máxima do punho na troca de pilha | | 61 | 52 | MEDIDO no jogo |
+| na recusa | | 61 | 41 | MEDIDO no jogo |
+| na primeira pegada (instante 0,9 s do alcance) | | 70 | 70 | MEDIDO, não mudou |
+
+O que mudou é o giro do cano em torno do eixo (`FLASH_ROLL`: de -62 para +60 graus) junto com a mão ajustada ao cano: o punho passou de quase no limite do solver a quase reto, e o cotovelo continua entre 100 e 120. O braço fica mais alto que o real (56 graus da vertical contra 42, punho acima do ombro contra abaixo) de propósito: a mão da lanterna tem de aparecer no quadro de 72 x 44 graus, e 27% do braço abaixo do ombro põe o punho fora do campo (a lanterna cai a 32 graus abaixo do eixo, com 22 de meia-altura de quadro). A busca (4 mil poses, solver de verdade) com a lanterna no quadro e o feixe a cerca de 1 m da mira escolheu a posição (0,135, -0,095, -0,300) m e a inclinação (8, 6, -6) graus, como já era, e só trocou o giro. O antebraço não entra no quadro: o punho está a 18 graus abaixo do centro e o antebraço, que segue para trás e para baixo, fica fora do campo (0 cm visíveis na busca). Pedi a busca com recompensa de antebraço visível e o solver sempre o põe fora; se quiser mostrá-lo, a mão tem de ir uns 5 cm para baixo e para a direita, e a lanterna sai do quadro.
+
+### Apontar a luz
+
+O atraso do feixe atrás da câmera já estava (69 ms medidos na fase 4 contra 77 ms do mocap, constante `SWAY_FOLLOW`; não mexi). O que entrou é o braço: o antebraço acompanha o passo do olhar só em parte. No mocap 91_18 (olhar em volta com cuidado, 29 graus de passo da cabeça) a inclinação da elevação do punho contra o passo da cabeça é -0,13 (direita) e -0,08 (esquerda): a mão fica onde está (MEDIDO, um clipe). No 77_05 deu 1,19, mas ali a mão sobe junto para levantar a lanterna, então não vale (confundido). `lanternaim.LanternAim` usa `FOLLOW` = 0,3 (ESTIMADO) com uma constante de 90 ms e gira a mão em torno do ombro (`shoulder_world_position`, do agente 3) por `-LIMIT tanh(0,7 passo / LIMIT)`, com `LIMIT` = 10 graus, sem girar o cano: o feixe continua indo para onde se olha.
+
+| Passo do olhar | Mão em relação à câmera (altura, cm) | Flexão do punho (graus) |
+|---|---|---|
+| 0 | 0 (referência) | 15 |
+| +20 | -5,8 | 31 |
+| +40 | -7,0 | 43 |
+| +60 | -7,3 | 54 |
+| -30 | +2,9 | 3 |
+
+Olhar para cima faz a mão descer uns 7 cm em relação à câmera e saturar; olhar para baixo a faz subir. Antes a mão ia junto com a câmera (0 cm). O punho nunca passa de 54 graus (o conforto do solver começa em 55).
+
+### Gestos
+
+- **Interruptor** (F, e o clique do primeiro uso e da troca de pilhas): o polegar desce em 45 ms, sustenta 40 ms e sobe em 75 ms, 160 ms no total (ESTIMADO: a busca não achou número; fica na faixa de 80 a 150 ms de um dedo sobre uma tecla, um pouco acima porque o interruptor é de borracha), com 1 mm de curso. A luz muda no instante da tecla, e o polegar chega ao botão 45 ms depois: abaixo do que se percebe como atraso entre toque e luz. Não mudei isso para não somar latência ao jogo. Teste: o polegar sai do repouso e volta.
+- **Batida na palma** (`palm_tap`, ESTIMADO; não há medida de batida): quando a pilha fraca faz a luz piscar e a mão esquerda está livre, a esquerda sobe de baixo do quadro, bate com a palma na lateral do cano, a 8 cm do punho, e volta; a direita sente 7 mm e 2 graus. A decisão sai 0,35 s depois da piscada (reação visual de 200 a 300 ms mais decidir), com probabilidade 0,6, e nunca mais de uma vez por 12 s. Com a pilha no mínimo e a luz piscando 2 vezes por segundo deu 5 batidas em 60 s (uma a cada 12,5 s). Dura 1,6 s (0,8 s até a batida, porque o braço parte de baixo do quadro), então chega depois de a piscada acabar; não conserta a luz (não mexi na jogabilidade). Não bate com item na esquerda, na roda de itens, lendo ou durante outro gesto.
+- **Giro do cano para ler**: com o jogador lendo (nota na parede, mapa perto, leitor aberto) o cano gira 17 graus para baixo e a mão desce 1,2 cm, vai 2 cm para o centro e 3 cm para trás (mola de 7 por segundo, uns 0,3 s para assentar). `Hands.set_lantern_reading(True)` é o gancho para as outras interações; a detecção automática usa `_reading_job` e `_left_mode`.
+
+### Pré-forma da mão no alcance
+
+A abertura (polegar a indicador, MEDIDA na armadura avaliada) chega ao máximo em 66 a 67% do alcance e fecha rumo ao item; antes era um platô quase plano até o contato (pico indefinido: 71 a 100%, o argmax de uma reta) e fechava só depois de tocar.
+
+| Item | Pico (% do alcance) | Abertura máxima (cm) | No contato (cm) | Depois do contato (cm) |
+|---|---|---|---|---|
+| lanterna | 66 (antes: platô) | 8,4 (antes 7,4) | 3,4 (antes 7,4) | 2,9 a 4,1 |
+| chave | 66 (antes: platô) | 8,2 (antes 7,4) | 5,0 (antes 7,4) | 3,7 a 3,9 |
+| pilha | 67 (antes: platô) | 8,4 (antes 7,4) | 4,9 (antes 7,4) | 1,8 |
+
+A faixa real é de 60 a 75% (as fontes divergem). A abertura de 8 cm não foi calibrada com o tamanho do item (a literatura diz que cresce com ele, e a margem acima do objeto é de poucos centímetros): é um valor só para os três, ESTIMADO. Figura: `out/f5_2/final/perfil_de_abertura.png`.
+
+### Decisões (problema, solução, motivo)
+
+1. **Os dedos fechavam por curva fixa, o item ficava onde a mão não alcançava.** Fechei os dedos contra a malha do item, por bisseção, na pele de verdade. Motivo: dá número (penetração e folga) e vale para qualquer item novo, em vez de ajuste a olho por item.
+2. **A mão mais certa para o cano põe o polegar do outro lado do interruptor.** A garra de antes pedia a palma sob o cano, e o botão ficava a 73 mm do polegar. Busquei o giro da mão em torno do cano e achei o lado em que o polegar alcança o botão sem atravessar o cano. Isso muda como a lanterna aparece de lado, e por isso girei o cano para o punho ficar reto.
+3. **Resolvi o IK de verdade dentro do ajuste.** A mão que o corpo entrega não é a que se pede quando o pulso passa de 55 graus: no começo os dedos fechavam contra uma mão que não existia (9,7 mm de penetração no mindinho na pilha, por 6 centésimos de grau de diferença na junta). Agora o fechamento é contra a mão entregue, e o ajuste pune pulso perto do limite.
+4. **Pilha e chave usam forma analítica.** A malha da pilha tem a ponta aberta e a do chaveiro tem normais misturadas, então o sinal "dentro ou fora" trocava de lado com um centésimo de grau de diferença. Medir contra um cilindro e uma caixa é mais honesto que medir contra uma malha em que o sinal não vale (e desprezo relevos de até 1,5 mm da cabeça do chaveiro).
+5. **Os dados são gerados e o jogo só lê.** Resolver no início do jogo levaria 0,3 s por item e travaria o primeiro quadro do alcance; o arquivo `grasp_data.py` é pequeno, e o teste mede a pele de novo e quebra se alguém mexer na mão ou no modelo.
+6. **Mão mais alta que a real, de propósito.** Ver a tabela de postura: o quadro de 44 graus de altura obriga.
+
+### O que ficou de fora
+
+- **Mapa e anotação sem pegada por contato.** Procurei a mão atrás da folha com o polegar na frente (24 orientações da mão, várias posições, ajuste fino, com e sem o braço no custo) e não achei uma que o braço alcance sem atravessar a folha: o polegar precisa dar a volta na borda e os outros dedos ficam do outro lado, e os melhores resultados eram o polegar na frente com a mão inteira também na frente (custo alto), ou o antebraço dobrado no limite. A garra de antes continua (a mão fica atrás da folha, fora do quadro, sem atravessá-la: 0 mm de penetração, 20 a 53 mm de folga); a leitura do agente 3 trata das mãos na folha. Quem retomar: a busca está em `pegadas.papel_do_item`, `grasp.cube_rotations` e `fit_grip(scan=("starts", ...))`, só falta um critério melhor para a folha (a borda da folha como o lugar do contato, não a face).
+- **Maçaneta**: o agente 3 pediu a pegada de uma esfera; `grasp.Role` e `fit_grip` servem (é só dar a malha e o papel), mas não foi feito.
+- **A pegada da chave tem o médio, o anelar e o mindinho soltos** (curl fixo 0,42 a 0,56), com 3 a 15 mm de folga da cabeça, em vez de um 'grip' de chaveiro com os dedos enrolados nas argolas.
+- **A abertura máxima da pré-forma não escala com o item** (ver acima).
+- **A primeira pegada ainda dobra o punho até 70 graus** no instante 0,9 s do alcance, o mesmo valor de antes; vem do braço subindo do quadril para a mesa com a mão virada, não da pegada. Não mexi.
+- **O polegar do interruptor não aparece no quadro do jogador**: fica do lado do cano oposto à câmera, então o aperto só se vê pelo movimento da mão e pela luz.
+- **Os vídeos** são de primeira pessoa em EEVEE a 480 x 270 e 12 quadros por segundo (EEVEE leva segundos por quadro); a batida e o interruptor não têm painel de estúdio próprio, só aparecem no vídeo e nos testes.
+
+### Testes
+
+`tests/test_pegadas.py`: 14 testes (envelope do interruptor, cascata por junta, equivalência das rotações, mistura do `grip`, padrão de flexão de uma pegada de força, penetração e contato por item, pegada da chave, punho neutro e cotovelo de 100 a 120 graus, elevação parcial, giro do cano, interruptor, uma batida por rajada e só com a esquerda livre, pico da abertura entre 58 e 78% do alcance). Passam no Blender 5.0.1 e no 4.2. Também passam (5.0.1): `test_hands` (33), `test_body`, `test_engine_core` (38), `test_inventory` (27), `test_speech_rule` (4), `test_cutscenes_player`, `test_movimento_ref`, `test_locomocao`, `test_maos_movimento` (22), `test_doors` (34) e `sim_playthrough` (história em 202,3 s contra 198,5 s na linha de base da fase 5, a diferença vem dos gestos das outras frentes; os mesmos dois `objetivos que falharam: KEY, KEY` da caçada).
